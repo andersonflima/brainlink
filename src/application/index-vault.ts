@@ -14,16 +14,48 @@ export type IndexVaultResult = {
 
 type ParsedDocument = ReturnType<typeof parseMarkdownDocument>
 
-const toTitleEntry = (document: ParsedDocument): readonly [string, string] => [document.title.toLowerCase(), document.id]
+type TitleMaps = {
+  readonly shared: ReadonlyMap<string, string>
+  readonly byAgent: ReadonlyMap<string, ReadonlyMap<string, string>>
+}
 
-const createScopedTitleMap = (
-  document: ParsedDocument,
-  documents: readonly ParsedDocument[]
-): ReadonlyMap<string, string> =>
-  new Map([
-    ...documents.filter((candidate) => candidate.agentId === sharedAgentId).map(toTitleEntry),
-    ...documents.filter((candidate) => candidate.agentId === document.agentId).map(toTitleEntry)
-  ])
+type MutableTitleMaps = {
+  readonly shared: Map<string, string>
+  readonly byAgent: Map<string, Map<string, string>>
+}
+
+const toTitleKey = (title: string): string =>
+  title.toLowerCase()
+
+const appendTitleEntry = (map: Map<string, string>, document: ParsedDocument): Map<string, string> => {
+  map.set(toTitleKey(document.title), document.id)
+
+  return map
+}
+
+const createTitleMaps = (documents: readonly ParsedDocument[]): TitleMaps =>
+  documents.reduce<MutableTitleMaps>(
+    (state, document) => {
+      const agentMap = state.byAgent.get(document.agentId) ?? new Map<string, string>()
+      appendTitleEntry(agentMap, document)
+      state.byAgent.set(document.agentId, agentMap)
+
+      if (document.agentId === sharedAgentId) {
+        appendTitleEntry(state.shared, document)
+      }
+
+      return state
+    },
+    {
+      shared: new Map(),
+      byAgent: new Map()
+    }
+  )
+
+const createScopedTitleResolver = (document: ParsedDocument, titleMaps: TitleMaps) => ({
+  get: (title: string): string | undefined =>
+    titleMaps.byAgent.get(document.agentId)?.get(title) ?? titleMaps.shared.get(title)
+})
 
 const embedIndexedDocuments = async (
   documents: readonly IndexedDocument[],
@@ -57,8 +89,9 @@ export const indexVault = async (vaultPath: string): Promise<IndexVaultResult> =
       updatedAt: file.updatedAt
     })
   )
+  const titleMaps = createTitleMaps(documents)
   const indexedDocuments: readonly IndexedDocument[] = await embedIndexedDocuments(
-    documents.map((document) => createIndexedDocument(document, createScopedTitleMap(document, documents), config.chunkSize)),
+    documents.map((document) => createIndexedDocument(document, createScopedTitleResolver(document, titleMaps), config.chunkSize)),
     config.embeddingProvider
   )
   const index = openSqliteIndex(absoluteVaultPath)

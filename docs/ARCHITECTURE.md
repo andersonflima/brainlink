@@ -15,6 +15,13 @@ Domain code must not know about the CLI, filesystem, or SQLite.
 ```txt
 src/
   application/
+    frontend/
+      client-css.ts
+      client-html.ts
+      client-js.ts
+    server/
+      routes.ts
+      http.ts
     add-note.ts
     build-context.ts
     get-graph.ts
@@ -26,7 +33,11 @@ src/
     watch-vault.ts
 
   cli/
+    commands/
+      read-commands.ts
+      write-commands.ts
     main.ts
+    runtime.ts
 
   domain/
     agents.ts
@@ -40,6 +51,11 @@ src/
     types.ts
 
   infrastructure/
+    sqlite/
+      document-writer.ts
+      graph-reader.ts
+      schema.ts
+      search-reader.ts
     file-system-vault.ts
     sqlite-index.ts
 ```
@@ -56,6 +72,7 @@ The domain layer contains pure knowledge rules:
 - extract `#tags`
 - split documents into chunks
 - create deterministic local embeddings
+- create deterministic embedding buckets for semantic candidate retrieval
 - calculate cosine similarity
 - estimate token counts
 - select context sections
@@ -92,6 +109,7 @@ The infrastructure layer handles side effects:
 - creating `.brainlink`
 - writing and querying SQLite
 - running FTS, semantic and hybrid retrieval
+- narrowing semantic candidates through SQLite embedding buckets before cosine scoring
 
 SQLite is an index, not the canonical storage model.
 
@@ -108,6 +126,7 @@ read markdown files
   -> persist documents, chunks and links
   -> populate FTS records
   -> persist embedding vectors
+  -> persist embedding buckets
 ```
 
 ## Retrieval Flow
@@ -116,7 +135,8 @@ read markdown files
 question
   -> selected mode: fts | semantic | hybrid
   -> optional query embedding
-  -> FTS query and/or cosine similarity
+  -> FTS query and/or embedding bucket candidate lookup
+  -> cosine similarity over candidate chunks
   -> ranked chunks with textScore and semanticScore
   -> token-budget selection
   -> Markdown context package
@@ -235,6 +255,7 @@ Rebuildable:
 - `.brainlink/brainlink.db`
 - FTS records
 - local embedding vectors
+- local embedding bucket index
 - chunks
 - resolved links
 

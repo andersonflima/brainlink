@@ -46,6 +46,7 @@
     "dev": "tsx src/cli/main.ts",
     "test": "vitest run --config vitest.config.ts",
     "check": "npm run build && npm run test",
+    "benchmark:large": "tsx src/benchmarks/large-vault.ts",
     "prepack": "npm run build",
     "pack:smoke": "npm pack --dry-run"
   },

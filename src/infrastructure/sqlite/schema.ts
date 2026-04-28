@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 const getStoredSchemaVersion = (database: Database.Database): number => {
   const hasMetadata = database
@@ -20,6 +20,7 @@ const getStoredSchemaVersion = (database: Database.Database): number => {
 
 const dropDerivedSchema = (database: Database.Database): void => {
   database.exec(`
+    DROP TABLE IF EXISTS embedding_buckets;
     DROP TABLE IF EXISTS chunks_fts;
     DROP TABLE IF EXISTS links;
     DROP TABLE IF EXISTS chunks;
@@ -62,6 +63,15 @@ export const createSchema = (database: Database.Database): void => {
       embedding_json TEXT NOT NULL,
       FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS embedding_buckets (
+      bucket TEXT NOT NULL,
+      chunk_id TEXT NOT NULL,
+      PRIMARY KEY (bucket, chunk_id),
+      FOREIGN KEY (chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_embedding_buckets_bucket ON embedding_buckets(bucket);
 
     CREATE TABLE IF NOT EXISTS links (
       from_document_id TEXT NOT NULL,

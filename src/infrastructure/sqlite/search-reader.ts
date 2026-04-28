@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { sanitizeAgentId } from '../../domain/agents.js'
-import { cosineSimilarity } from '../../domain/embeddings.js'
+import { cosineSimilarity, createEmbeddingBuckets } from '../../domain/embeddings.js'
 import type { SearchMode, SearchResult } from '../../domain/types.js'
 import type { SqliteSearchReader } from './types.js'
 
@@ -91,25 +91,104 @@ const mergeHybridResults = (
   return sortByScore(Array.from(rows.values())).slice(0, limit)
 }
 
+const placeholders = (count: number): string =>
+  Array.from({ length: count }, () => '?').join(', ')
+
+const readAllSemanticRows = (database: Database.Database, normalizedAgentId: string | undefined): readonly SearchRow[] => {
+  const semanticAgentFilter = normalizedAgentId ? 'WHERE documents.agent_id = ?' : ''
+
+  return database
+    .prepare(
+      `
+      SELECT
+        documents.id AS document_id,
+        documents.agent_id AS agent_id,
+        documents.title AS title,
+        documents.path AS path,
+        chunks.id AS chunk_id,
+        chunks.content AS content,
+        documents.tags_json AS tags_json,
+        chunks.embedding_json AS embedding_json
+      FROM chunks
+      JOIN documents ON documents.id = chunks.document_id
+      ${semanticAgentFilter}
+    `
+    )
+    .all(...(normalizedAgentId ? [normalizedAgentId] : [])) as unknown as readonly SearchRow[]
+}
+
+const readBucketedSemanticRows = (
+  database: Database.Database,
+  normalizedAgentId: string | undefined,
+  queryEmbedding: readonly number[],
+  limit: number
+): readonly SearchRow[] => {
+  const buckets = createEmbeddingBuckets(queryEmbedding)
+
+  if (buckets.length === 0) {
+    return []
+  }
+
+  const agentFilter = normalizedAgentId ? 'AND documents.agent_id = ?' : ''
+  const params = normalizedAgentId ? [...buckets, normalizedAgentId, limit] : [...buckets, limit]
+
+  return database
+    .prepare(
+      `
+      SELECT
+        documents.id AS document_id,
+        documents.agent_id AS agent_id,
+        documents.title AS title,
+        documents.path AS path,
+        chunks.id AS chunk_id,
+        chunks.content AS content,
+        documents.tags_json AS tags_json,
+        chunks.embedding_json AS embedding_json,
+        count(*) AS score
+      FROM embedding_buckets
+      JOIN chunks ON chunks.id = embedding_buckets.chunk_id
+      JOIN documents ON documents.id = chunks.document_id
+      WHERE embedding_buckets.bucket IN (${placeholders(buckets.length)})
+      ${agentFilter}
+      GROUP BY chunks.id
+      ORDER BY score DESC, chunks.token_count ASC, documents.title ASC
+      LIMIT ?
+    `
+    )
+    .all(...params) as unknown as readonly SearchRow[]
+}
+
+const readSemanticRows = (
+  database: Database.Database,
+  normalizedAgentId: string | undefined,
+  queryEmbedding: readonly number[],
+  limit: number
+): readonly SearchRow[] => {
+  const candidateLimit = Math.max(limit * 96, 768)
+  const bucketedRows = readBucketedSemanticRows(database, normalizedAgentId, queryEmbedding, candidateLimit)
+
+  return bucketedRows.length > 0 ? bucketedRows : readAllSemanticRows(database, normalizedAgentId)
+}
+
 export const createSearchReader = (database: Database.Database): SqliteSearchReader => ({
   search: (query, limit, agentId, mode = 'hybrid', queryEmbedding = []) => {
-      const normalizedQuery = query.trim()
+    const normalizedQuery = query.trim()
 
-      if (!normalizedQuery || limit <= 0) {
-        return []
-      }
+    if (!normalizedQuery || limit <= 0) {
+      return []
+    }
 
-      const normalizedAgentId = normalizeAgentFilter(agentId)
-      const ftsQuery = toFtsQuery(query)
-      const expandedLimit = Math.max(limit * 4, 24)
-      const ftsAgentFilter = normalizedAgentId ? 'AND documents.agent_id = ?' : ''
-      const ftsParams = normalizedAgentId ? [ftsQuery, normalizedAgentId, expandedLimit] : [ftsQuery, expandedLimit]
-      const ftsRows =
-        mode === 'semantic' || !ftsQuery
-          ? []
-          : (database
-              .prepare(
-                `
+    const normalizedAgentId = normalizeAgentFilter(agentId)
+    const ftsQuery = toFtsQuery(query)
+    const expandedLimit = Math.max(limit * 4, 24)
+    const ftsAgentFilter = normalizedAgentId ? 'AND documents.agent_id = ?' : ''
+    const ftsParams = normalizedAgentId ? [ftsQuery, normalizedAgentId, expandedLimit] : [ftsQuery, expandedLimit]
+    const ftsRows =
+      mode === 'semantic' || !ftsQuery
+        ? []
+        : (database
+            .prepare(
+              `
                 SELECT
                   documents.id AS document_id,
                   documents.agent_id AS agent_id,
@@ -126,57 +205,37 @@ export const createSearchReader = (database: Database.Database): SqliteSearchRea
                 ORDER BY bm25(chunks_fts)
                 LIMIT ?
               `
-              )
-              .all(...ftsParams) as unknown as readonly SearchRow[])
-      const ftsResults = ftsRows.map((row, index) =>
-        toSearchResult(row, toTextScore(index, ftsRows.length), toTextScore(index, ftsRows.length), 0, 'fts')
-      )
-      const semanticAgentFilter = normalizedAgentId ? 'WHERE documents.agent_id = ?' : ''
-      const semanticRows =
-        mode === 'fts' || queryEmbedding.length === 0
-          ? []
-          : (database
-              .prepare(
-                `
-                SELECT
-                  documents.id AS document_id,
-                  documents.agent_id AS agent_id,
-                  documents.title AS title,
-                  documents.path AS path,
-                  chunks.id AS chunk_id,
-                  chunks.content AS content,
-                  documents.tags_json AS tags_json,
-                  chunks.embedding_json AS embedding_json
-                FROM chunks
-                JOIN documents ON documents.id = chunks.document_id
-                ${semanticAgentFilter}
-              `
-              )
-              .all(...(normalizedAgentId ? [normalizedAgentId] : [])) as unknown as readonly SearchRow[])
-      const semanticResults = sortByScore(
-        semanticRows
-          .map((row) => {
-            const semanticScore = Math.max(
-              0,
-              cosineSimilarity(
-                queryEmbedding,
-                parseJsonArray(row.embedding_json).filter((value): value is number => typeof value === 'number')
-              )
             )
+            .all(...ftsParams) as unknown as readonly SearchRow[])
+    const ftsResults = ftsRows.map((row, index) =>
+      toSearchResult(row, toTextScore(index, ftsRows.length), toTextScore(index, ftsRows.length), 0, 'fts')
+    )
+    const semanticRows =
+      mode === 'fts' || queryEmbedding.length === 0 ? [] : readSemanticRows(database, normalizedAgentId, queryEmbedding, expandedLimit)
+    const semanticResults = sortByScore(
+      semanticRows
+        .map((row) => {
+          const semanticScore = Math.max(
+            0,
+            cosineSimilarity(
+              queryEmbedding,
+              parseJsonArray(row.embedding_json).filter((value): value is number => typeof value === 'number')
+            )
+          )
 
-            return toSearchResult(row, semanticScore, 0, semanticScore, 'semantic')
-          })
-          .filter((result) => result.semanticScore > 0)
-      ).slice(0, expandedLimit)
+          return toSearchResult(row, semanticScore, 0, semanticScore, 'semantic')
+        })
+        .filter((result) => result.semanticScore > 0)
+    ).slice(0, expandedLimit)
 
-      if (mode === 'fts') {
-        return ftsResults.slice(0, limit)
-      }
+    if (mode === 'fts') {
+      return ftsResults.slice(0, limit)
+    }
 
-      if (mode === 'semantic') {
-        return semanticResults.slice(0, limit)
-      }
+    if (mode === 'semantic') {
+      return semanticResults.slice(0, limit)
+    }
 
-      return mergeHybridResults(ftsResults, semanticResults, limit)
+    return mergeHybridResults(ftsResults, semanticResults, limit)
   }
 })

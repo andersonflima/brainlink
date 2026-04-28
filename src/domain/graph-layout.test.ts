@@ -86,4 +86,43 @@ describe('graph layout', () => {
 
     expect(getMinimumLayoutDistance(layout.nodes)).toBeGreaterThan(58)
   })
+
+  it('keeps large multi-segment graphs finite and reasonably separated', () => {
+    const segmentFolders = [
+      '00-maps',
+      '20-concepts',
+      '30-architecture',
+      '40-agents',
+      '50-retrieval',
+      '60-operations',
+      '90-security'
+    ]
+    const nodes = Array.from({ length: 280 }, (_, index) => {
+      const folder = segmentFolders[index % segmentFolders.length]
+
+      return {
+        id: `stress-${index}`,
+        agentId: 'shared',
+        title: index % 40 === 0 ? `MOC Segment ${index / 40}` : `Stress Node ${index}`,
+        path: `${folder}/stress-node-${index}.md`,
+        content: '',
+        tags: [`segment-${index % segmentFolders.length}`]
+      }
+    })
+    const edges = nodes.flatMap((node, index) =>
+      [index + 1, index + 7, index + 31]
+        .filter((targetIndex) => targetIndex < nodes.length)
+        .map((targetIndex) => ({
+          source: node.id,
+          target: nodes[targetIndex]?.id ?? null,
+          targetTitle: nodes[targetIndex]?.title ?? ''
+        }))
+    )
+    const layout = createCauliflowerGraphLayout({ nodes, edges })
+
+    expect(layout.nodes).toHaveLength(nodes.length)
+    expect(layout.nodes.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y))).toBe(true)
+    expect(new Set(layout.nodes.map((node) => node.segment)).size).toBeGreaterThan(4)
+    expect(getMinimumLayoutDistance(layout.nodes)).toBeGreaterThan(24)
+  })
 })

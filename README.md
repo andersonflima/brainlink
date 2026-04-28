@@ -60,6 +60,7 @@ Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable
 - Obsidian-compatible `[[wiki links]]` and `#tags`.
 - Backlinks, broken-link reports, orphan detection and validation.
 - Full-text, semantic and hybrid retrieval modes.
+- SQLite-backed semantic candidate buckets for larger vaults.
 - Agent namespaces under `agents/<agent-id>/`.
 - CLI with machine-readable `--json` output.
 - Short CLI alias: `blink`.
@@ -253,6 +254,7 @@ Rebuildable data:
 - `.brainlink/brainlink.db`
 - full-text records
 - local embedding vectors
+- local embedding buckets
 - chunks
 - resolved links
 - backlinks
@@ -364,7 +366,7 @@ The graph UI shows:
 - `[[wiki links]]` as edges
 - backlinks and outgoing links
 - full Markdown content for the selected note
-- colored groups by knowledge area
+- neutral graph nodes with segment/group metadata
 - agent selector for isolated views
 - realtime refresh while `--watch` is enabled
 
@@ -634,6 +636,14 @@ npm run test
 npm run check
 ```
 
+Large vault benchmark:
+
+```bash
+npm run benchmark:large -- --notes 5000
+```
+
+Use `--keep` to keep the generated temporary vault for inspection.
+
 Local CLI:
 
 ```bash
@@ -666,6 +676,7 @@ Detailed notes:
 ## Current Limits
 
 - Semantic search uses deterministic local embeddings, not a remote model provider.
+- Semantic search uses SQLite embedding buckets to narrow candidates before cosine scoring.
 - `embeddingProvider` currently supports `local` and `none`.
 - Link resolution is title-based inside each agent namespace, with `shared` as fallback.
 - No embedded MCP server is shipped; MCP integration is done by external servers wrapping the CLI.
@@ -677,7 +688,7 @@ Detailed notes:
 `0.1.0-alpha.0` is intended to prove the local-first memory loop:
 
 - Markdown as durable memory.
-- SQLite FTS plus local embeddings as rebuildable retrieval index.
+- SQLite FTS plus local embeddings and semantic buckets as rebuildable retrieval index.
 - CLI as the primary agent interface.
 - HTTP graph API and frontend as inspection tools.
 - Agent namespaces to avoid context mixing.

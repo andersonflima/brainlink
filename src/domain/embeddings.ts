@@ -8,6 +8,7 @@ export type EmbeddingProvider = {
 }
 
 const localDimensions = 192
+const defaultEmbeddingBucketCount = 24
 const tokenPattern = /[\p{L}\p{N}_-]+/gu
 
 const stopWords = new Set([
@@ -93,10 +94,12 @@ const normalizeVector = (vector: readonly number[]): EmbeddingVector => {
   return magnitude === 0 ? vector : vector.map((value) => value / magnitude)
 }
 
-const addFeature = (vector: number[], feature: string, weight: number): number[] => {
+const applyFeature = (vector: number[], feature: string, weight: number): number[] => {
   const [index, sign] = featureHash(feature)
 
-  return vector.map((value, currentIndex) => (currentIndex === index ? value + sign * weight : value))
+  vector[index] = (vector[index] ?? 0) + sign * weight
+
+  return vector
 }
 
 const tokenFeatures = (tokens: readonly string[]): readonly string[] => [
@@ -108,7 +111,7 @@ export const createLocalEmbedding = (input: string): EmbeddingVector => {
   const tokens = expandTokens(tokenize(input))
   const initial = Array.from({ length: localDimensions }, () => 0)
   const weighted = tokenFeatures(tokens).reduce(
-    (vector, feature) => addFeature(vector, feature, feature.startsWith('b:') ? 0.65 : 1),
+    (vector, feature) => applyFeature(vector, feature, feature.startsWith('b:') ? 0.65 : 1),
     initial
   )
 
@@ -128,6 +131,24 @@ export const cosineSimilarity = (left: readonly number[], right: readonly number
 
   return leftMagnitude === 0 || rightMagnitude === 0 ? 0 : dot / (leftMagnitude * rightMagnitude)
 }
+
+const bucketKey = (index: number, value: number): string =>
+  `${value >= 0 ? 'p' : 'n'}:${index}`
+
+export const createEmbeddingBuckets = (
+  vector: readonly number[],
+  bucketCount = defaultEmbeddingBucketCount
+): readonly string[] =>
+  vector
+    .map((value, index) => ({
+      index,
+      value,
+      weight: Math.abs(value)
+    }))
+    .filter((item) => item.weight > 0)
+    .sort((left, right) => right.weight - left.weight || left.index - right.index)
+    .slice(0, bucketCount)
+    .map((item) => bucketKey(item.index, item.value))
 
 export const createDisabledEmbeddingProvider = (): EmbeddingProvider => ({
   name: 'none',

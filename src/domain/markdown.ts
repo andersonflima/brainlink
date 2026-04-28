@@ -4,6 +4,10 @@ import { createStableId } from './ids.js'
 import { estimateTokenCount } from './tokens.js'
 import type { IndexedDocument, KnowledgeChunk, KnowledgeDocument, KnowledgeLink } from './types.js'
 
+type TitleResolver = {
+  readonly get: (title: string) => string | null | undefined
+}
+
 type ParseMarkdownDocumentInput = {
   readonly absolutePath: string
   readonly vaultPath: string
@@ -134,7 +138,7 @@ export const parseMarkdownDocument = (input: ParseMarkdownDocumentInput): Knowle
 
 export const createIndexedDocument = (
   document: KnowledgeDocument,
-  titleToDocumentId: ReadonlyMap<string, string>,
+  titleToDocumentId: TitleResolver,
   maxChunkCharacters = 1200
 ): IndexedDocument => {
   const chunks = splitIntoChunks(document.id, document.content, maxChunkCharacters)

@@ -149,6 +149,76 @@ If the context is empty or weak:
 3. Inspect links and backlinks.
 4. Only then answer from general reasoning.
 
+## Examples For Common Coding Agents
+
+These examples assume the agent can run shell commands in the user workspace.
+
+### Codex-Style Terminal Agent
+
+Run this at the start of a task:
+
+```bash
+export BLINK_VAULT=".brainlink-vault"
+export BLINK_AGENT="codex"
+blink init "$BLINK_VAULT"
+blink context "$USER_TASK" --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --mode hybrid --json
+```
+
+After discovering durable project knowledge:
+
+```bash
+blink add "Implementation Boundary" \
+  --vault "$BLINK_VAULT" \
+  --agent "$BLINK_AGENT" \
+  --content "Keep use cases in application and pure transformations in domain. [[Architecture]] #architecture #typescript"
+blink index --vault "$BLINK_VAULT"
+```
+
+### Claude Code-Style Agent
+
+Use Brainlink as a preflight memory read before editing files:
+
+```bash
+blink context "task: $USER_TASK repo: $(basename "$PWD")" \
+  --vault .brainlink-vault \
+  --agent claude-code \
+  --tokens 2500 \
+  --json
+```
+
+Store only stable outcomes:
+
+```bash
+blink add "Test Command" \
+  --vault .brainlink-vault \
+  --agent claude-code \
+  --content "For this repository, run npm run check before final delivery. #testing #process"
+blink index --vault .brainlink-vault
+```
+
+### Cursor Or IDE Agent
+
+Use a project-local vault and a namespace per assistant profile:
+
+```bash
+blink search "frontend graph layout conventions" \
+  --vault .brainlink-vault \
+  --agent ide-agent \
+  --mode hybrid \
+  --limit 8 \
+  --json
+```
+
+When the IDE agent changes architecture, persist the rationale:
+
+```bash
+blink add "Frontend Asset Boundary" \
+  --vault .brainlink-vault \
+  --agent ide-agent \
+  --content "Frontend graph assets live outside server routing modules so UI changes do not affect HTTP bootstrap. #frontend #architecture"
+blink index --vault .brainlink-vault
+```
+
 ## Command Reference
 
 ### Initialize A Vault
@@ -217,7 +287,7 @@ Search modes:
 
 - `hybrid`: default; combines SQLite FTS and local embedding similarity.
 - `fts`: lexical SQLite full-text search only.
-- `semantic`: local deterministic embedding similarity only.
+- `semantic`: local deterministic embedding similarity with SQLite bucket candidate narrowing.
 
 ### Build Agent Context
 
@@ -400,7 +470,7 @@ Weak retrieval usually means:
 
 ## Current Limits
 
-- Search supports FTS, local semantic embeddings and hybrid ranking.
+- Search supports FTS, local semantic embeddings, SQLite semantic buckets and hybrid ranking.
 - Local embeddings are deterministic and provider-free; remote embedding providers are not implemented yet.
 - MCP integration is external: wrap the CLI from your own MCP server.
 - HTTP API is local and unauthenticated.
