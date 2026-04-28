@@ -8,4 +8,3 @@
 - Added vault diagnostics: stats, broken links, orphans, validation and doctor.
 - Added agent namespaces under `agents/<agent-id>/`.
 - Added external MCP integration guidance through CLI subprocess wrappers.
-- Added demo vault seeding.

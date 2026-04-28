@@ -66,7 +66,6 @@ Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable
 - Compatible with MCP servers that execute local CLI commands.
 - Local HTTP API.
 - Realtime graph UI with agent selector and colored knowledge groups.
-- Demo vault generator.
 
 ## Install
 
@@ -626,22 +625,6 @@ Supported signals:
 - `[[Wiki Link|Alias]]`
 - `#tags`
 
-## Demo Vault
-
-Generate a dense demo vault:
-
-```bash
-npm run --silent demo:seed -- --clean
-npm run --silent dev -- server --vault .demo/vault --watch
-```
-
-The demo includes multiple namespaces:
-
-- `shared`
-- `coding-agent`
-- `research-agent`
-- `docs-agent`
-
 ## Development
 
 ```bash
@@ -655,7 +638,7 @@ Local CLI:
 
 ```bash
 npm run dev -- --help
-npm run dev -- server --vault .demo/vault --watch
+npm run dev -- server --vault .brainlink-vault --watch
 ```
 
 Package smoke test:
@@ -670,7 +653,6 @@ npm run pack:smoke
 src/
   application/      use cases
   cli/              command-line adapter
-  demo/             demo vault seed
   domain/           pure knowledge rules
   infrastructure/   filesystem and SQLite adapters
 ```
