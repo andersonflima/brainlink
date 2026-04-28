@@ -1,0 +1,102 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { addNote } from './add-note.js'
+import { startServer } from './start-server.js'
+
+describe('brainlink http server integration', () => {
+  const tempPaths: string[] = []
+
+  afterEach(async () => {
+    await Promise.all(tempPaths.map((path) => rm(path, { recursive: true, force: true })))
+    tempPaths.length = 0
+  })
+
+  it('serves graph, search, context and note creation APIs', async () => {
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-http-'))
+    tempPaths.push(vault)
+    await addNote(vault, 'Architecture', 'Markdown is the source of truth. #architecture')
+    await addNote(vault, 'Auth Decision', 'We chose JWT. [[Architecture]] #auth #jwt')
+    await addNote(vault, 'Research Memory', 'Research agent source review. #research', 'research-agent')
+
+    const server = await startServer({
+      vaultPath: vault,
+      host: '127.0.0.1',
+      port: 0,
+      shouldIndex: true,
+      shouldWatch: false
+    })
+
+    try {
+      const graph = (await fetch(`${server.url}/api/graph?agent=shared`).then((response) => response.json())) as {
+        readonly nodes: readonly unknown[]
+        readonly edges: readonly unknown[]
+      }
+      expect(graph.nodes).toHaveLength(2)
+      expect(graph.edges).toHaveLength(1)
+
+      const agents = (await fetch(`${server.url}/api/agents`).then((response) => response.json())) as {
+        readonly agents: readonly { readonly id: string; readonly documentCount: number }[]
+      }
+      expect(agents.agents).toEqual(
+        expect.arrayContaining([
+          { id: 'shared', documentCount: 2 },
+          { id: 'research-agent', documentCount: 1 }
+        ])
+      )
+
+      const researchGraph = (await fetch(`${server.url}/api/graph?agent=research-agent`).then((response) => response.json())) as {
+        readonly nodes: readonly unknown[]
+      }
+      expect(researchGraph.nodes).toHaveLength(1)
+
+      const layout = (await fetch(`${server.url}/api/graph-layout?agent=shared`).then((response) => response.json())) as {
+        readonly nodes: readonly { readonly segment: string; readonly group: string }[]
+        readonly edges: readonly unknown[]
+      }
+      expect(layout.nodes).toHaveLength(2)
+      expect(layout.edges).toHaveLength(1)
+      expect(layout.nodes.every((node) => typeof node.segment === 'string' && node.segment.length > 0)).toBe(true)
+      expect(layout.nodes.every((node) => typeof node.group === 'string' && node.group.length > 0)).toBe(true)
+
+      const page = await fetch(`${server.url}/`).then((response) => response.text())
+      expect(page).toContain('<canvas id="graph"')
+      expect(page).toContain('<select id="agent"')
+
+      const search = (await fetch(`${server.url}/api/search?q=jwt&limit=5`).then((response) => response.json())) as {
+        readonly results: readonly { readonly title: string }[]
+      }
+      expect(search.results[0]?.title).toBe('Auth Decision')
+
+      const context = (await fetch(`${server.url}/api/context?q=auth&limit=5&tokens=500`).then((response) =>
+        response.json()
+      )) as { readonly content: string }
+      expect(context.content).toContain('Brainlink Context')
+
+      const stats = (await fetch(`${server.url}/api/stats`).then((response) => response.json())) as {
+        readonly documentCount: number
+        readonly brokenLinkCount: number
+      }
+      expect(stats).toMatchObject({
+        documentCount: 3,
+        brokenLinkCount: 0
+      })
+
+      const created = (await fetch(`${server.url}/api/notes`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: 'Runtime',
+          content: 'Node.js runtime note. [[Architecture]] #runtime',
+          agent: 'coding-agent'
+        })
+      }).then((response) => response.json())) as { readonly index: { readonly documentCount: number } }
+      expect(created.index.documentCount).toBe(4)
+    } finally {
+      await server.close()
+    }
+  })
+})

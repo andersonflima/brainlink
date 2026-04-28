@@ -1,0 +1,69 @@
+{
+  "name": "@andersonespindola/brainlink",
+  "version": "0.1.0-alpha.0",
+  "description": "Local-first knowledge memory for agents with Markdown, backlinks, indexing and context retrieval.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Anderson Espindola",
+  "homepage": "https://github.com/andersonflima/brainlink#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andersonflima/brainlink.git"
+  },
+  "bugs": {
+    "url": "https://github.com/andersonflima/brainlink/issues"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "memory",
+    "markdown",
+    "obsidian",
+    "mcp",
+    "knowledge-graph",
+    "retrieval"
+  ],
+  "bin": {
+    "brainlink": "./dist/cli/main.js",
+    "blink": "./dist/cli/main.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "AGENTS.md",
+    "docs"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "dev": "tsx src/cli/main.ts",
+    "demo:seed": "tsx src/demo/seed-demo-vault.ts",
+    "test": "vitest run --config vitest.config.ts",
+    "check": "npm run build && npm run test",
+    "prepack": "npm run build",
+    "pack:smoke": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.9.0",
+    "commander": "^14.0.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.6"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
