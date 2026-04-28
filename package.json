@@ -1,5 +1,5 @@
 {
-  "name": "@andersonespindola/brainlink",
+  "name": "@andersonflima/brainlink",
   "version": "0.1.0-alpha.0",
   "description": "Local-first knowledge memory for agents with Markdown, backlinks, indexing and context retrieval.",
   "type": "module",

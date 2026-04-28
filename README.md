@@ -75,7 +75,7 @@ Requirements:
 - npm
 
 ```bash
-npm install -g @andersonespindola/brainlink
+npm install -g @andersonflima/brainlink
 ```
 
 The package installs two equivalent commands:
@@ -100,7 +100,7 @@ command -v blink || command -v brainlink
 If neither command exists, install it:
 
 ```bash
-npm install -g @andersonespindola/brainlink
+npm install -g @andersonflima/brainlink
 ```
 
 Then verify:

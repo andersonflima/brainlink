@@ -62,6 +62,6 @@ npm publish
 
 Valid alternatives:
 
-- `@andersonespindola/brainlink`
+- `@andersonflima/brainlink`
 - `@brainlink/cli`, if the publisher controls the `@brainlink` scope
 - another unscoped name that is available on npm
