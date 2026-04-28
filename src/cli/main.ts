@@ -35,7 +35,6 @@ type ServerOptions = VaultOptions & {
   readonly index: boolean
   readonly watch?: boolean
   readonly allowPublic?: boolean
-  readonly token?: string
 }
 
 type AddOptions = VaultOptions & {
@@ -360,7 +359,6 @@ program
   .option('--no-index', 'skip indexing before starting the server')
   .option('-w, --watch', 'watch markdown files and reindex on changes')
   .option('--allow-public', 'allow binding the server to a non-loopback host')
-  .option('--token <token>', 'write token for mutating HTTP routes')
   .option('--json', 'print machine-readable JSON')
   .description('start a local web UI for the knowledge graph')
   .action(async (options: ServerOptions) => {
@@ -371,13 +369,10 @@ program
       port: parsePositiveInteger(options.port ?? String(resolved.config.port), resolved.config.port),
       shouldIndex: options.index,
       shouldWatch: Boolean(options.watch),
-      allowPublic: Boolean(options.allowPublic),
-      writeToken: options.token ?? process.env.BRAINLINK_SERVER_TOKEN
+      allowPublic: Boolean(options.allowPublic)
     })
 
-    print(options.json, { url: server.url, watch: Boolean(options.watch), writeToken: server.writeToken }, () =>
-      [`Brainlink graph server running at ${server.url}`, `Write token: ${server.writeToken}`].join('\n')
-    )
+    print(options.json, { url: server.url, watch: Boolean(options.watch), readonly: true }, () => `Brainlink graph server running at ${server.url}`)
   })
 
 program.parseAsync().catch((error: unknown) => {

@@ -341,18 +341,9 @@ GET  /api/stats
 GET  /api/broken-links
 GET  /api/orphans
 GET  /api/validate
-POST /api/index      requires x-brainlink-token
-POST /api/notes      requires x-brainlink-token
 ```
 
-`POST /api/notes` expects:
-
-```json
-{
-  "title": "Runtime",
-  "content": "Node.js runtime note. [[Architecture]] #runtime"
-}
-```
+The HTTP API is read-only. Use the CLI for writes and indexing.
 
 ## Agent Integration Contract
 

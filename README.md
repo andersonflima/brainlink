@@ -377,7 +377,7 @@ blink server --vault ./vault --no-index
 
 ## HTTP API
 
-Read routes are local and unauthenticated. Mutating routes require the server write token printed by `blink server`.
+The HTTP API is read-only and exists only to power the graph UI and local inspection workflows.
 
 The server refuses non-loopback hosts by default. Use `--allow-public` only behind your own authentication, authorization and TLS.
 
@@ -394,8 +394,6 @@ Routes:
 - `GET /api/broken-links`
 - `GET /api/orphans`
 - `GET /api/validate`
-- `POST /api/index` with `x-brainlink-token`
-- `POST /api/notes` with `x-brainlink-token`
 
 Read routes accept `agent=<agent-id>`:
 
@@ -403,19 +401,6 @@ Read routes accept `agent=<agent-id>`:
 /api/graph-layout?agent=coding-agent
 /api/search?q=typescript&agent=coding-agent&mode=hybrid
 /api/context?q=module-boundaries&agent=coding-agent&mode=semantic
-```
-
-Create a note through HTTP:
-
-```bash
-curl -X POST http://127.0.0.1:4321/api/notes \
-  -H 'content-type: application/json' \
-  -H "x-brainlink-token: $BRAINLINK_WRITE_TOKEN" \
-  -d '{
-    "title": "Runtime Policy",
-    "agent": "coding-agent",
-    "content": "Use Node.js 22 or newer. #runtime"
-  }'
 ```
 
 ## CLI Reference
@@ -563,9 +548,9 @@ Watches Markdown files and rebuilds the index when notes change.
 blink server --vault ./vault --watch
 ```
 
-Starts the local graph UI and HTTP API. The command prints a write token for `POST /api/index` and `POST /api/notes`.
+Starts the local read-only graph UI and HTTP API.
 
-To bind outside localhost, pass `--allow-public` and put the server behind your own auth and TLS. Use `--token` or `BRAINLINK_SERVER_TOKEN` when you need a stable write token for automation.
+To bind outside localhost, pass `--allow-public` and put the server behind your own auth and TLS.
 
 ## Machine-Readable Output
 

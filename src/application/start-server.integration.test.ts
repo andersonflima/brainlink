@@ -25,8 +25,7 @@ describe('brainlink http server integration', () => {
       host: '127.0.0.1',
       port: 0,
       shouldIndex: true,
-      shouldWatch: false,
-      writeToken: 'test-write-token'
+      shouldWatch: false
     })
 
     try {
@@ -102,7 +101,7 @@ describe('brainlink http server integration', () => {
         brokenLinkCount: 0
       })
 
-      const unauthorized = await fetch(`${server.url}/api/notes`, {
+      const notesPost = await fetch(`${server.url}/api/notes`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json'
@@ -112,47 +111,10 @@ describe('brainlink http server integration', () => {
           content: 'This write has no token. #security'
         })
       })
-      expect(unauthorized.status).toBe(401)
+      expect(notesPost.status).toBe(404)
 
-      const created = (await fetch(`${server.url}/api/notes`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-brainlink-token': server.writeToken
-        },
-        body: JSON.stringify({
-          title: 'Runtime',
-          content: 'Node.js runtime note. [[Architecture]] #runtime',
-          agent: 'coding-agent'
-        })
-      }).then((response) => response.json())) as { readonly index: { readonly documentCount: number } }
-      expect(created.index.documentCount).toBe(4)
-
-      const invalidNote = await fetch(`${server.url}/api/notes`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-brainlink-token': server.writeToken
-        },
-        body: JSON.stringify({
-          title: '',
-          content: ''
-        })
-      })
-      expect(invalidNote.status).toBe(400)
-
-      const sensitiveNote = await fetch(`${server.url}/api/notes`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-brainlink-token': server.writeToken
-        },
-        body: JSON.stringify({
-          title: 'Credentials',
-          content: 'OPENAI_API_KEY=sk-test12345678901234567890'
-        })
-      })
-      expect(sensitiveNote.status).toBe(400)
+      const indexPost = await fetch(`${server.url}/api/index`, { method: 'POST' })
+      expect(indexPost.status).toBe(404)
     } finally {
       await server.close()
     }
