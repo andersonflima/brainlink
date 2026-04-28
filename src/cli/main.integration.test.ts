@@ -53,10 +53,21 @@ describe('brainlink cli integration', () => {
     )
     expect(indexed).toMatchObject({ documentCount: 2, linkCount: 1 })
 
-    const search = parseJson<{ results: readonly { title: string }[] }>(
-      await cli(['search', 'jwt auth', '--vault', vault, '--json'], projectPath)
+    const search = parseJson<{ mode: string; results: readonly { title: string; searchMode: string }[] }>(
+      await cli(['search', 'jwt auth', '--vault', vault, '--mode', 'hybrid', '--json'], projectPath)
     )
+    expect(search.mode).toBe('hybrid')
     expect(search.results[0]?.title).toBe('Auth Decision')
+    expect(search.results[0]?.searchMode).toBe('hybrid')
+
+    const semanticSearch = parseJson<{ results: readonly { title: string; searchMode: string; semanticScore: number }[] }>(
+      await cli(['search', 'authentication token', '--vault', vault, '--mode', 'semantic', '--json'], projectPath)
+    )
+    expect(semanticSearch.results[0]).toMatchObject({
+      title: 'Auth Decision',
+      searchMode: 'semantic'
+    })
+    expect(semanticSearch.results[0]?.semanticScore).toBeGreaterThan(0)
 
     const context = parseJson<{ sections: readonly { title: string }[]; content: string }>(
       await cli(['context', 'how does auth work?', '--vault', vault, '--json'], projectPath)

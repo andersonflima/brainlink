@@ -25,6 +25,7 @@ export const selectContextSections = (
             path: result.path,
             content: result.content,
             score: result.score,
+            searchMode: result.searchMode,
             tags: result.tags
           }
         ],
@@ -49,6 +50,7 @@ export const formatContextPackage = (query: string, sections: readonly ContextSe
         `Source: ${section.path}`,
         section.tags.length > 0 ? `Tags: ${section.tags.map((tag) => `#${tag}`).join(' ')}` : null,
         `Score: ${section.score.toFixed(3)}`,
+        `Mode: ${section.searchMode}`,
         '',
         section.content
       ]

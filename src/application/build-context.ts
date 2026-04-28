@@ -1,5 +1,5 @@
 import { formatContextPackage, selectContextSections } from '../domain/context.js'
-import type { ContextPackage } from '../domain/types.js'
+import type { ContextPackage, SearchMode } from '../domain/types.js'
 import { searchKnowledge } from './search-knowledge.js'
 
 export const buildContextPackage = async (
@@ -7,9 +7,10 @@ export const buildContextPackage = async (
   query: string,
   limit: number,
   maxTokens: number,
-  agentId?: string
+  agentId?: string,
+  mode?: SearchMode
 ): Promise<ContextPackage> => {
-  const results = await searchKnowledge(vaultPath, query, limit, agentId)
+  const results = await searchKnowledge(vaultPath, query, limit, agentId, mode)
   const sections = selectContextSections(results, maxTokens)
 
   return {
@@ -24,9 +25,10 @@ export const buildContext = async (
   query: string,
   limit: number,
   maxTokens: number,
-  agentId?: string
+  agentId?: string,
+  mode?: SearchMode
 ): Promise<string> => {
-  const contextPackage = await buildContextPackage(vaultPath, query, limit, maxTokens, agentId)
+  const contextPackage = await buildContextPackage(vaultPath, query, limit, maxTokens, agentId, mode)
 
   return contextPackage.content
 }

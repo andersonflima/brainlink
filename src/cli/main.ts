@@ -12,7 +12,7 @@ import { searchKnowledge } from '../application/search-knowledge.js'
 import { startMcpServer } from '../application/start-mcp-server.js'
 import { startServer } from '../application/start-server.js'
 import { startVaultWatcher } from '../application/watch-vault.js'
-import { loadBrainlinkConfig } from '../infrastructure/config.js'
+import { loadBrainlinkConfig, sanitizeSearchMode } from '../infrastructure/config.js'
 import { ensureVault } from '../infrastructure/file-system-vault.js'
 
 type VaultOptions = {
@@ -23,6 +23,7 @@ type VaultOptions = {
 
 type SearchOptions = VaultOptions & {
   readonly limit?: string
+  readonly mode?: string
 }
 
 type ContextOptions = SearchOptions & {
@@ -114,16 +115,20 @@ program
   .option('-v, --vault <vault>', 'vault directory', '.')
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('-l, --limit <limit>', 'maximum results', '10')
+  .option('-m, --mode <mode>', 'search mode: fts, semantic or hybrid')
   .option('--json', 'print machine-readable JSON')
   .description('search indexed knowledge')
   .action(async (query: string, options: SearchOptions) => {
     const resolved = await resolveOptions(options)
     const limit = parsePositiveInteger(options.limit ?? String(resolved.config.defaultSearchLimit), resolved.config.defaultSearchLimit)
-    const results = await searchKnowledge(resolved.vault, query, limit, options.agent)
+    const mode = sanitizeSearchMode(options.mode, resolved.config.defaultSearchMode)
+    const results = await searchKnowledge(resolved.vault, query, limit, options.agent, mode)
 
-    print(options.json, { query, agent: options.agent, limit, results }, () =>
+    print(options.json, { query, agent: options.agent, limit, mode, results }, () =>
       results
-        .map((result, index) => [`${index + 1}. ${result.title} (${result.path}) score=${result.score.toFixed(3)}`, result.content].join('\n'))
+        .map((result, index) =>
+          [`${index + 1}. ${result.title} (${result.path}) score=${result.score.toFixed(3)} mode=${result.searchMode}`, result.content].join('\n')
+        )
         .join('\n\n')
     )
   })
@@ -172,16 +177,19 @@ program
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('-l, --limit <limit>', 'maximum search results before context selection', '12')
   .option('-t, --tokens <tokens>', 'maximum estimated context tokens', '2000')
+  .option('-m, --mode <mode>', 'search mode: fts, semantic or hybrid')
   .option('--json', 'print machine-readable JSON')
   .description('build a compact context package for an agent')
   .action(async (query: string, options: ContextOptions) => {
     const resolved = await resolveOptions(options)
+    const mode = sanitizeSearchMode(options.mode, resolved.config.defaultSearchMode)
     const contextPackage = await buildContextPackage(
       resolved.vault,
       query,
       parsePositiveInteger(options.limit ?? '12', 12),
       parsePositiveInteger(options.tokens ?? String(resolved.config.defaultContextTokens), resolved.config.defaultContextTokens),
-      options.agent
+      options.agent,
+      mode
     )
 
     print(options.json, contextPackage, () => contextPackage.content)

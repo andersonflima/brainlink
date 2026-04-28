@@ -11,6 +11,8 @@ import { listBacklinks, listLinks } from './list-links.js'
 import { searchKnowledge } from './search-knowledge.js'
 import { loadBrainlinkConfig } from '../infrastructure/config.js'
 
+const searchModeSchema = z.enum(['fts', 'semantic', 'hybrid'])
+
 const toToolText = (value: unknown) => ({
   content: [
     {
@@ -86,14 +88,17 @@ export const startMcpServer = async (): Promise<void> => {
         vault: z.string().optional(),
         agent: z.string().optional(),
         query: z.string().min(1),
-        limit: z.number().int().positive().optional()
+        limit: z.number().int().positive().optional(),
+        mode: searchModeSchema.optional()
       }
     },
-    async ({ vault, agent, query, limit }) => {
+    async ({ vault, agent, query, limit, mode }) => {
       const resolvedVault = await resolveVault(vault)
-      const results = await searchKnowledge(resolvedVault, query, limit ?? 10, agent)
+      const config = await loadBrainlinkConfig()
+      const searchMode = mode ?? config.defaultSearchMode
+      const results = await searchKnowledge(resolvedVault, query, limit ?? 10, agent, searchMode)
 
-      return toToolText({ query, agent, limit: limit ?? 10, results })
+      return toToolText({ query, agent, limit: limit ?? 10, mode: searchMode, results })
     }
   )
 
@@ -107,11 +112,12 @@ export const startMcpServer = async (): Promise<void> => {
         agent: z.string().optional(),
         query: z.string().min(1),
         limit: z.number().int().positive().optional(),
-        tokens: z.number().int().positive().optional()
+        tokens: z.number().int().positive().optional(),
+        mode: searchModeSchema.optional()
       }
     },
-    async ({ vault, agent, query, limit, tokens }) =>
-      toToolText(await buildContextPackage(await resolveVault(vault), query, limit ?? 12, tokens ?? 2000, agent))
+    async ({ vault, agent, query, limit, tokens, mode }) =>
+      toToolText(await buildContextPackage(await resolveVault(vault), query, limit ?? 12, tokens ?? 2000, agent, mode))
   )
 
   server.registerTool(

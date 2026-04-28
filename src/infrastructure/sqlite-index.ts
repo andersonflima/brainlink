@@ -1,14 +1,15 @@
 import Database from 'better-sqlite3'
 import { join } from 'node:path'
 import { sanitizeAgentId } from '../domain/agents.js'
-import type { AgentSummary, GraphEdge, GraphLink, GraphNode, IndexedDocument, KnowledgeGraph, SearchResult } from '../domain/types.js'
+import { cosineSimilarity } from '../domain/embeddings.js'
+import type { AgentSummary, GraphEdge, GraphLink, GraphNode, IndexedDocument, KnowledgeGraph, SearchMode, SearchResult } from '../domain/types.js'
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 type SqliteIndex = {
   readonly reset: () => void
   readonly saveDocuments: (documents: readonly IndexedDocument[]) => void
-  readonly search: (query: string, limit: number, agentId?: string) => readonly SearchResult[]
+  readonly search: (query: string, limit: number, agentId?: string, mode?: SearchMode, queryEmbedding?: readonly number[]) => readonly SearchResult[]
   readonly listLinks: (agentId?: string) => readonly GraphLink[]
   readonly listBacklinks: (title: string, agentId?: string) => readonly GraphLink[]
   readonly getGraph: (agentId?: string) => KnowledgeGraph
@@ -23,8 +24,9 @@ type SearchRow = {
   readonly path: string
   readonly chunk_id: string
   readonly content: string
-  readonly score: number
+  readonly score?: number
   readonly tags_json: string
+  readonly embedding_json?: string
 }
 
 type GraphLinkRow = {
@@ -119,6 +121,8 @@ const createSchema = (database: Database.Database): void => {
       ordinal INTEGER NOT NULL,
       content TEXT NOT NULL,
       token_count INTEGER NOT NULL,
+      embedding_provider TEXT NOT NULL,
+      embedding_json TEXT NOT NULL,
       FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
     );
 
@@ -155,10 +159,75 @@ const toFtsQuery = (query: string): string =>
     .toLowerCase()
     .match(/[\p{L}\p{N}_-]+/gu)
     ?.map((term) => `"${term.replaceAll('"', '""')}"*`)
-    .join(' OR ') ?? '""'
+    .join(' OR ') ?? ''
 
 const normalizeAgentFilter = (agentId?: string): string | undefined =>
   agentId ? sanitizeAgentId(agentId) : undefined
+
+const parseJsonArray = (value: string | undefined): readonly unknown[] => {
+  if (!value) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const toTextScore = (index: number, total: number): number =>
+  total === 0 ? 0 : 1 - index / (total + 1)
+
+const toSearchResult = (
+  row: SearchRow,
+  score: number,
+  textScore: number,
+  semanticScore: number,
+  searchMode: SearchMode
+): SearchResult => ({
+  documentId: row.document_id,
+  agentId: row.agent_id,
+  title: row.title,
+  path: row.path,
+  chunkId: row.chunk_id,
+  content: row.content,
+  score,
+  textScore,
+  semanticScore,
+  searchMode,
+  tags: parseJsonArray(row.tags_json).filter((value): value is string => typeof value === 'string')
+})
+
+const sortByScore = (results: readonly SearchResult[]): readonly SearchResult[] =>
+  [...results].sort((left, right) => right.score - left.score || left.title.localeCompare(right.title))
+
+const mergeHybridResults = (
+  ftsResults: readonly SearchResult[],
+  semanticResults: readonly SearchResult[],
+  limit: number
+): readonly SearchResult[] => {
+  const rows = new Map<string, SearchResult>()
+
+  ;[...semanticResults, ...ftsResults].forEach((result) => {
+    const current = rows.get(result.chunkId)
+    const textScore = Math.max(current?.textScore ?? 0, result.textScore)
+    const semanticScore = Math.max(current?.semanticScore ?? 0, result.semanticScore)
+    const score = textScore * 0.62 + semanticScore * 0.38
+
+    rows.set(result.chunkId, {
+      ...result,
+      score,
+      textScore,
+      semanticScore,
+      searchMode: 'hybrid'
+    })
+  })
+
+  return sortByScore(Array.from(rows.values())).slice(0, limit)
+}
 
 export const openSqliteIndex = (vaultPath: string): SqliteIndex => {
   const database = new Database(join(vaultPath, '.brainlink', 'brainlink.db'))
@@ -181,8 +250,8 @@ export const openSqliteIndex = (vaultPath: string): SqliteIndex => {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       const insertChunk = database.prepare(`
-        INSERT INTO chunks (id, document_id, ordinal, content, token_count)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO chunks (id, document_id, ordinal, content, token_count, embedding_provider, embedding_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `)
       const insertChunkFts = database.prepare(`
         INSERT INTO chunks_fts (chunk_id, document_id, agent_id, title, content)
@@ -208,7 +277,15 @@ export const openSqliteIndex = (vaultPath: string): SqliteIndex => {
           )
 
           chunks.forEach((chunk) => {
-            insertChunk.run(chunk.id, chunk.documentId, chunk.ordinal, chunk.content, chunk.tokenCount)
+            insertChunk.run(
+              chunk.id,
+              chunk.documentId,
+              chunk.ordinal,
+              chunk.content,
+              chunk.tokenCount,
+              chunk.embeddingProvider,
+              JSON.stringify(chunk.embedding)
+            )
             insertChunkFts.run(chunk.id, chunk.documentId, document.agentId, document.title, chunk.content)
           })
         })
@@ -222,43 +299,92 @@ export const openSqliteIndex = (vaultPath: string): SqliteIndex => {
 
       transaction()
     },
-    search: (query, limit, agentId) => {
+    search: (query, limit, agentId, mode = 'hybrid', queryEmbedding = []) => {
+      const normalizedQuery = query.trim()
+
+      if (!normalizedQuery || limit <= 0) {
+        return []
+      }
+
       const normalizedAgentId = normalizeAgentFilter(agentId)
       const ftsQuery = toFtsQuery(query)
-      const agentFilter = normalizedAgentId ? 'AND documents.agent_id = ?' : ''
-      const params = normalizedAgentId ? [ftsQuery, normalizedAgentId, limit] : [ftsQuery, limit]
-      const rows = database
-        .prepare(
-          `
-          SELECT
-            documents.id AS document_id,
-            documents.agent_id AS agent_id,
-            documents.title AS title,
-            documents.path AS path,
-            chunks_fts.chunk_id AS chunk_id,
-            chunks_fts.content AS content,
-            bm25(chunks_fts) * -1 AS score,
-            documents.tags_json AS tags_json
-          FROM chunks_fts
-          JOIN documents ON documents.id = chunks_fts.document_id
-          WHERE chunks_fts MATCH ?
-          ${agentFilter}
-          ORDER BY bm25(chunks_fts)
-          LIMIT ?
-        `
-        )
-        .all(...params) as unknown as readonly SearchRow[]
+      const expandedLimit = Math.max(limit * 4, 24)
+      const ftsAgentFilter = normalizedAgentId ? 'AND documents.agent_id = ?' : ''
+      const ftsParams = normalizedAgentId ? [ftsQuery, normalizedAgentId, expandedLimit] : [ftsQuery, expandedLimit]
+      const ftsRows =
+        mode === 'semantic' || !ftsQuery
+          ? []
+          : (database
+              .prepare(
+                `
+                SELECT
+                  documents.id AS document_id,
+                  documents.agent_id AS agent_id,
+                  documents.title AS title,
+                  documents.path AS path,
+                  chunks_fts.chunk_id AS chunk_id,
+                  chunks_fts.content AS content,
+                  bm25(chunks_fts) * -1 AS score,
+                  documents.tags_json AS tags_json
+                FROM chunks_fts
+                JOIN documents ON documents.id = chunks_fts.document_id
+                WHERE chunks_fts MATCH ?
+                ${ftsAgentFilter}
+                ORDER BY bm25(chunks_fts)
+                LIMIT ?
+              `
+              )
+              .all(...ftsParams) as unknown as readonly SearchRow[])
+      const ftsResults = ftsRows.map((row, index) =>
+        toSearchResult(row, toTextScore(index, ftsRows.length), toTextScore(index, ftsRows.length), 0, 'fts')
+      )
+      const semanticAgentFilter = normalizedAgentId ? 'WHERE documents.agent_id = ?' : ''
+      const semanticRows =
+        mode === 'fts' || queryEmbedding.length === 0
+          ? []
+          : (database
+              .prepare(
+                `
+                SELECT
+                  documents.id AS document_id,
+                  documents.agent_id AS agent_id,
+                  documents.title AS title,
+                  documents.path AS path,
+                  chunks.id AS chunk_id,
+                  chunks.content AS content,
+                  documents.tags_json AS tags_json,
+                  chunks.embedding_json AS embedding_json
+                FROM chunks
+                JOIN documents ON documents.id = chunks.document_id
+                ${semanticAgentFilter}
+              `
+              )
+              .all(...(normalizedAgentId ? [normalizedAgentId] : [])) as unknown as readonly SearchRow[])
+      const semanticResults = sortByScore(
+        semanticRows
+          .map((row) => {
+            const semanticScore = Math.max(
+              0,
+              cosineSimilarity(
+                queryEmbedding,
+                parseJsonArray(row.embedding_json).filter((value): value is number => typeof value === 'number')
+              )
+            )
 
-      return rows.map((row) => ({
-        documentId: row.document_id,
-        agentId: row.agent_id,
-        title: row.title,
-        path: row.path,
-        chunkId: row.chunk_id,
-        content: row.content,
-        score: row.score,
-        tags: JSON.parse(row.tags_json) as readonly string[]
-      }))
+            return toSearchResult(row, semanticScore, 0, semanticScore, 'semantic')
+          })
+          .filter((result) => result.semanticScore > 0)
+      ).slice(0, expandedLimit)
+
+      if (mode === 'fts') {
+        return ftsResults.slice(0, limit)
+      }
+
+      if (mode === 'semantic') {
+        return semanticResults.slice(0, limit)
+      }
+
+      return mergeHybridResults(ftsResults, semanticResults, limit)
     },
     listLinks: (agentId) => {
       const normalizedAgentId = normalizeAgentFilter(agentId)

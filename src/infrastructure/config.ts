@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import type { BrainlinkConfig } from '../domain/types.js'
+import type { BrainlinkConfig, EmbeddingProviderName, SearchMode } from '../domain/types.js'
 
 export const defaultBrainlinkConfig: BrainlinkConfig = {
   vault: '.',
@@ -8,7 +8,8 @@ export const defaultBrainlinkConfig: BrainlinkConfig = {
   port: 4321,
   defaultSearchLimit: 10,
   defaultContextTokens: 2000,
-  embeddingProvider: 'none',
+  embeddingProvider: 'local',
+  defaultSearchMode: 'hybrid',
   chunkSize: 1200
 }
 
@@ -16,6 +17,15 @@ const configFilenames = ['brainlink.config.json', '.brainlink.json']
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const embeddingProviders: ReadonlySet<string> = new Set(['none', 'local'])
+const searchModes: ReadonlySet<string> = new Set(['fts', 'semantic', 'hybrid'])
+
+const sanitizeEmbeddingProvider = (value: unknown): EmbeddingProviderName =>
+  typeof value === 'string' && embeddingProviders.has(value) ? (value as EmbeddingProviderName) : defaultBrainlinkConfig.embeddingProvider
+
+export const sanitizeSearchMode = (value: unknown, fallback = defaultBrainlinkConfig.defaultSearchMode): SearchMode =>
+  typeof value === 'string' && searchModes.has(value) ? (value as SearchMode) : fallback
 
 const readJsonConfig = async (path: string): Promise<Partial<BrainlinkConfig>> => {
   try {
@@ -45,7 +55,8 @@ const sanitizeConfig = (value: Partial<BrainlinkConfig>): BrainlinkConfig => ({
       ? value.defaultContextTokens
       : defaultBrainlinkConfig.defaultContextTokens,
   chunkSize: typeof value.chunkSize === 'number' && value.chunkSize > 0 ? value.chunkSize : defaultBrainlinkConfig.chunkSize,
-  embeddingProvider: value.embeddingProvider === 'none' ? value.embeddingProvider : defaultBrainlinkConfig.embeddingProvider
+  embeddingProvider: sanitizeEmbeddingProvider(value.embeddingProvider),
+  defaultSearchMode: sanitizeSearchMode(value.defaultSearchMode)
 })
 
 export const loadBrainlinkConfig = async (cwd = process.cwd()): Promise<BrainlinkConfig> => {

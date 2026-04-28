@@ -64,15 +64,33 @@ describe('brainlink http server integration', () => {
       expect(page).toContain('<canvas id="graph"')
       expect(page).toContain('<select id="agent"')
 
-      const search = (await fetch(`${server.url}/api/search?q=jwt&limit=5`).then((response) => response.json())) as {
-        readonly results: readonly { readonly title: string }[]
+      const search = (await fetch(`${server.url}/api/search?q=jwt&limit=5&mode=hybrid`).then((response) => response.json())) as {
+        readonly mode: string
+        readonly results: readonly { readonly title: string; readonly searchMode: string }[]
       }
+      expect(search.mode).toBe('hybrid')
       expect(search.results[0]?.title).toBe('Auth Decision')
+      expect(search.results[0]?.searchMode).toBe('hybrid')
+
+      const semanticSearch = (await fetch(`${server.url}/api/search?q=authentication%20token&limit=5&mode=semantic`).then((response) =>
+        response.json()
+      )) as {
+        readonly results: readonly { readonly title: string; readonly searchMode: string; readonly semanticScore: number }[]
+      }
+      expect(semanticSearch.results[0]).toMatchObject({
+        title: 'Auth Decision',
+        searchMode: 'semantic'
+      })
+      expect(semanticSearch.results[0]?.semanticScore).toBeGreaterThan(0)
+
+      const invalidMode = await fetch(`${server.url}/api/search?q=jwt&mode=vector`)
+      expect(invalidMode.status).toBe(400)
 
       const context = (await fetch(`${server.url}/api/context?q=auth&limit=5&tokens=500`).then((response) =>
         response.json()
       )) as { readonly content: string }
       expect(context.content).toContain('Brainlink Context')
+      expect(context.content).toContain('Mode:')
 
       const stats = (await fetch(`${server.url}/api/stats`).then((response) => response.json())) as {
         readonly documentCount: number
@@ -95,6 +113,18 @@ describe('brainlink http server integration', () => {
         })
       }).then((response) => response.json())) as { readonly index: { readonly documentCount: number } }
       expect(created.index.documentCount).toBe(4)
+
+      const invalidNote = await fetch(`${server.url}/api/notes`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: '',
+          content: ''
+        })
+      })
+      expect(invalidNote.status).toBe(400)
     } finally {
       await server.close()
     }

@@ -106,7 +106,9 @@ export const splitIntoChunks = (documentId: string, content: string, maxCharacte
     documentId,
     ordinal,
     content: chunk,
-    tokenCount: estimateTokenCount(chunk)
+    tokenCount: estimateTokenCount(chunk),
+    embeddingProvider: 'none',
+    embedding: []
   }))
 }
 
@@ -132,9 +134,10 @@ export const parseMarkdownDocument = (input: ParseMarkdownDocumentInput): Knowle
 
 export const createIndexedDocument = (
   document: KnowledgeDocument,
-  titleToDocumentId: ReadonlyMap<string, string>
+  titleToDocumentId: ReadonlyMap<string, string>,
+  maxChunkCharacters = 1200
 ): IndexedDocument => {
-  const chunks = splitIntoChunks(document.id, document.content)
+  const chunks = splitIntoChunks(document.id, document.content, maxChunkCharacters)
   const links = document.links.map<KnowledgeLink>((toTitle) => ({
     fromDocumentId: document.id,
     toTitle,

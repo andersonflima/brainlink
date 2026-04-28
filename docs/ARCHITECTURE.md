@@ -34,6 +34,7 @@ src/
     context.ts
     graph-analysis.ts
     graph-layout.ts
+    embeddings.ts
     ids.ts
     markdown.ts
     tokens.ts
@@ -55,6 +56,8 @@ The domain layer contains pure knowledge rules:
 - extract `[[wiki links]]`
 - extract `#tags`
 - split documents into chunks
+- create deterministic local embeddings
+- calculate cosine similarity
 - estimate token counts
 - select context sections
 - format context packages
@@ -63,6 +66,7 @@ Important files:
 
 - `src/domain/markdown.ts`
 - `src/domain/context.ts`
+- `src/domain/embeddings.ts`
 - `src/domain/types.ts`
 
 ## Application
@@ -89,7 +93,7 @@ The infrastructure layer handles side effects:
 - writing Markdown notes
 - creating `.brainlink`
 - writing and querying SQLite
-- running full-text search
+- running FTS, semantic and hybrid retrieval
 
 SQLite is an index, not the canonical storage model.
 
@@ -101,17 +105,21 @@ read markdown files
   -> build agent-scoped title maps
   -> resolve links
   -> split chunks
+  -> create chunk embeddings
   -> reset SQLite index
   -> persist documents, chunks and links
   -> populate FTS records
+  -> persist embedding vectors
 ```
 
 ## Retrieval Flow
 
 ```txt
 question
-  -> FTS query
-  -> ranked chunks
+  -> selected mode: fts | semantic | hybrid
+  -> optional query embedding
+  -> FTS query and/or cosine similarity
+  -> ranked chunks with textScore and semanticScore
   -> token-budget selection
   -> Markdown context package
 ```
@@ -203,6 +211,7 @@ Query: question
 Source: note.md
 Tags: #tag
 Score: 0.000
+Mode: hybrid
 
 Relevant content
 ```
@@ -224,6 +233,7 @@ Rebuildable:
 
 - `.brainlink/brainlink.db`
 - FTS records
+- local embedding vectors
 - chunks
 - resolved links
 
@@ -235,7 +245,7 @@ Markdown keeps the system portable, inspectable, Git-friendly, and compatible wi
 
 ### SQLite As Local Index
 
-SQLite gives fast local search without forcing users to run external infrastructure.
+SQLite gives fast local search, local vector storage and rebuildable retrieval without forcing users to run external infrastructure.
 
 ### CLI First
 
@@ -249,6 +259,6 @@ Parsing, transformation, selection, and formatting are implemented as pure funct
 
 Useful next boundaries:
 
-- real `embedding-provider`
-- `semantic-retriever`
+- remote embedding providers
+- dedicated vector adapter
 - `graph-exporter`

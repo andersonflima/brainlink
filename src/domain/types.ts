@@ -19,6 +19,8 @@ export type KnowledgeChunk = {
   readonly ordinal: number
   readonly content: string
   readonly tokenCount: number
+  readonly embeddingProvider: EmbeddingProviderName
+  readonly embedding: readonly number[]
 }
 
 export type KnowledgeLink = {
@@ -41,6 +43,9 @@ export type SearchResult = {
   readonly chunkId: string
   readonly content: string
   readonly score: number
+  readonly textScore: number
+  readonly semanticScore: number
+  readonly searchMode: SearchMode
   readonly tags: readonly string[]
 }
 
@@ -91,6 +96,7 @@ export type ContextSection = {
   readonly path: string
   readonly content: string
   readonly score: number
+  readonly searchMode: SearchMode
   readonly tags: readonly string[]
 }
 
@@ -106,9 +112,14 @@ export type BrainlinkConfig = {
   readonly port: number
   readonly defaultSearchLimit: number
   readonly defaultContextTokens: number
-  readonly embeddingProvider: 'none'
+  readonly embeddingProvider: EmbeddingProviderName
+  readonly defaultSearchMode: SearchMode
   readonly chunkSize: number
 }
+
+export type EmbeddingProviderName = 'none' | 'local'
+
+export type SearchMode = 'fts' | 'semantic' | 'hybrid'
 
 export type AgentSummary = {
   readonly id: string

@@ -206,9 +206,16 @@ This scans Markdown files and rebuilds:
 blink search "jwt auth" --vault ./vault --limit 10
 blink search "jwt auth" --vault ./vault --json
 blink search "jwt auth" --vault ./vault --agent coding-agent --json
+blink search "authentication token policy" --vault ./vault --mode semantic --json
 ```
 
-This returns matching chunks with title, source path, score, and content.
+This returns matching chunks with title, source path, score, `textScore`, `semanticScore`, `searchMode`, and content.
+
+Search modes:
+
+- `hybrid`: default; combines SQLite FTS and local embedding similarity.
+- `fts`: lexical SQLite full-text search only.
+- `semantic`: local deterministic embedding similarity only.
 
 ### Build Agent Context
 
@@ -216,6 +223,7 @@ This returns matching chunks with title, source path, score, and content.
 blink context "how does authentication work?" --vault ./vault --limit 12 --tokens 2000
 blink context "how does authentication work?" --vault ./vault --json
 blink context "how does authentication work?" --vault ./vault --agent coding-agent --json
+blink context "how does authentication work?" --vault ./vault --agent coding-agent --mode hybrid --json
 ```
 
 This returns a Markdown context package optimized for prompt injection.
@@ -316,14 +324,18 @@ MCP tools:
 - `brainlink_graph`
 - `brainlink_links`
 - `brainlink_backlinks`
+- `brainlink_stats`
+- `brainlink_validate`
+- `brainlink_broken_links`
+- `brainlink_orphans`
 
 ### HTTP API
 
 ```txt
 GET  /api/graph
 GET  /api/graph-layout
-GET  /api/search?q=<query>&limit=10
-GET  /api/context?q=<query>&limit=12&tokens=2000
+GET  /api/search?q=<query>&limit=10&mode=hybrid
+GET  /api/context?q=<query>&limit=12&tokens=2000&mode=hybrid
 GET  /api/links
 GET  /api/backlinks?title=<title>
 GET  /api/stats
@@ -394,12 +406,12 @@ Weak retrieval usually means:
 - Notes are too large or unfocused.
 - Tags are missing.
 - The query is too generic.
-- Embeddings are needed for semantic matching.
+- The wrong retrieval mode was selected for the question.
 
 ## Current Limits
 
-- Search is based on SQLite FTS.
-- Embeddings have a provider boundary, but only `none` is implemented.
+- Search supports FTS, local semantic embeddings and hybrid ranking.
+- Local embeddings are deterministic and provider-free; remote embedding providers are not implemented yet.
 - MCP is stdio-only.
 - HTTP API is local and unauthenticated.
 - Watch mode depends on platform filesystem watcher behavior.

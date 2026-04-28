@@ -50,7 +50,17 @@ describe('brainlink mcp server integration', () => {
 
       const tools = await client.listTools()
       expect(tools.tools.map((tool) => tool.name)).toEqual(
-        expect.arrayContaining(['brainlink_add_note', 'brainlink_agents', 'brainlink_context', 'brainlink_graph'])
+        expect.arrayContaining([
+          'brainlink_add_note',
+          'brainlink_agents',
+          'brainlink_search',
+          'brainlink_context',
+          'brainlink_graph',
+          'brainlink_stats',
+          'brainlink_validate',
+          'brainlink_broken_links',
+          'brainlink_orphans'
+        ])
       )
 
       const added = parseToolText<{
@@ -81,6 +91,26 @@ describe('brainlink mcp server integration', () => {
         })) as ToolTextResult
       )
       expect(agents.agents).toEqual([{ id: 'coding-agent', documentCount: 1 }])
+
+      const search = parseToolText<{
+        readonly results: readonly { readonly title: string; readonly searchMode: string; readonly semanticScore: number }[]
+      }>(
+        (await client.callTool({
+          name: 'brainlink_search',
+          arguments: {
+            vault,
+            agent: 'coding-agent',
+            query: 'MCP memory tools',
+            limit: 5,
+            mode: 'semantic'
+          }
+        })) as ToolTextResult
+      )
+      expect(search.results[0]).toMatchObject({
+        title: 'MCP Runtime Policy',
+        searchMode: 'semantic'
+      })
+      expect(search.results[0]?.semanticScore).toBeGreaterThan(0)
 
       const context = parseToolText<{
         readonly content: string
@@ -117,6 +147,38 @@ describe('brainlink mcp server integration', () => {
           title: 'MCP Runtime Policy'
         })
       ])
+
+      const stats = parseToolText<{ readonly documentCount: number; readonly brokenLinkCount: number }>(
+        (await client.callTool({
+          name: 'brainlink_stats',
+          arguments: { vault, agent: 'coding-agent' }
+        })) as ToolTextResult
+      )
+      expect(stats).toMatchObject({ documentCount: 1, brokenLinkCount: 0 })
+
+      const validation = parseToolText<{ readonly ok: boolean }>(
+        (await client.callTool({
+          name: 'brainlink_validate',
+          arguments: { vault, agent: 'coding-agent' }
+        })) as ToolTextResult
+      )
+      expect(validation.ok).toBe(true)
+
+      const brokenLinks = parseToolText<{ readonly brokenLinks: readonly unknown[] }>(
+        (await client.callTool({
+          name: 'brainlink_broken_links',
+          arguments: { vault, agent: 'coding-agent' }
+        })) as ToolTextResult
+      )
+      expect(brokenLinks.brokenLinks).toHaveLength(0)
+
+      const orphans = parseToolText<{ readonly orphans: readonly { readonly title: string }[] }>(
+        (await client.callTool({
+          name: 'brainlink_orphans',
+          arguments: { vault, agent: 'coding-agent' }
+        })) as ToolTextResult
+      )
+      expect(orphans.orphans).toEqual([{ title: 'MCP Runtime Policy', path: 'agents/coding-agent/mcp-runtime-policy.md', tags: ['mcp', 'memory'] }])
     } finally {
       await client.close()
     }

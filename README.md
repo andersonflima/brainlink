@@ -48,7 +48,7 @@ LLMs do not have infinite context. Brainlink gives agents an external memory lay
 1. Durable knowledge is written as Markdown.
 2. Notes are connected with `[[wiki links]]`.
 3. Concepts are classified with `#tags`.
-4. Brainlink builds a local SQLite full-text index.
+4. Brainlink builds a local SQLite index with FTS records and local embeddings.
 5. Agents query the index before responding.
 6. Brainlink returns compact, source-backed context.
 
@@ -59,6 +59,7 @@ Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable
 - Local-first Markdown vault.
 - Obsidian-compatible `[[wiki links]]` and `#tags`.
 - Backlinks, broken-link reports, orphan detection and validation.
+- Full-text, semantic and hybrid retrieval modes.
 - Agent namespaces under `agents/<agent-id>/`.
 - CLI with machine-readable `--json` output.
 - Short CLI alias: `blink`.
@@ -156,6 +157,7 @@ If the context is weak, inspect raw search results:
 blink search "architecture conventions tests release" \
   --vault "$BLINK_VAULT" \
   --agent "$BLINK_AGENT" \
+  --mode hybrid \
   --limit 10 \
   --json
 ```
@@ -251,6 +253,7 @@ Rebuildable data:
 
 - `.brainlink/brainlink.db`
 - full-text records
+- local embedding vectors
 - chunks
 - resolved links
 - backlinks
@@ -288,6 +291,7 @@ Query a single namespace:
 
 ```bash
 blink search "typescript" --vault ./vault --agent coding-agent --json
+blink search "authentication token policy" --vault ./vault --agent coding-agent --mode semantic --json
 blink context "how should I change this module?" --vault ./vault --agent coding-agent
 blink graph --vault ./vault --agent coding-agent --json
 ```
@@ -378,7 +382,8 @@ Example tool input:
   "vault": "./vault",
   "agent": "coding-agent",
   "query": "typescript module boundaries",
-  "limit": 8
+  "limit": 8,
+  "mode": "hybrid"
 }
 ```
 
@@ -415,8 +420,8 @@ Routes:
 - `GET /api/agents`
 - `GET /api/graph`
 - `GET /api/graph-layout`
-- `GET /api/search?q=<query>&limit=10`
-- `GET /api/context?q=<query>&limit=12&tokens=2000`
+- `GET /api/search?q=<query>&limit=10&mode=hybrid`
+- `GET /api/context?q=<query>&limit=12&tokens=2000&mode=hybrid`
 - `GET /api/links`
 - `GET /api/backlinks?title=<title>`
 - `GET /api/stats`
@@ -430,8 +435,8 @@ Read routes accept `agent=<agent-id>`:
 
 ```txt
 /api/graph-layout?agent=coding-agent
-/api/search?q=typescript&agent=coding-agent
-/api/context?q=module-boundaries&agent=coding-agent
+/api/search?q=typescript&agent=coding-agent&mode=hybrid
+/api/context?q=module-boundaries&agent=coding-agent&mode=semantic
 ```
 
 Create a note through HTTP:
@@ -488,15 +493,23 @@ Lists indexed agent namespaces.
 ```bash
 blink search "query" --vault ./vault --limit 10
 blink search "query" --vault ./vault --agent coding-agent --json
+blink search "query" --vault ./vault --mode semantic --json
 ```
 
-Runs full-text search over indexed chunks.
+Runs retrieval over indexed chunks.
+
+Modes:
+
+- `hybrid`: default; combines SQLite FTS with local embedding similarity.
+- `fts`: exact lexical retrieval through SQLite FTS.
+- `semantic`: local deterministic embedding similarity only.
 
 ### `context`
 
 ```bash
 blink context "question" --vault ./vault --limit 12 --tokens 2000
 blink context "question" --vault ./vault --agent coding-agent --json
+blink context "question" --vault ./vault --agent coding-agent --mode hybrid --json
 ```
 
 Builds a compact context package for an agent.
@@ -607,6 +620,25 @@ When running through npm scripts, use `--silent` to keep stdout clean:
 npm run --silent dev -- context "question" --vault ./vault --json
 ```
 
+## Configuration
+
+Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current working directory.
+
+```json
+{
+  "vault": ".brainlink-vault",
+  "host": "127.0.0.1",
+  "port": 4321,
+  "defaultSearchLimit": 10,
+  "defaultContextTokens": 2000,
+  "embeddingProvider": "local",
+  "defaultSearchMode": "hybrid",
+  "chunkSize": 1200
+}
+```
+
+Use `"embeddingProvider": "none"` when you want FTS-only indexing.
+
 ## Note Format
 
 Brainlink supports Markdown with optional frontmatter:
@@ -697,8 +729,8 @@ Detailed notes:
 
 ## Current Limits
 
-- Search is full-text only.
-- Embeddings have a provider boundary, but only `none` is implemented.
+- Semantic search uses deterministic local embeddings, not a remote model provider.
+- `embeddingProvider` currently supports `local` and `none`.
 - Link resolution is title-based inside each agent namespace, with `shared` as fallback.
 - MCP is stdio-only.
 - HTTP API is local and unauthenticated.
@@ -709,12 +741,12 @@ Detailed notes:
 `0.1.0-alpha.0` is intended to prove the local-first memory loop:
 
 - Markdown as durable memory.
-- SQLite FTS as rebuildable retrieval index.
+- SQLite FTS plus local embeddings as rebuildable retrieval index.
 - CLI and MCP as the primary agent interfaces.
 - HTTP graph API and frontend as inspection tools.
 - Agent namespaces to avoid context mixing.
 
-The alpha is not trying to solve semantic retrieval yet. Embeddings, vector search, remote auth, advanced deduplication and graph editing are future milestones.
+The alpha includes local semantic retrieval. Remote embedding providers, remote auth, advanced deduplication and graph editing are future milestones.
 
 ## Security
 

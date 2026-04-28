@@ -10,6 +10,7 @@ import { listAgents } from './list-agents.js'
 import { listBacklinks, listLinks } from './list-links.js'
 import { searchKnowledge } from './search-knowledge.js'
 import { startVaultWatcher } from './watch-vault.js'
+import { loadBrainlinkConfig, sanitizeSearchMode } from '../infrastructure/config.js'
 
 type StartServerInput = {
   readonly vaultPath: string
@@ -40,11 +41,44 @@ const parsePositiveInteger = (value: string | null, fallback: number): number =>
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+type HttpError = Error & {
+  readonly statusCode: number
+}
+
+const createHttpError = (statusCode: number, message: string): HttpError =>
+  Object.assign(new Error(message), { statusCode })
+
+const isHttpError = (error: unknown): error is HttpError =>
+  error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number'
+
+const maxRequestBodyBytes = 1024 * 1024
+
+const readSearchMode = async (url: URL): Promise<ReturnType<typeof sanitizeSearchMode>> => {
+  const config = await loadBrainlinkConfig()
+
+  return sanitizeSearchMode(url.searchParams.get('mode'), config.defaultSearchMode)
+}
+
+const hasInvalidSearchMode = (url: URL): boolean => {
+  const mode = url.searchParams.get('mode')
+
+  return mode !== null && !['fts', 'semantic', 'hybrid'].includes(mode)
+}
+
 const readRequestJson = async (request: IncomingMessage): Promise<unknown> =>
   new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
+    let size = 0
 
     request.on('data', (chunk: Buffer) => {
+      size += chunk.length
+
+      if (size > maxRequestBodyBytes) {
+        reject(createHttpError(413, 'Request body too large.'))
+        request.destroy()
+        return
+      }
+
       chunks.push(chunk)
     })
     request.on('end', () => {
@@ -58,7 +92,7 @@ const readRequestJson = async (request: IncomingMessage): Promise<unknown> =>
       try {
         resolve(JSON.parse(body))
       } catch (error) {
-        reject(error)
+        reject(createHttpError(400, 'Invalid JSON body.'))
       }
     })
     request.on('error', reject)
@@ -910,9 +944,14 @@ const route = async (request: IncomingMessage, url: URL, vaultPath: string) => {
   if (isReadMethod(request) && url.pathname === '/api/search') {
     const query = url.searchParams.get('q') ?? ''
     const limit = parsePositiveInteger(url.searchParams.get('limit'), 10)
+    const mode = await readSearchMode(url)
+
+    if (hasInvalidSearchMode(url)) {
+      return createResponse(createJsonResponse({ error: 'Invalid mode. Use fts, semantic or hybrid.' }), 400, contentTypes['.json'])
+    }
 
     return createResponse(
-      createJsonResponse({ query, agent: readAgentQuery(url), limit, results: await searchKnowledge(vaultPath, query, limit, readAgentQuery(url)) }),
+      createJsonResponse({ query, agent: readAgentQuery(url), limit, mode, results: await searchKnowledge(vaultPath, query, limit, readAgentQuery(url), mode) }),
       200,
       contentTypes['.json']
     )
@@ -922,8 +961,13 @@ const route = async (request: IncomingMessage, url: URL, vaultPath: string) => {
     const query = url.searchParams.get('q') ?? ''
     const limit = parsePositiveInteger(url.searchParams.get('limit'), 12)
     const tokens = parsePositiveInteger(url.searchParams.get('tokens'), 2000)
+    const mode = await readSearchMode(url)
 
-    return createResponse(createJsonResponse(await buildContextPackage(vaultPath, query, limit, tokens, readAgentQuery(url))), 200, contentTypes['.json'])
+    if (hasInvalidSearchMode(url)) {
+      return createResponse(createJsonResponse({ error: 'Invalid mode. Use fts, semantic or hybrid.' }), 400, contentTypes['.json'])
+    }
+
+    return createResponse(createJsonResponse(await buildContextPackage(vaultPath, query, limit, tokens, readAgentQuery(url), mode)), 200, contentTypes['.json'])
   }
 
   if (isReadMethod(request) && url.pathname === '/api/links') {
@@ -959,8 +1003,8 @@ const route = async (request: IncomingMessage, url: URL, vaultPath: string) => {
   if (request.method === 'POST' && url.pathname === '/api/notes') {
     const body = await readRequestJson(request)
 
-    if (!isRecord(body) || typeof body.title !== 'string' || typeof body.content !== 'string') {
-      return createResponse(createJsonResponse({ error: 'Expected JSON body with title and content.' }), 400, contentTypes['.json'])
+    if (!isRecord(body) || typeof body.title !== 'string' || typeof body.content !== 'string' || !body.title.trim() || !body.content.trim()) {
+      return createResponse(createJsonResponse({ error: 'Expected JSON body with non-empty title and content.' }), 400, contentTypes['.json'])
     }
 
     const agent = typeof body.agent === 'string' ? body.agent : undefined
@@ -997,8 +1041,9 @@ export const startServer = async (input: StartServerInput): Promise<RunningServe
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error)
-        response.writeHead(500, { 'content-type': contentType })
-        response.end(message)
+        const statusCode = isHttpError(error) ? error.statusCode : 500
+        response.writeHead(statusCode, { 'content-type': contentTypes['.json'] })
+        response.end(createJsonResponse({ error: message }))
       })
   })
 
