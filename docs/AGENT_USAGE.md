@@ -308,26 +308,17 @@ blink watch --vault ./vault
 
 This process watches Markdown files and rebuilds the index after changes.
 
-### Start MCP
+### Use From An External MCP Server
 
-```bash
-blink mcp
-```
+Brainlink does not ship an MCP server. An MCP server can use Brainlink by executing the CLI and parsing `--json`.
 
-MCP tools:
+Recommended wrapper mapping:
 
-- `brainlink_index`
-- `brainlink_add_note`
-- `brainlink_agents`
-- `brainlink_search`
-- `brainlink_context`
-- `brainlink_graph`
-- `brainlink_links`
-- `brainlink_backlinks`
-- `brainlink_stats`
-- `brainlink_validate`
-- `brainlink_broken_links`
-- `brainlink_orphans`
+- `brainlink_context`: run `blink context "<query>" --vault <vault> --agent <agent> --mode hybrid --json`.
+- `brainlink_search`: run `blink search "<query>" --vault <vault> --agent <agent> --mode hybrid --json`.
+- `brainlink_add_note`: run `blink add "<title>" --vault <vault> --agent <agent> --content "<content>" --json`, then `blink index`.
+- `brainlink_graph`: run `blink graph --vault <vault> --agent <agent> --json`.
+- `brainlink_validate`: run `blink validate --vault <vault> --agent <agent> --json`.
 
 ### HTTP API
 
@@ -412,6 +403,6 @@ Weak retrieval usually means:
 
 - Search supports FTS, local semantic embeddings and hybrid ranking.
 - Local embeddings are deterministic and provider-free; remote embedding providers are not implemented yet.
-- MCP is stdio-only.
+- MCP integration is external: wrap the CLI from your own MCP server.
 - HTTP API is local and unauthenticated.
 - Watch mode depends on platform filesystem watcher behavior.

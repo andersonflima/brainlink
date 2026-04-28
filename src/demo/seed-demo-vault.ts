@@ -100,7 +100,7 @@ const mocNotes: readonly DemoNote[] = [
     'map',
     ['moc', 'architecture'],
     'Mapa das decisoes arquiteturais do Brainlink.',
-    ['Brainlink Architecture', 'Markdown Source Of Truth ADR', 'SQLite Derived Index ADR', 'CLI First ADR', 'HTTP Local API ADR', 'MCP Adapter ADR']
+    ['Brainlink Architecture', 'Markdown Source Of Truth ADR', 'SQLite Derived Index ADR', 'CLI First ADR', 'HTTP Local API ADR', 'External MCP Wrapper ADR']
   ),
   note(
     '00-maps/moc-operations.md',
@@ -123,15 +123,15 @@ const mocNotes: readonly DemoNote[] = [
     'MOC Security',
     'map',
     ['moc', 'security'],
-    'Mapa de fronteiras locais, privacidade e exposicao HTTP/MCP.',
-    ['Security Boundary', 'Local First Boundary', 'HTTP Exposure Risk', 'MCP Tool Boundary', 'Sensitive Memory Policy']
+    'Mapa de fronteiras locais, privacidade e exposicao HTTP.',
+    ['Security Boundary', 'Local First Boundary', 'HTTP Exposure Risk', 'External Tool Boundary', 'Sensitive Memory Policy']
   )
 ]
 
 const conceptNotes: readonly DemoNote[] = [
   note(conceptPath('Brainlink Architecture'), 'Brainlink Architecture', 'concept', ['architecture', 'brainlink'], 'Arquitetura em camadas para transformar Markdown em memoria recuperavel.', ['Markdown Vault', 'SQLite Index', 'Graph Explorer', 'Context Builder', 'MOC Architecture']),
   note(conceptPath('HTTP API'), 'HTTP API', 'concept', ['http', 'api'], 'API local para graph, graph-layout, search, context, links, backlinks, stats e indexacao.', ['HTTP Local API ADR', 'Graph Explorer', 'Security Boundary', 'Runbook Start Graph Server']),
-  note(conceptPath('MCP Integration'), 'MCP Integration', 'concept', ['mcp', 'integration'], 'Adaptador MCP stdio que expoe Brainlink como ferramentas para agentes compativeis.', ['MCP Adapter ADR', 'Agent Runtime Loop', 'Tool Use Policy', 'Security Boundary']),
+  note(conceptPath('External MCP Wrapper'), 'External MCP Wrapper', 'concept', ['mcp', 'integration'], 'Servidor MCP externo pode chamar o CLI Brainlink e consumir JSON.', ['External MCP Wrapper ADR', 'Agent Runtime Loop', 'Tool Use Policy', 'Security Boundary']),
   note(conceptPath('Markdown Vault'), 'Markdown Vault', 'concept', ['markdown', 'vault'], 'Camada duravel e editavel por humanos.', ['Markdown Source Of Truth ADR', 'Obsidian Compatibility', 'Backlink Strategy', 'Runbook Add Memory']),
   note(conceptPath('SQLite Index'), 'SQLite Index', 'concept', ['sqlite', 'index'], 'Indice local reconstruivel para busca, chunks e links.', ['SQLite Derived Index ADR', 'Retrieval Pipeline', 'Graph Explorer', 'Runbook Reindex Vault']),
   note(conceptPath('Graph Explorer'), 'Graph Explorer', 'concept', ['graph', 'ui'], 'Frontend para navegar nos, vinculos, conteudo, tags e backlinks.', ['HTTP Local API ADR', 'Backlink Strategy', 'Knowledge Graph Hygiene', 'MOC Brainlink']),
@@ -161,9 +161,9 @@ const conceptNotes: readonly DemoNote[] = [
 const architectureNotes: readonly DemoNote[] = [
   note(architecturePath('Markdown Source Of Truth ADR'), 'Markdown Source Of Truth ADR', 'adr', ['adr', 'markdown'], 'Decisao: Markdown e a fonte canonica do conhecimento.', ['Markdown Vault', 'Vault Portability', 'Obsidian Compatibility', 'Brainlink Architecture']),
   note(architecturePath('SQLite Derived Index ADR'), 'SQLite Derived Index ADR', 'adr', ['adr', 'sqlite'], 'Decisao: SQLite e indice derivado e descartavel.', ['SQLite Index', 'Markdown Source Of Truth ADR', 'Retrieval Pipeline']),
-  note(architecturePath('CLI First ADR'), 'CLI First ADR', 'adr', ['adr', 'cli'], 'Decisao: CLI e primeira superficie de integracao por ser simples para agentes.', ['Tool Use Policy', 'MCP Adapter ADR', 'HTTP Local API ADR']),
+  note(architecturePath('CLI First ADR'), 'CLI First ADR', 'adr', ['adr', 'cli'], 'Decisao: CLI e primeira superficie de integracao por ser simples para agentes.', ['Tool Use Policy', 'External MCP Wrapper ADR', 'HTTP Local API ADR']),
   note(architecturePath('HTTP Local API ADR'), 'HTTP Local API ADR', 'adr', ['adr', 'http'], 'Decisao: HTTP API local alimenta frontend e agentes locais.', ['HTTP API', 'Graph Explorer', 'Security Boundary']),
-  note(architecturePath('MCP Adapter ADR'), 'MCP Adapter ADR', 'adr', ['adr', 'mcp'], 'Decisao: MCP expõe ferramentas de memoria para clientes compativeis.', ['MCP Integration', 'Agent Runtime Loop', 'Tool Use Policy']),
+  note(architecturePath('External MCP Wrapper ADR'), 'External MCP Wrapper ADR', 'adr', ['adr', 'mcp'], 'Decisao: MCP fica fora do Brainlink e usa o CLI com saida JSON.', ['External MCP Wrapper', 'Agent Runtime Loop', 'Tool Use Policy']),
   note(architecturePath('Watcher Indexing ADR'), 'Watcher Indexing ADR', 'adr', ['adr', 'watcher'], 'Decisao: watcher reindexa Markdown alterado para feedback quase realtime.', ['Watcher Indexing', 'Graph Explorer', 'Runbook Start Graph Server']),
   note(architecturePath('Graph Read Only ADR'), 'Graph Read Only ADR', 'adr', ['adr', 'graph'], 'Decisao: grafo visual e inicialmente read-only para preservar Markdown como interface de escrita.', ['Graph Explorer', 'Markdown Vault', 'HTTP API']),
   note(architecturePath('JSON Output ADR'), 'JSON Output ADR', 'adr', ['adr', 'json'], 'Decisao: comandos finitos devem oferecer JSON para agentes.', ['CLI First ADR', 'Agent Read Policy', 'HTTP API']),
@@ -178,7 +178,7 @@ const agentNotes: readonly DemoNote[] = [
   note(agentPath('Brainlink Agent Contract'), 'Brainlink Agent Contract', 'agent', ['agent', 'memory'], 'Agentes consultam Brainlink antes de responder perguntas dependentes de memoria.', ['Context Builder', 'Brainlink Architecture', 'Memory Quality Rules', 'Source Grounding']),
   note(agentPath('Agent Read Policy'), 'Agent Read Policy', 'policy', ['agent', 'read'], 'Antes de responder, agente deve recuperar contexto e avaliar qualidade das fontes.', ['Context Builder', 'Retrieval Trace', 'Source Grounding', 'Context Quality Rubric']),
   note(agentPath('Agent Write Policy'), 'Agent Write Policy', 'policy', ['agent', 'write'], 'Agente so deve salvar memoria duravel, clara, linkada e com tags.', ['Memory Quality Rules', 'Atomic Note', 'Runbook Add Memory', 'Memory Lifecycle']),
-  note(agentPath('Tool Use Policy'), 'Tool Use Policy', 'policy', ['tools', 'policy'], 'Ferramentas devem reduzir incerteza ou executar acao verificavel.', ['Agent Runtime Loop', 'MCP Integration', 'HTTP API']),
+  note(agentPath('Tool Use Policy'), 'Tool Use Policy', 'policy', ['tools', 'policy'], 'Ferramentas devem reduzir incerteza ou executar acao verificavel.', ['Agent Runtime Loop', 'External MCP Wrapper', 'HTTP API']),
   note(agentPath('Research Agent Persona'), 'Research Agent Persona', 'persona', ['agent', 'research'], 'Persona para investigar conhecimento existente antes de propor mudanca.', ['Agent Read Policy', 'Retrieval Pipeline', 'Source Grounding']),
   note(agentPath('Coding Agent Persona'), 'Coding Agent Persona', 'persona', ['agent', 'coding'], 'Persona para alterar codigo usando contexto do vault e validacao automatizada.', ['Agent Runtime Loop', 'Tool Use Policy', 'Evaluation Checklist']),
   note(agentPath('Documentation Agent Persona'), 'Documentation Agent Persona', 'persona', ['agent', 'docs'], 'Persona para consolidar conhecimento em notas atomicas e MOCs.', ['Agent Write Policy', 'Atomic Note', 'MOC Brainlink']),
@@ -228,8 +228,8 @@ const evaluationNotes: readonly DemoNote[] = [
 const securityNotes: readonly DemoNote[] = [
   note(securityPath('Security Boundary'), 'Security Boundary', 'security', ['security'], 'Define fronteiras de privacidade local.', ['Local First Boundary', 'HTTP Exposure Risk', 'Sensitive Memory Policy']),
   note(securityPath('Local First Boundary'), 'Local First Boundary', 'security', ['localfirst'], 'Dados ficam locais por padrao e Markdown permanece inspecionavel.', ['Markdown Vault', 'Vault Portability', 'Security Boundary']),
-  note(securityPath('HTTP Exposure Risk'), 'HTTP Exposure Risk', 'security', ['http', 'risk'], 'Expor HTTP fora do localhost exige autenticacao.', ['HTTP API', 'Security Boundary', 'MCP Tool Boundary']),
-  note(securityPath('MCP Tool Boundary'), 'MCP Tool Boundary', 'security', ['mcp', 'boundary'], 'Ferramentas MCP devem operar apenas no vault permitido.', ['MCP Integration', 'Tool Use Policy', 'Security Boundary']),
+  note(securityPath('HTTP Exposure Risk'), 'HTTP Exposure Risk', 'security', ['http', 'risk'], 'Expor HTTP fora do localhost exige autenticacao.', ['HTTP API', 'Security Boundary', 'External Tool Boundary']),
+  note(securityPath('External Tool Boundary'), 'External Tool Boundary', 'security', ['tools', 'boundary'], 'Ferramentas externas devem operar apenas no vault permitido.', ['External MCP Wrapper', 'Tool Use Policy', 'Security Boundary']),
   note(securityPath('Sensitive Memory Policy'), 'Sensitive Memory Policy', 'security', ['sensitive', 'memory'], 'Informacoes sensiveis exigem cuidado antes de persistir.', ['User Preference Memory', 'Agent Write Policy', 'Security Boundary']),
   note(securityPath('Data Retention Policy'), 'Data Retention Policy', 'security', ['retention'], 'Memorias antigas devem poder expirar, ser revisadas ou consolidadas.', ['Memory Lifecycle', 'Sensitive Memory Policy', 'Memory Review Cadence'])
 ]
@@ -246,7 +246,7 @@ const multiAgentNotes: readonly DemoNote[] = [
   agentMemoryNote('coding-agent', 'Coding Agent Memory Map', 'map', ['agent', 'coding', 'moc'], 'Mapa privado do coding-agent para decisoes de implementacao, testes e refatoracao.', ['Coding Agent TypeScript Policy', 'Coding Agent Functional Refactor Policy', 'Coding Agent Test Strategy', 'Coding Agent Release Checklist', 'Brainlink Architecture']),
   agentMemoryNote('coding-agent', 'Coding Agent TypeScript Policy', 'policy', ['agent', 'coding', 'typescript'], 'Preferir fronteiras tipadas, modelos imutaveis e APIs explicitas em TypeScript.', ['Functional Core ADR', 'Coding Agent Functional Refactor Policy', 'Coding Agent Test Strategy']),
   agentMemoryNote('coding-agent', 'Coding Agent Functional Refactor Policy', 'policy', ['agent', 'coding', 'functional'], 'Mudancas devem manter nucleo funcional, reduzir mutacao acidental e preservar adapters finos.', ['Functional Core ADR', 'Brainlink Architecture', 'Coding Agent TypeScript Policy']),
-  agentMemoryNote('coding-agent', 'Coding Agent Test Strategy', 'runbook', ['agent', 'coding', 'test'], 'Para alteracoes de memoria, testar parser, indexacao, CLI, server e contratos MCP quando a borda mudar.', ['Evaluation Checklist', 'Retrieval Regression Test', 'Coding Agent Release Checklist']),
+  agentMemoryNote('coding-agent', 'Coding Agent Test Strategy', 'runbook', ['agent', 'coding', 'test'], 'Para alteracoes de memoria, testar parser, indexacao, CLI, server e contrato JSON quando a borda mudar.', ['Evaluation Checklist', 'Retrieval Regression Test', 'Coding Agent Release Checklist']),
   agentMemoryNote('coding-agent', 'Coding Agent Release Checklist', 'runbook', ['agent', 'coding', 'release'], 'Antes de release: build, testes, pack smoke, docs e sem publish acidental.', ['CLI Automation', 'Runbook Reindex Vault', 'Coding Agent Test Strategy']),
 
   agentMemoryNote('research-agent', 'Research Agent Memory Map', 'map', ['agent', 'research', 'moc'], 'Mapa privado do research-agent para formular perguntas, validar fontes e gerar sinteses.', ['Research Agent Query Plan', 'Research Agent Source Review', 'Research Agent Synthesis Policy', 'Source Grounding']),

@@ -4,7 +4,7 @@ Local-first memory and knowledge graph for AI agents.
 
 Brainlink turns a folder of Markdown files into a searchable, link-aware memory layer that agents can use before answering, planning, coding, documenting or handing work to another agent.
 
-It is inspired by Obsidian-style knowledge bases: plain Markdown, `[[wiki links]]`, backlinks, tags and graph navigation. The difference is that Brainlink is built for automation first: CLI, JSON output, MCP tools, local HTTP API and a graph frontend.
+It is inspired by Obsidian-style knowledge bases: plain Markdown, `[[wiki links]]`, backlinks, tags and graph navigation. The difference is that Brainlink is built for automation first: CLI, JSON output, local HTTP API and a graph frontend.
 
 ## Purpose
 
@@ -39,7 +39,7 @@ Brainlink improves agent behavior by giving them a repeatable memory workflow:
 - **Grounded answers:** context packages include source paths, titles, tags and relevant excerpts.
 - **Safer collaboration:** agent namespaces prevent private context from different agents being mixed accidentally.
 - **Inspectable memory:** humans can open the vault as plain Markdown or in Obsidian-like tools.
-- **Automation-ready output:** CLI commands support `--json`, and MCP tools expose the same capabilities to compatible clients.
+- **Automation-ready output:** CLI commands support `--json`, so agents and external tool servers can consume stable machine-readable responses.
 
 ## Why
 
@@ -63,7 +63,7 @@ Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable
 - Agent namespaces under `agents/<agent-id>/`.
 - CLI with machine-readable `--json` output.
 - Short CLI alias: `blink`.
-- MCP stdio server for compatible agents and IDEs.
+- Compatible with MCP servers that execute local CLI commands.
 - Local HTTP API.
 - Realtime graph UI with agent selector and colored knowledge groups.
 - Demo vault generator.
@@ -304,53 +304,13 @@ Link resolution is scoped:
 
 This allows `coding-agent` and `research-agent` to both have a note named `Architecture` without contaminating each other's private memory.
 
-## MCP
+## MCP Server Integration
 
-Start Brainlink as an MCP stdio server:
+Brainlink is not an MCP server. It is a CLI-first memory engine.
 
-```bash
-blink mcp
-```
+An MCP server can use Brainlink by spawning `blink` or `brainlink` as a subprocess and reading `--json` output. This keeps Brainlink decoupled from any specific MCP SDK while still making it usable by MCP-compatible agents.
 
-Use this command in any MCP-compatible client that can launch a local stdio server.
-
-Example client configuration shape:
-
-```json
-{
-  "mcpServers": {
-    "brainlink": {
-      "command": "blink",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Claude Desktop style config:
-
-```json
-{
-  "mcpServers": {
-    "brainlink": {
-      "command": "blink",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Cursor or agent runtime style config is the same whenever the client supports local stdio MCP servers:
-
-```json
-{
-  "name": "brainlink",
-  "command": "blink",
-  "args": ["mcp"]
-}
-```
-
-Codex or shell-based agents can use the CLI directly when MCP configuration is unavailable:
+Minimum integration contract:
 
 ```bash
 blink context "<task>" --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --json
@@ -358,34 +318,38 @@ blink add "Decision Title" --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --conte
 blink index --vault "$BLINK_VAULT"
 ```
 
-Available MCP tools:
+Example Node.js wrapper inside an external MCP server:
 
-- `brainlink_index`
-- `brainlink_add_note`
-- `brainlink_agents`
-- `brainlink_search`
-- `brainlink_context`
-- `brainlink_graph`
-- `brainlink_links`
-- `brainlink_backlinks`
-- `brainlink_stats`
-- `brainlink_validate`
-- `brainlink_broken_links`
-- `brainlink_orphans`
+```js
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 
-Most read tools accept `vault` and `agent` arguments.
+const execFileAsync = promisify(execFile)
 
-Example tool input:
+export const brainlinkContext = async ({ vault, agent, query }) => {
+  const { stdout } = await execFileAsync('blink', [
+    'context',
+    query,
+    '--vault',
+    vault,
+    '--agent',
+    agent,
+    '--mode',
+    'hybrid',
+    '--json'
+  ])
 
-```json
-{
-  "vault": "./vault",
-  "agent": "coding-agent",
-  "query": "typescript module boundaries",
-  "limit": 8,
-  "mode": "hybrid"
+  return JSON.parse(stdout)
 }
 ```
+
+Recommended MCP tools exposed by the external server:
+
+- `brainlink_context`: calls `blink context ... --json`.
+- `brainlink_search`: calls `blink search ... --json`.
+- `brainlink_add_note`: calls `blink add ... --json`, then `blink index`.
+- `brainlink_graph`: calls `blink graph ... --json`.
+- `brainlink_validate`: calls `blink validate ... --json`.
 
 ## Graph UI
 
@@ -590,14 +554,6 @@ blink watch --vault ./vault
 
 Watches Markdown files and rebuilds the index when notes change.
 
-### `mcp`
-
-```bash
-blink mcp
-```
-
-Starts the MCP stdio server.
-
 ### `server`
 
 ```bash
@@ -732,7 +688,7 @@ Detailed notes:
 - Semantic search uses deterministic local embeddings, not a remote model provider.
 - `embeddingProvider` currently supports `local` and `none`.
 - Link resolution is title-based inside each agent namespace, with `shared` as fallback.
-- MCP is stdio-only.
+- No embedded MCP server is shipped; MCP integration is done by external servers wrapping the CLI.
 - HTTP API is local and unauthenticated.
 - Watch mode depends on the platform filesystem watcher.
 
@@ -742,7 +698,7 @@ Detailed notes:
 
 - Markdown as durable memory.
 - SQLite FTS plus local embeddings as rebuildable retrieval index.
-- CLI and MCP as the primary agent interfaces.
+- CLI as the primary agent interface.
 - HTTP graph API and frontend as inspection tools.
 - Agent namespaces to avoid context mixing.
 

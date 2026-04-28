@@ -22,7 +22,6 @@ src/
     list-agents.ts
     list-links.ts
     search-knowledge.ts
-    start-mcp-server.ts
     start-server.ts
     watch-vault.ts
 
@@ -80,7 +79,6 @@ The application layer coordinates use cases:
 - list links
 - list backlinks
 - start HTTP graph/API server
-- start MCP stdio server
 - watch vault changes
 
 Application code depends on domain rules and infrastructure interfaces.
@@ -149,17 +147,20 @@ HTTP request
 
 The HTTP API is local-first and unauthenticated. It is meant for local agents, browser UI, and development workflows.
 
-## MCP Flow
+## External MCP Flow
+
+Brainlink does not contain an MCP server. MCP compatibility is achieved by an external MCP server wrapping the CLI.
 
 ```txt
 MCP client
-  -> stdio transport
-  -> Brainlink MCP tools
-  -> application use cases
-  -> JSON text response
+  -> external MCP server
+  -> child_process execFile("blink", ["context", ..., "--json"])
+  -> Brainlink CLI
+  -> application use case
+  -> JSON stdout
 ```
 
-MCP tools intentionally reuse the same application use cases as the CLI and HTTP server.
+This keeps the package CLI-first and avoids coupling the core project to one MCP SDK.
 
 ## Link Resolution
 
@@ -249,7 +250,7 @@ SQLite gives fast local search, local vector storage and rebuildable retrieval w
 
 ### CLI First
 
-The CLI is the smallest useful integration surface for agents. MCP and HTTP are adapters around the same application use cases.
+The CLI is the smallest useful integration surface for agents. HTTP is a local inspection adapter, and MCP can be implemented outside this package by wrapping the CLI.
 
 ### Functional Core
 

@@ -9,7 +9,6 @@ import { indexVault } from '../application/index-vault.js'
 import { listAgents } from '../application/list-agents.js'
 import { listBacklinks, listLinks } from '../application/list-links.js'
 import { searchKnowledge } from '../application/search-knowledge.js'
-import { startMcpServer } from '../application/start-mcp-server.js'
 import { startServer } from '../application/start-server.js'
 import { startVaultWatcher } from '../application/watch-vault.js'
 import { loadBrainlinkConfig, sanitizeSearchMode } from '../infrastructure/config.js'
@@ -338,13 +337,6 @@ program
       watcher.close()
       process.exit(0)
     })
-  })
-
-program
-  .command('mcp')
-  .description('start the Brainlink MCP server over stdio')
-  .action(async () => {
-    await startMcpServer()
   })
 
 program
