@@ -511,36 +511,17 @@ const elements = {
 
 const agentQuery = () => state.agentId ? '?agent=' + encodeURIComponent(state.agentId) : ''
 
-const segmentPalette = [
-  '#5fb3ff',
-  '#78d98f',
-  '#f2c14e',
-  '#ff8a65',
-  '#b084f5',
-  '#4dd0c8',
-  '#f06fae',
-  '#a3b86c',
-  '#d88c5a',
-  '#8fa7ff'
-]
-
-const hashText = value => Array.from(String(value)).reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 0)
-
-const segmentColor = node => {
-  const segment = node.segment || node.group || 'default'
-  const index = Math.abs(hashText(segment)) % segmentPalette.length
-
-  return segmentPalette[index]
-}
-
-const hexToRgba = (hex, alpha) => {
-  const normalized = hex.replace('#', '')
-  const value = Number.parseInt(normalized, 16)
-  const red = (value >> 16) & 255
-  const green = (value >> 8) & 255
-  const blue = value & 255
-
-  return 'rgba(' + red + ', ' + green + ', ' + blue + ', ' + alpha + ')'
+const graphTheme = {
+  node: '#aeb8c5',
+  nodeSelected: '#f3f7fb',
+  nodeHover: '#cbd5e1',
+  nodeHalo: 'rgba(203, 213, 225, 0.14)',
+  nodeHaloActive: 'rgba(243, 247, 251, 0.2)',
+  nodeStroke: '#0d0f12',
+  nodeStrokeActive: '#ffffff',
+  edge: 'rgba(153, 165, 181, 0.16)',
+  edgeActive: 'rgba(226, 232, 240, 0.52)',
+  label: '#edf2f7'
 }
 
 const resize = () => {
@@ -690,11 +671,10 @@ const render = now => {
 
   visibleEdges().forEach(edge => {
     const selectedEdge = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
-    const selectedColor = state.selected ? segmentColor(state.selected) : segmentColor(edge.sourceNode)
     ctx.beginPath()
     ctx.moveTo(edge.sourceNode.x, edge.sourceNode.y)
     ctx.lineTo(edge.targetNode.x, edge.targetNode.y)
-    ctx.strokeStyle = selectedEdge ? hexToRgba(selectedColor, 0.58) : 'rgba(153, 165, 181, 0.18)'
+    ctx.strokeStyle = selectedEdge ? graphTheme.edgeActive : graphTheme.edge
     ctx.lineWidth = selectedEdge ? 1.8 : 1
     ctx.stroke()
   })
@@ -703,21 +683,20 @@ const render = now => {
     const radius = nodeRadius(node)
     const isSelected = state.selected?.id === node.id
     const isHovered = state.hovered?.id === node.id
-    const color = segmentColor(node)
     ctx.beginPath()
     ctx.arc(node.x, node.y, radius + (isSelected ? 7 : isHovered ? 4 : 0), 0, Math.PI * 2)
-    ctx.fillStyle = isSelected ? hexToRgba(color, 0.26) : isHovered ? hexToRgba(color, 0.18) : hexToRgba(color, 0.08)
+    ctx.fillStyle = isSelected || isHovered ? graphTheme.nodeHaloActive : graphTheme.nodeHalo
     ctx.fill()
     ctx.beginPath()
     ctx.arc(node.x, node.y, radius, 0, Math.PI * 2)
-    ctx.fillStyle = color
+    ctx.fillStyle = isSelected ? graphTheme.nodeSelected : isHovered ? graphTheme.nodeHover : graphTheme.node
     ctx.fill()
     ctx.lineWidth = isSelected ? 2.6 : 1.5
-    ctx.strokeStyle = isSelected ? '#edf2f7' : '#0d0f12'
+    ctx.strokeStyle = isSelected ? graphTheme.nodeStrokeActive : graphTheme.nodeStroke
     ctx.stroke()
 
     if (isSelected || isHovered || state.transform.scale > 1.18 || state.nodes.length <= 25) {
-      ctx.fillStyle = '#edf2f7'
+      ctx.fillStyle = graphTheme.label
       ctx.font = '12px Inter, system-ui, sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
