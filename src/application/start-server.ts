@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage } from 'node:http'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { extname } from 'node:path'
 import { addNote } from './add-note.js'
 import { getBrokenLinksReport, getOrphansReport, getStats, validateVault } from './analyze-vault.js'
@@ -18,10 +19,13 @@ type StartServerInput = {
   readonly port: number
   readonly shouldIndex: boolean
   readonly shouldWatch: boolean
+  readonly allowPublic?: boolean
+  readonly writeToken?: string
 }
 
 type RunningServer = {
   readonly url: string
+  readonly writeToken: string
   readonly close: () => Promise<void>
 }
 
@@ -52,6 +56,31 @@ const isHttpError = (error: unknown): error is HttpError =>
   error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number'
 
 const maxRequestBodyBytes = 1024 * 1024
+const mutableRoutes = new Set(['/api/index', '/api/notes'])
+
+const createWriteToken = (): string =>
+  randomBytes(24).toString('base64url')
+
+const isLoopbackHost = (host: string): boolean =>
+  host === 'localhost' || host === '::1' || host === '[::1]' || host.startsWith('127.')
+
+const readWriteToken = (request: IncomingMessage): string => {
+  const headerToken = request.headers['x-brainlink-token']
+  const authorization = request.headers.authorization ?? ''
+
+  if (typeof headerToken === 'string') {
+    return headerToken
+  }
+
+  return authorization.toLowerCase().startsWith('bearer ') ? authorization.slice(7).trim() : ''
+}
+
+const hasValidWriteToken = (request: IncomingMessage, writeToken: string): boolean => {
+  const provided = Buffer.from(readWriteToken(request))
+  const expected = Buffer.from(writeToken)
+
+  return provided.length === expected.length && timingSafeEqual(provided, expected)
+}
 
 const readSearchMode = async (url: URL): Promise<ReturnType<typeof sanitizeSearchMode>> => {
   const config = await loadBrainlinkConfig()
@@ -895,7 +924,11 @@ const createResponse = (body: string, statusCode = 200, contentType = 'text/plai
 const readAgentQuery = (url: URL): string | undefined =>
   url.searchParams.get('agent') ?? undefined
 
-const route = async (request: IncomingMessage, url: URL, vaultPath: string) => {
+const route = async (request: IncomingMessage, url: URL, vaultPath: string, writeToken: string) => {
+  if (request.method === 'POST' && mutableRoutes.has(url.pathname) && !hasValidWriteToken(request, writeToken)) {
+    return createResponse(createJsonResponse({ error: 'Missing or invalid write token.' }), 401, contentTypes['.json'])
+  }
+
   if (isReadMethod(request) && (url.pathname === '/' || url.pathname === '/index.html')) {
     return createResponse(createClientHtml(), 200, contentTypes['.html'])
   }
@@ -987,7 +1020,10 @@ const route = async (request: IncomingMessage, url: URL, vaultPath: string) => {
     }
 
     const agent = typeof body.agent === 'string' ? body.agent : undefined
-    const path = await addNote(vaultPath, body.title, body.content, agent)
+    const allowSensitive = body.allowSensitive === true
+    const path = await addNote(vaultPath, body.title, body.content, agent, { allowSensitive }).catch((error: unknown) => {
+      throw createHttpError(400, error instanceof Error ? error.message : String(error))
+    })
     const index = await indexVault(vaultPath)
 
     return createResponse(createJsonResponse({ title: body.title, agent, path, index }), 201, contentTypes['.json'])
@@ -997,6 +1033,12 @@ const route = async (request: IncomingMessage, url: URL, vaultPath: string) => {
 }
 
 export const startServer = async (input: StartServerInput): Promise<RunningServer> => {
+  if (!input.allowPublic && !isLoopbackHost(input.host)) {
+    throw new Error(`Refusing to bind Brainlink server to non-loopback host ${input.host}. Pass --allow-public only behind your own auth and TLS.`)
+  }
+
+  const writeToken = input.writeToken?.trim() || createWriteToken()
+
   if (input.shouldIndex) {
     await indexVault(input.vaultPath)
   }
@@ -1013,7 +1055,7 @@ export const startServer = async (input: StartServerInput): Promise<RunningServe
     const extension = extname(url.pathname)
     const contentType = contentTypes[extension] ?? 'text/plain; charset=utf-8'
 
-    route(request, url, input.vaultPath)
+    route(request, url, input.vaultPath, writeToken)
       .then((result) => {
         response.writeHead(result.statusCode, result.headers)
         response.end(result.body)
@@ -1039,6 +1081,7 @@ export const startServer = async (input: StartServerInput): Promise<RunningServe
 
   return {
     url: `http://${input.host}:${port}`,
+    writeToken,
     close: () =>
       new Promise<void>((resolve, reject) => {
         watcher?.close()

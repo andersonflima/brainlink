@@ -25,7 +25,8 @@ describe('brainlink http server integration', () => {
       host: '127.0.0.1',
       port: 0,
       shouldIndex: true,
-      shouldWatch: false
+      shouldWatch: false,
+      writeToken: 'test-write-token'
     })
 
     try {
@@ -101,10 +102,23 @@ describe('brainlink http server integration', () => {
         brokenLinkCount: 0
       })
 
-      const created = (await fetch(`${server.url}/api/notes`, {
+      const unauthorized = await fetch(`${server.url}/api/notes`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: 'Unauthorized',
+          content: 'This write has no token. #security'
+        })
+      })
+      expect(unauthorized.status).toBe(401)
+
+      const created = (await fetch(`${server.url}/api/notes`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-brainlink-token': server.writeToken
         },
         body: JSON.stringify({
           title: 'Runtime',
@@ -117,7 +131,8 @@ describe('brainlink http server integration', () => {
       const invalidNote = await fetch(`${server.url}/api/notes`, {
         method: 'POST',
         headers: {
-          'content-type': 'application/json'
+          'content-type': 'application/json',
+          'x-brainlink-token': server.writeToken
         },
         body: JSON.stringify({
           title: '',
@@ -125,8 +140,36 @@ describe('brainlink http server integration', () => {
         })
       })
       expect(invalidNote.status).toBe(400)
+
+      const sensitiveNote = await fetch(`${server.url}/api/notes`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-brainlink-token': server.writeToken
+        },
+        body: JSON.stringify({
+          title: 'Credentials',
+          content: 'OPENAI_API_KEY=sk-test12345678901234567890'
+        })
+      })
+      expect(sensitiveNote.status).toBe(400)
     } finally {
       await server.close()
     }
+  })
+
+  it('refuses non-loopback hosts without explicit public opt-in', async () => {
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-public-host-'))
+    tempPaths.push(vault)
+
+    await expect(
+      startServer({
+        vaultPath: vault,
+        host: '0.0.0.0',
+        port: 0,
+        shouldIndex: false,
+        shouldWatch: false
+      })
+    ).rejects.toThrow('Refusing to bind Brainlink server')
   })
 })

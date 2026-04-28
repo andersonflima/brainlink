@@ -110,6 +110,7 @@ export type BrainlinkConfig = {
   readonly vault: string
   readonly host: string
   readonly port: number
+  readonly allowedVaults: readonly string[]
   readonly defaultSearchLimit: number
   readonly defaultContextTokens: number
   readonly embeddingProvider: EmbeddingProviderName

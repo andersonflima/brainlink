@@ -172,6 +172,8 @@ blink add "Note Title" --vault ./vault --content "Markdown content"
 
 This creates a slugged Markdown file with frontmatter and a heading.
 
+The CLI blocks common secret patterns by default. Do not use `--allow-sensitive` unless the vault is intentionally protected.
+
 For agent-private memory:
 
 ```bash
@@ -320,6 +322,12 @@ Recommended wrapper mapping:
 - `brainlink_graph`: run `blink graph --vault <vault> --agent <agent> --json`.
 - `brainlink_validate`: run `blink validate --vault <vault> --agent <agent> --json`.
 
+External wrappers should set `BRAINLINK_ALLOWED_VAULTS` before invoking the CLI:
+
+```bash
+export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault"
+```
+
 ### HTTP API
 
 ```txt
@@ -333,8 +341,8 @@ GET  /api/stats
 GET  /api/broken-links
 GET  /api/orphans
 GET  /api/validate
-POST /api/index
-POST /api/notes
+POST /api/index      requires x-brainlink-token
+POST /api/notes      requires x-brainlink-token
 ```
 
 `POST /api/notes` expects:

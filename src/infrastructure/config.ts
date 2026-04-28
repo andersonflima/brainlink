@@ -6,6 +6,7 @@ export const defaultBrainlinkConfig: BrainlinkConfig = {
   vault: '.',
   host: '127.0.0.1',
   port: 4321,
+  allowedVaults: [],
   defaultSearchLimit: 10,
   defaultContextTokens: 2000,
   embeddingProvider: 'local',
@@ -26,6 +27,15 @@ const sanitizeEmbeddingProvider = (value: unknown): EmbeddingProviderName =>
 
 export const sanitizeSearchMode = (value: unknown, fallback = defaultBrainlinkConfig.defaultSearchMode): SearchMode =>
   typeof value === 'string' && searchModes.has(value) ? (value as SearchMode) : fallback
+
+const sanitizeAllowedVaults = (value: unknown): readonly string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : []
+
+const readAllowedVaultsFromEnv = (): readonly string[] =>
+  (process.env.BRAINLINK_ALLOWED_VAULTS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
 
 const readJsonConfig = async (path: string): Promise<Partial<BrainlinkConfig>> => {
   try {
@@ -54,6 +64,7 @@ const sanitizeConfig = (value: Partial<BrainlinkConfig>): BrainlinkConfig => ({
     typeof value.defaultContextTokens === 'number' && value.defaultContextTokens > 0
       ? value.defaultContextTokens
       : defaultBrainlinkConfig.defaultContextTokens,
+  allowedVaults: [...sanitizeAllowedVaults(value.allowedVaults), ...readAllowedVaultsFromEnv()],
   chunkSize: typeof value.chunkSize === 'number' && value.chunkSize > 0 ? value.chunkSize : defaultBrainlinkConfig.chunkSize,
   embeddingProvider: sanitizeEmbeddingProvider(value.embeddingProvider),
   defaultSearchMode: sanitizeSearchMode(value.defaultSearchMode)

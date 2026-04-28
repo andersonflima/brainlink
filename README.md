@@ -377,7 +377,9 @@ blink server --vault ./vault --no-index
 
 ## HTTP API
 
-All read routes are local and unauthenticated. Do not expose the server publicly without adding your own authentication and transport security.
+Read routes are local and unauthenticated. Mutating routes require the server write token printed by `blink server`.
+
+The server refuses non-loopback hosts by default. Use `--allow-public` only behind your own authentication, authorization and TLS.
 
 Routes:
 
@@ -392,8 +394,8 @@ Routes:
 - `GET /api/broken-links`
 - `GET /api/orphans`
 - `GET /api/validate`
-- `POST /api/index`
-- `POST /api/notes`
+- `POST /api/index` with `x-brainlink-token`
+- `POST /api/notes` with `x-brainlink-token`
 
 Read routes accept `agent=<agent-id>`:
 
@@ -408,6 +410,7 @@ Create a note through HTTP:
 ```bash
 curl -X POST http://127.0.0.1:4321/api/notes \
   -H 'content-type: application/json' \
+  -H "x-brainlink-token: $BRAINLINK_WRITE_TOKEN" \
   -d '{
     "title": "Runtime Policy",
     "agent": "coding-agent",
@@ -433,7 +436,7 @@ Initializes vault metadata.
 blink add "Note Title" --vault ./vault --agent coding-agent --content "Markdown content"
 ```
 
-Creates a Markdown note under `agents/<agent-id>/`.
+Creates a Markdown note under `agents/<agent-id>/`. Common secret patterns are blocked by default; use `--allow-sensitive` only for an intentionally protected vault.
 
 ### `index`
 
@@ -560,7 +563,9 @@ Watches Markdown files and rebuilds the index when notes change.
 blink server --vault ./vault --watch
 ```
 
-Starts the local graph UI and HTTP API.
+Starts the local graph UI and HTTP API. The command prints a write token for `POST /api/index` and `POST /api/notes`.
+
+To bind outside localhost, pass `--allow-public` and put the server behind your own auth and TLS. Use `--token` or `BRAINLINK_SERVER_TOKEN` when you need a stable write token for automation.
 
 ## Machine-Readable Output
 
@@ -585,6 +590,7 @@ Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current wo
   "vault": ".brainlink-vault",
   "host": "127.0.0.1",
   "port": 4321,
+  "allowedVaults": [".brainlink-vault"],
   "defaultSearchLimit": 10,
   "defaultContextTokens": 2000,
   "embeddingProvider": "local",
@@ -594,6 +600,12 @@ Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current wo
 ```
 
 Use `"embeddingProvider": "none"` when you want FTS-only indexing.
+
+Set `BRAINLINK_ALLOWED_VAULTS` for external wrappers, including MCP servers, so a tool cannot pass arbitrary `--vault` paths:
+
+```bash
+export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault,/absolute/path/to/team-vault"
+```
 
 ## Note Format
 
@@ -710,6 +722,7 @@ The alpha includes local semantic retrieval. Remote embedding providers, remote 
 Brainlink is local-first by default.
 
 - Do not expose the HTTP server publicly without authentication.
+- Brainlink blocks common secret patterns by default when adding notes. Use `--allow-sensitive` only for intentional, protected vaults.
 - Do not store secrets, credentials, API keys or regulated personal data unless the vault is protected by your own storage controls.
 - Treat `.brainlink/brainlink.db` as disposable derived data.
 

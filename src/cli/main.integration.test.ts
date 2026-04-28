@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -7,9 +7,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const execFileAsync = promisify(execFile)
 
-const cli = async (args: readonly string[], cwd: string): Promise<string> => {
+const cli = async (args: readonly string[], cwd: string, env: Readonly<Record<string, string>> = {}): Promise<string> => {
   const { stdout } = await execFileAsync(process.execPath, ['--import', 'tsx', 'src/cli/main.ts', ...args], {
     cwd,
+    env: {
+      ...process.env,
+      ...env
+    },
     maxBuffer: 1024 * 1024
   })
 
@@ -34,7 +38,25 @@ describe('brainlink cli integration', () => {
     const init = parseJson<{ path: string }>(await cli(['init', vault, '--json'], projectPath))
     expect(init.path).toBe(vault)
 
-    await cli(['add', 'Architecture', '--vault', vault, '--content', 'Markdown is the source of truth. #architecture', '--json'], projectPath)
+    const architecture = parseJson<{ path: string }>(
+      await cli(['add', 'Architecture', '--vault', vault, '--content', 'Markdown is the source of truth. #architecture', '--json'], projectPath)
+    )
+    expect((await stat(architecture.path)).mode & 0o777).toBe(0o600)
+    expect((await stat(join(vault, '.brainlink'))).mode & 0o777).toBe(0o700)
+
+    await expect(
+      cli(
+        ['add', 'Credentials', '--vault', vault, '--content', 'OPENAI_API_KEY=sk-test12345678901234567890', '--json'],
+        projectPath
+      )
+    ).rejects.toThrow('Sensitive memory blocked')
+
+    const blockedVault = await mkdtemp(join(tmpdir(), 'brainlink-blocked-vault-'))
+    tempPaths.push(blockedVault)
+    await expect(cli(['index', '--vault', blockedVault, '--json'], projectPath, { BRAINLINK_ALLOWED_VAULTS: vault })).rejects.toThrow(
+      'Vault path is not allowed'
+    )
+
     await cli(
       [
         'add',

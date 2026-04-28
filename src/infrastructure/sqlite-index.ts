@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import { chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { sanitizeAgentId } from '../domain/agents.js'
 import { cosineSimilarity } from '../domain/embeddings.js'
@@ -230,7 +231,10 @@ const mergeHybridResults = (
 }
 
 export const openSqliteIndex = (vaultPath: string): SqliteIndex => {
-  const database = new Database(join(vaultPath, '.brainlink', 'brainlink.db'))
+  const databasePath = join(vaultPath, '.brainlink', 'brainlink.db')
+  const database = new Database(databasePath)
+
+  chmodSync(databasePath, 0o600)
 
   database.exec('PRAGMA foreign_keys = ON;')
   createSchema(database)

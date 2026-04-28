@@ -1,5 +1,5 @@
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { dirname, extname, join, resolve } from 'node:path'
+import { chmod, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 
 export type MarkdownFile = {
   readonly absolutePath: string
@@ -9,6 +9,8 @@ export type MarkdownFile = {
 }
 
 const excludedDirectories = new Set(['.brainlink', '.git', 'node_modules', 'dist'])
+const directoryMode = 0o700
+const fileMode = 0o600
 
 const walkMarkdownFiles = async (directory: string): Promise<readonly string[]> => {
   const entries = await readdir(directory, { withFileTypes: true })
@@ -31,10 +33,32 @@ const walkMarkdownFiles = async (directory: string): Promise<readonly string[]> 
 export const resolveVaultPath = (vaultPath: string): string =>
   resolve(process.cwd(), vaultPath)
 
+const isPathInside = (parent: string, child: string): boolean => {
+  const path = relative(parent, child)
+
+  return path === '' || (!path.startsWith('..') && !isAbsolute(path))
+}
+
+const secureDirectory = async (path: string): Promise<void> => {
+  await mkdir(path, { recursive: true, mode: directoryMode })
+  await chmod(path, directoryMode)
+}
+
+export const assertVaultAllowed = (vaultPath: string, allowedVaults: readonly string[]): string => {
+  const absoluteVaultPath = resolveVaultPath(vaultPath)
+  const allowed = allowedVaults.map(resolveVaultPath)
+
+  if (allowed.length > 0 && !allowed.some((allowedPath) => isPathInside(allowedPath, absoluteVaultPath))) {
+    throw new Error(`Vault path is not allowed: ${absoluteVaultPath}. Configure BRAINLINK_ALLOWED_VAULTS or allowedVaults.`)
+  }
+
+  return absoluteVaultPath
+}
+
 export const ensureVault = async (vaultPath: string): Promise<string> => {
   const absoluteVaultPath = resolveVaultPath(vaultPath)
 
-  await mkdir(join(absoluteVaultPath, '.brainlink'), { recursive: true })
+  await secureDirectory(join(absoluteVaultPath, '.brainlink'))
 
   return absoluteVaultPath
 }
@@ -59,10 +83,15 @@ export const readMarkdownFiles = async (vaultPath: string): Promise<readonly Mar
 
 export const writeMarkdownFile = async (vaultPath: string, filename: string, content: string): Promise<string> => {
   const absoluteVaultPath = await ensureVault(vaultPath)
-  const absolutePath = join(absoluteVaultPath, filename.endsWith('.md') ? filename : `${filename}.md`)
+  const absolutePath = resolve(absoluteVaultPath, filename.endsWith('.md') ? filename : `${filename}.md`)
 
-  await mkdir(dirname(absolutePath), { recursive: true })
-  await writeFile(absolutePath, content, 'utf8')
+  if (!isPathInside(absoluteVaultPath, absolutePath)) {
+    throw new Error(`Refusing to write outside vault: ${absolutePath}`)
+  }
+
+  await secureDirectory(dirname(absolutePath))
+  await writeFile(absolutePath, content, { encoding: 'utf8', mode: fileMode })
+  await chmod(absolutePath, fileMode)
 
   return absolutePath
 }

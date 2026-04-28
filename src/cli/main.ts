@@ -12,7 +12,7 @@ import { searchKnowledge } from '../application/search-knowledge.js'
 import { startServer } from '../application/start-server.js'
 import { startVaultWatcher } from '../application/watch-vault.js'
 import { loadBrainlinkConfig, sanitizeSearchMode } from '../infrastructure/config.js'
-import { ensureVault } from '../infrastructure/file-system-vault.js'
+import { assertVaultAllowed, ensureVault } from '../infrastructure/file-system-vault.js'
 
 type VaultOptions = {
   readonly vault?: string
@@ -34,6 +34,13 @@ type ServerOptions = VaultOptions & {
   readonly port?: string
   readonly index: boolean
   readonly watch?: boolean
+  readonly allowPublic?: boolean
+  readonly token?: string
+}
+
+type AddOptions = VaultOptions & {
+  readonly content: string
+  readonly allowSensitive?: boolean
 }
 
 const parsePositiveInteger = (value: string, fallback: number): number => {
@@ -44,10 +51,12 @@ const parsePositiveInteger = (value: string, fallback: number): number => {
 
 const resolveOptions = async (options: VaultOptions) => {
   const config = await loadBrainlinkConfig()
+  const vault = options.vault ?? config.vault
+  const allowedVault = assertVaultAllowed(vault, config.allowedVaults)
 
   return {
     config,
-    vault: options.vault ?? config.vault
+    vault: allowedVault
   }
 }
 
@@ -72,7 +81,8 @@ program
   .option('--json', 'print machine-readable JSON')
   .description('initialize a Brainlink vault')
   .action(async (vault: string, options: { readonly json?: boolean }) => {
-    const path = await ensureVault(vault)
+    const config = await loadBrainlinkConfig()
+    const path = await ensureVault(assertVaultAllowed(vault, config.allowedVaults))
 
     print(options.json, { path }, () => `Initialized Brainlink vault at ${path}`)
   })
@@ -83,11 +93,14 @@ program
   .requiredOption('-c, --content <content>', 'markdown content')
   .option('-v, --vault <vault>', 'vault directory', '.')
   .option('-a, --agent <agent>', 'agent memory namespace', 'shared')
+  .option('--allow-sensitive', 'allow writing content that looks like a secret')
   .option('--json', 'print machine-readable JSON')
   .description('add a markdown note to the vault')
-  .action(async (title: string, options: VaultOptions & { readonly content: string }) => {
+  .action(async (title: string, options: AddOptions) => {
     const resolved = await resolveOptions(options)
-    const path = await addNote(resolved.vault, title, options.content, options.agent)
+    const path = await addNote(resolved.vault, title, options.content, options.agent, {
+      allowSensitive: Boolean(options.allowSensitive)
+    })
 
     print(options.json, { title, agent: options.agent ?? 'shared', path }, () => `Created note at ${path}`)
   })
@@ -346,6 +359,8 @@ program
   .option('-p, --port <port>', 'server port', '4321')
   .option('--no-index', 'skip indexing before starting the server')
   .option('-w, --watch', 'watch markdown files and reindex on changes')
+  .option('--allow-public', 'allow binding the server to a non-loopback host')
+  .option('--token <token>', 'write token for mutating HTTP routes')
   .option('--json', 'print machine-readable JSON')
   .description('start a local web UI for the knowledge graph')
   .action(async (options: ServerOptions) => {
@@ -355,10 +370,14 @@ program
       host: options.host ?? resolved.config.host,
       port: parsePositiveInteger(options.port ?? String(resolved.config.port), resolved.config.port),
       shouldIndex: options.index,
-      shouldWatch: Boolean(options.watch)
+      shouldWatch: Boolean(options.watch),
+      allowPublic: Boolean(options.allowPublic),
+      writeToken: options.token ?? process.env.BRAINLINK_SERVER_TOKEN
     })
 
-    print(options.json, { url: server.url, watch: Boolean(options.watch) }, () => `Brainlink graph server running at ${server.url}`)
+    print(options.json, { url: server.url, watch: Boolean(options.watch), writeToken: server.writeToken }, () =>
+      [`Brainlink graph server running at ${server.url}`, `Write token: ${server.writeToken}`].join('\n')
+    )
   })
 
 program.parseAsync().catch((error: unknown) => {

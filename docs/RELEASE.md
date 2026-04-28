@@ -32,9 +32,15 @@ blink context "release smoke" --vault ./tmp-vault --mode hybrid --json
 blink server --vault ./tmp-vault --host 127.0.0.1 --port 4321
 ```
 
-9. Confirm no test/demo vault files are included in the package tarball.
-10. Create the git tag only after the package name is final.
-11. Publish only from a logged-in npm account with permission for the package name.
+9. Verify the server refuses accidental public binds:
+
+```bash
+blink server --vault ./tmp-vault --host 0.0.0.0
+```
+
+10. Confirm no test/demo vault files are included in the package tarball.
+11. Create the git tag only after the package name is final.
+12. Publish only from a logged-in npm account with permission for the package name.
 
 ## Publish Commands
 
