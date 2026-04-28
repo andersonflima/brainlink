@@ -24,4 +24,5 @@ npm run pack:smoke
 - Markdown files are the source of truth.
 - SQLite is a derived index and must remain rebuildable.
 - Domain parsing, graph analysis and layout should stay pure and testable.
-- CLI, HTTP, MCP, filesystem and SQLite code are adapters around application use cases.
+- CLI, HTTP, filesystem and SQLite code are adapters around application use cases.
+- MCP integration should live outside this package by wrapping the CLI with `--json`.

@@ -682,6 +682,7 @@ Detailed notes:
 
 - [Agent Usage](docs/AGENT_USAGE.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Release](docs/RELEASE.md)
 
 ## Current Limits
 
