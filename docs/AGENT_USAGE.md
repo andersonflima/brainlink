@@ -29,6 +29,18 @@ blink --help
 
 Use `blink` as the short terminal alias and `brainlink` in documentation when explicit naming is more important.
 
+## Default Vault
+
+When `--vault` is omitted, Brainlink uses a user-level vault:
+
+```txt
+$HOME/.brainlink/vault
+```
+
+`blink server` follows the same rule, so it serves the default Brainlink vault instead of the current working directory.
+
+Use `--vault <path>` for a one-off custom vault, or set `vault` in `brainlink.config.json` / `.brainlink.json` for a workspace-level custom default. Set `BRAINLINK_HOME` when the whole Brainlink home directory should live somewhere else.
+
 ## Agent Namespaces
 
 Each agent writes into a dedicated namespace under `agents/<agent-id>/`:
@@ -131,7 +143,7 @@ Rules:
 Before answering a memory-dependent question, run:
 
 ```bash
-blink context "<question>" --vault ./vault --agent coding-agent
+blink context "<question>" --agent coding-agent
 ```
 
 Use the returned context as source-grounded memory.
@@ -139,7 +151,7 @@ Use the returned context as source-grounded memory.
 For machine-readable output, use:
 
 ```bash
-blink context "<question>" --vault ./vault --agent coding-agent --json
+blink context "<question>" --agent coding-agent --json
 ```
 
 If the context is empty or weak:
@@ -158,20 +170,18 @@ These examples assume the agent can run shell commands in the user workspace.
 Run this at the start of a task:
 
 ```bash
-export BLINK_VAULT=".brainlink-vault"
 export BLINK_AGENT="codex"
-blink init "$BLINK_VAULT"
-blink context "$USER_TASK" --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --mode hybrid --json
+blink init
+blink context "$USER_TASK" --agent "$BLINK_AGENT" --mode hybrid --json
 ```
 
 After discovering durable project knowledge:
 
 ```bash
 blink add "Implementation Boundary" \
-  --vault "$BLINK_VAULT" \
   --agent "$BLINK_AGENT" \
   --content "Keep use cases in application and pure transformations in domain. [[Architecture]] #architecture #typescript"
-blink index --vault "$BLINK_VAULT"
+blink index
 ```
 
 ### Claude Code-Style Agent
@@ -224,15 +234,18 @@ blink index --vault .brainlink-vault
 ### Initialize A Vault
 
 ```bash
+blink init
 blink init ./vault
 ```
 
 Creates:
 
 ```txt
-vault/
+$HOME/.brainlink/vault/
   .brainlink/
 ```
+
+`blink init ./vault` creates a custom vault instead.
 
 ### Add A Note
 
@@ -344,10 +357,13 @@ shared: 30 documents
 ### Start Graph UI
 
 ```bash
+blink server --host 127.0.0.1 --port 4321
 blink server --vault ./vault --host 127.0.0.1 --port 4321
 ```
 
 This starts a local frontend for inspecting the knowledge graph.
+
+Without `--vault`, the graph UI serves `$HOME/.brainlink/vault`.
 
 The frontend includes an agent selector. Selecting an agent calls the same read APIs with `agent=<agent-id>` and renders that namespace instead of merging every agent into one graph.
 

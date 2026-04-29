@@ -20,6 +20,8 @@ npm run dev -- index --vault ./vault
 
 Do not store permanent knowledge only in SQLite.
 
+By default, the installed Brainlink CLI uses `$HOME/.brainlink/vault` as its vault. Passing `--vault` or setting `vault` in `brainlink.config.json` intentionally selects a custom vault such as `./vault`.
+
 ## Agent Workflow
 
 Use this loop when using Brainlink as memory:

@@ -1,6 +1,11 @@
 import Database from 'better-sqlite3'
 
 const schemaVersion = 4
+const requiredTableColumns: Readonly<Record<string, readonly string[]>> = {
+  documents: ['id', 'agent_id', 'title', 'path', 'content', 'tags_json', 'frontmatter_json', 'created_at', 'updated_at'],
+  chunks: ['id', 'document_id', 'ordinal', 'content', 'token_count', 'embedding_provider', 'embedding_json'],
+  chunks_fts: ['chunk_id', 'document_id', 'agent_id', 'title', 'content']
+}
 
 const getStoredSchemaVersion = (database: Database.Database): number => {
   const hasMetadata = database
@@ -28,10 +33,23 @@ const dropDerivedSchema = (database: Database.Database): void => {
   `)
 }
 
+const getTableColumns = (database: Database.Database, tableName: string): readonly string[] => {
+  const rows = database.prepare(`SELECT name FROM pragma_table_info(?)`).all(tableName) as readonly { readonly name: string }[]
+
+  return rows.map((row) => row.name)
+}
+
+const hasCompatibleSchemaShape = (database: Database.Database): boolean =>
+  Object.entries(requiredTableColumns).every(([tableName, requiredColumns]) => {
+    const columns = getTableColumns(database, tableName)
+
+    return columns.length === 0 || requiredColumns.every((column) => columns.includes(column))
+  })
+
 export const createSchema = (database: Database.Database): void => {
   const storedSchemaVersion = getStoredSchemaVersion(database)
 
-  if (storedSchemaVersion > 0 && storedSchemaVersion < schemaVersion) {
+  if ((storedSchemaVersion > 0 && storedSchemaVersion < schemaVersion) || !hasCompatibleSchemaShape(database)) {
     dropDerivedSchema(database)
   }
 

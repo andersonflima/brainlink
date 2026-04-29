@@ -110,24 +110,31 @@ Then verify:
 blink --help
 ```
 
-### 2. Choose A Vault Path
+### 2. Use The Default Vault Or Choose A Custom Vault
 
-Prefer a project-local vault when memory belongs to one repository:
+By default, Brainlink stores memory in:
+
+```bash
+$HOME/.brainlink/vault
+```
+
+Use the default vault when memory should span many projects:
+
+```bash
+blink init
+```
+
+Choose a project-local vault only when memory belongs to one repository:
 
 ```bash
 BLINK_VAULT=".brainlink-vault"
-```
-
-Use a user-level vault only when memory should span many projects:
-
-```bash
-BLINK_VAULT="$HOME/.brainlink/vault"
-```
-
-Initialize the vault:
-
-```bash
 blink init "$BLINK_VAULT"
+```
+
+You can also set `BRAINLINK_HOME` to move Brainlink's default home directory:
+
+```bash
+export BRAINLINK_HOME="/path/to/brainlink-home"
 ```
 
 ### 3. Choose An Agent Namespace
@@ -146,7 +153,6 @@ Before answering or changing code, retrieve context:
 
 ```bash
 blink context "What should I know before working on this task?" \
-  --vault "$BLINK_VAULT" \
   --agent "$BLINK_AGENT" \
   --json
 ```
@@ -155,7 +161,6 @@ If the context is weak, inspect raw search results:
 
 ```bash
 blink search "architecture conventions tests release" \
-  --vault "$BLINK_VAULT" \
   --agent "$BLINK_AGENT" \
   --mode hybrid \
   --limit 10 \
@@ -168,7 +173,6 @@ Only store knowledge that is likely to matter later:
 
 ```bash
 blink add "Testing Policy" \
-  --vault "$BLINK_VAULT" \
   --agent "$BLINK_AGENT" \
   --content "Run npm run check before final delivery. Related: [[Release Checklist]]. #testing #process"
 ```
@@ -176,15 +180,15 @@ blink add "Testing Policy" \
 Rebuild the index:
 
 ```bash
-blink index --vault "$BLINK_VAULT"
+blink index
 ```
 
 ### 6. Validate Memory Health
 
 ```bash
-blink validate --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --json
-blink broken-links --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --json
-blink orphans --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --json
+blink validate --agent "$BLINK_AGENT" --json
+blink broken-links --agent "$BLINK_AGENT" --json
+blink orphans --agent "$BLINK_AGENT" --json
 ```
 
 ### Agent Operating Loop
@@ -192,7 +196,7 @@ blink orphans --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --json
 Use this loop during real work:
 
 1. Identify the task and choose `BLINK_AGENT`.
-2. Run `blink context "<task>" --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --json`.
+2. Run `blink context "<task>" --agent "$BLINK_AGENT" --json`.
 3. Use returned sources as project memory.
 4. Perform the task.
 5. Save only durable learnings with `blink add`.
@@ -228,6 +232,8 @@ Open the graph UI:
 ```txt
 http://127.0.0.1:4321
 ```
+
+When `--vault` is omitted, commands use the default vault at `$HOME/.brainlink/vault`. Pass `--vault` or configure `vault` in `brainlink.config.json` when you want a custom project-local vault.
 
 ## Core Model
 
@@ -314,9 +320,9 @@ An MCP server can use Brainlink by spawning `blink` or `brainlink` as a subproce
 Minimum integration contract:
 
 ```bash
-blink context "<task>" --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --json
-blink add "Decision Title" --vault "$BLINK_VAULT" --agent "$BLINK_AGENT" --content "Durable memory. #decision"
-blink index --vault "$BLINK_VAULT"
+blink context "<task>" --agent "$BLINK_AGENT" --json
+blink add "Decision Title" --agent "$BLINK_AGENT" --content "Durable memory. #decision"
+blink index
 ```
 
 Example Node.js wrapper inside an external MCP server:
@@ -357,8 +363,10 @@ Recommended MCP tools exposed by the external server:
 Start the local frontend:
 
 ```bash
-blink server --vault ./vault --host 127.0.0.1 --port 4321 --watch
+blink server --host 127.0.0.1 --port 4321 --watch
 ```
+
+By default, the server uses `$HOME/.brainlink/vault`. Pass `--vault ./vault` only when you want to inspect a custom vault.
 
 The graph UI shows:
 
@@ -411,14 +419,16 @@ Every command works with either `brainlink` or `blink`.
 ### `init`
 
 ```bash
+blink init
 blink init ./vault
 ```
 
-Initializes vault metadata.
+Initializes vault metadata. Without an argument, Brainlink initializes the default vault at `$HOME/.brainlink/vault`.
 
 ### `add`
 
 ```bash
+blink add "Note Title" --agent coding-agent --content "Markdown content"
 blink add "Note Title" --vault ./vault --agent coding-agent --content "Markdown content"
 ```
 
@@ -427,6 +437,7 @@ Creates a Markdown note under `agents/<agent-id>/`. Common secret patterns are b
 ### `index`
 
 ```bash
+blink index
 blink index --vault ./vault
 ```
 
@@ -546,6 +557,7 @@ Watches Markdown files and rebuilds the index when notes change.
 ### `server`
 
 ```bash
+blink server --watch
 blink server --vault ./vault --watch
 ```
 
@@ -569,7 +581,7 @@ npm run --silent dev -- context "question" --vault ./vault --json
 
 ## Configuration
 
-Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current working directory.
+Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current working directory. If no `vault` is configured and no `--vault` flag is passed, Brainlink uses `$HOME/.brainlink/vault`.
 
 ```json
 {

@@ -1,8 +1,21 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import { basename } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { registerReadCommands } from './commands/read-commands.js'
 import { registerWriteCommands } from './commands/write-commands.js'
+
+type PackageMetadata = {
+  readonly version?: string
+}
+
+const readPackageVersion = (): string => {
+  const packagePath = join(dirname(fileURLToPath(import.meta.url)), '../../package.json')
+  const metadata = JSON.parse(readFileSync(packagePath, 'utf8')) as PackageMetadata
+
+  return metadata.version ?? '0.0.0'
+}
 
 const program = new Command()
 const cliName = basename(process.argv[1] ?? 'brainlink')
@@ -13,7 +26,7 @@ program
   .name(displayName)
   .alias(aliasName)
   .description('Local-first knowledge memory for agents')
-  .version('0.1.0')
+  .version(readPackageVersion())
 
 registerWriteCommands(program)
 registerReadCommands(program)

@@ -39,12 +39,19 @@ blink server --vault ./tmp-vault --host 0.0.0.0
 ```
 
 10. Confirm no test/demo vault files are included in the package tarball.
-11. Create the git tag only after the package name is final.
-12. Publish only from a logged-in npm account with permission for the package name.
+11. Confirm the repository has an `NPM_TOKEN` secret with publish permission for `@andespindola/brainlink`.
+12. Create the git tag only after the package name is final.
+13. Publish from GitHub Actions by publishing a GitHub Release for the tag.
 
 ## Publish Commands
 
-For scoped public packages:
+The preferred path is the `Publish npm` GitHub Actions workflow:
+
+- GitHub Release `published`: runs checks, pack smoke, then publishes to npm with provenance.
+- Manual `workflow_dispatch`: runs a dry run by default. Disable `dry_run` only for an intentional manual publish.
+- Prerelease versions publish under their prerelease dist-tag, for example `0.1.0-alpha.1` publishes with `--tag alpha`.
+
+For emergency local publishing of scoped public packages:
 
 ```bash
 npm publish --access public

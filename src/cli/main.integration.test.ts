@@ -1,14 +1,17 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const execFileAsync = promisify(execFile)
+const projectPath = process.cwd()
+const cliEntryPoint = join(projectPath, 'src/cli/main.ts')
+const tsxLoader = join(projectPath, 'node_modules/tsx/dist/loader.mjs')
 
 const cli = async (args: readonly string[], cwd: string, env: Readonly<Record<string, string>> = {}): Promise<string> => {
-  const { stdout } = await execFileAsync(process.execPath, ['--import', 'tsx', 'src/cli/main.ts', ...args], {
+  const { stdout } = await execFileAsync(process.execPath, ['--import', tsxLoader, cliEntryPoint, ...args], {
     cwd,
     env: {
       ...process.env,
@@ -24,7 +27,6 @@ const parseJson = <T>(value: string): T => JSON.parse(value) as T
 
 describe('brainlink cli integration', () => {
   const tempPaths: string[] = []
-  const projectPath = process.cwd()
 
   afterEach(async () => {
     await Promise.all(tempPaths.map((path) => rm(path, { recursive: true, force: true })))
@@ -182,4 +184,57 @@ describe('brainlink cli integration', () => {
       })
     ])
   }, 20000)
+
+  it('uses the Brainlink home vault by default and keeps explicit custom vaults', async () => {
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-home-'))
+    const customVault = await mkdtemp(join(tmpdir(), 'brainlink-custom-vault-'))
+    const configuredWorkspace = await mkdtemp(join(tmpdir(), 'brainlink-configured-workspace-'))
+    const configuredVault = join(configuredWorkspace, 'configured-vault')
+    tempPaths.push(brainlinkHome, customVault, configuredWorkspace)
+
+    const env = { BRAINLINK_HOME: brainlinkHome }
+    const defaultVault = join(brainlinkHome, 'vault')
+
+    const init = parseJson<{ path: string }>(await cli(['init', '--json'], projectPath, env))
+    expect(init.path).toBe(defaultVault)
+
+    const defaultNote = parseJson<{ path: string }>(
+      await cli(['add', 'Default Memory', '--content', 'Default Brainlink memory. #default', '--json'], projectPath, env)
+    )
+    expect(defaultNote.path).toContain(join(defaultVault, 'agents/shared/default-memory.md'))
+
+    const defaultIndex = parseJson<{ documentCount: number }>(await cli(['index', '--json'], projectPath, env))
+    expect(defaultIndex.documentCount).toBe(1)
+
+    const explicitNote = parseJson<{ path: string }>(
+      await cli(
+        ['add', 'Custom Memory', '--vault', customVault, '--content', 'Explicit custom vault memory. #custom', '--json'],
+        projectPath,
+        env
+      )
+    )
+    expect(explicitNote.path).toContain(join(customVault, 'agents/shared/custom-memory.md'))
+
+    await writeFile(
+      join(configuredWorkspace, 'brainlink.config.json'),
+      JSON.stringify(
+        {
+          vault: configuredVault
+        },
+        null,
+        2
+      )
+    )
+
+    const configuredNote = parseJson<{ path: string }>(
+      await cli(['add', 'Configured Memory', '--content', 'Configured workspace vault memory. #configured', '--json'], configuredWorkspace, env)
+    )
+    expect(configuredNote.path).toContain(join(configuredVault, 'agents/shared/configured-memory.md'))
+  }, 20000)
+
+  it('prints the package version', async () => {
+    const packageJson = parseJson<{ version: string }>(await readFile(join(projectPath, 'package.json'), 'utf8'))
+
+    expect(await cli(['--version'], projectPath)).toBe(packageJson.version)
+  })
 })
