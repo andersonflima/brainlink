@@ -24,8 +24,8 @@
     "retrieval"
   ],
   "bin": {
-    "brainlink": "./dist/cli/main.js",
-    "blink": "./dist/cli/main.js"
+    "brainlink": "dist/cli/main.js",
+    "blink": "dist/cli/main.js"
   },
   "files": [
     "dist",
