@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -231,4 +231,10 @@ describe('brainlink cli integration', () => {
     )
     expect(configuredNote.path).toContain(join(configuredVault, 'agents/shared/configured-memory.md'))
   }, 20000)
+
+  it('prints the package version', async () => {
+    const packageJson = parseJson<{ version: string }>(await readFile(join(projectPath, 'package.json'), 'utf8'))
+
+    expect(await cli(['--version'], projectPath)).toBe(packageJson.version)
+  })
 })
