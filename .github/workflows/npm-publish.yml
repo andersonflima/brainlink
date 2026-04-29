@@ -1,6 +1,8 @@
 name: Publish npm
 
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
   workflow_dispatch:
@@ -40,17 +42,38 @@ jobs:
       - run: npm run check
       - run: npm run pack:smoke
 
-      - name: Resolve npm dist tag
+      - name: Resolve package metadata
         env:
-          DIST_TAG_INPUT: ${{ github.event.inputs.dist_tag }}
+          DIST_TAG_INPUT: ${{ github.event.inputs.dist_tag || '' }}
         run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
           VERSION=$(node -p "require('./package.json').version")
+          echo "PACKAGE_NAME=$PACKAGE_NAME" >> "$GITHUB_ENV"
+          echo "PACKAGE_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+          if [[ "$VERSION" == *-* ]]; then
+            echo "NPM_PRERELEASE_TAG=${VERSION#*-}" | sed 's/[.].*//' >> "$GITHUB_ENV"
+          else
+            echo "NPM_PRERELEASE_TAG=" >> "$GITHUB_ENV"
+          fi
+
           if [[ -n "$DIST_TAG_INPUT" ]]; then
             echo "NPM_DIST_TAG=$DIST_TAG_INPUT" >> "$GITHUB_ENV"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "NPM_DIST_TAG=latest" >> "$GITHUB_ENV"
           elif [[ "$VERSION" == *-* ]]; then
             echo "NPM_DIST_TAG=${VERSION#*-}" | sed 's/[.].*//' >> "$GITHUB_ENV"
           else
             echo "NPM_DIST_TAG=latest" >> "$GITHUB_ENV"
+          fi
+
+      - name: Check published version
+        run: |
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version >/dev/null 2>&1; then
+            echo "PACKAGE_ALREADY_PUBLISHED=true" >> "$GITHUB_ENV"
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is already published. Skipping npm publish."
+          else
+            echo "PACKAGE_ALREADY_PUBLISHED=false" >> "$GITHUB_ENV"
           fi
 
       - name: Publish dry run
@@ -60,7 +83,13 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish package
-        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        if: env.PACKAGE_ALREADY_PUBLISHED == 'false' && (github.event_name == 'push' || github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run))
         run: npm publish --access public --provenance --tag "$NPM_DIST_TAG"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Update prerelease dist tag
+        if: env.PACKAGE_ALREADY_PUBLISHED == 'false' && env.NPM_PRERELEASE_TAG != '' && env.NPM_PRERELEASE_TAG != env.NPM_DIST_TAG && (github.event_name == 'push' || github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run))
+        run: npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" "$NPM_PRERELEASE_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

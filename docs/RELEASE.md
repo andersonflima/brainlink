@@ -47,10 +47,13 @@ blink server --vault ./tmp-vault --host 0.0.0.0
 
 The preferred path is the `Publish npm` GitHub Actions workflow:
 
+- Push to `main`: runs checks, pack smoke, then publishes the package to npm with `latest` when `package.json` contains a version that is not already published.
 - GitHub Release `published`: runs checks, pack smoke, then publishes to npm with provenance.
 - Manual `workflow_dispatch`: runs a dry run by default. Disable `dry_run` only for an intentional manual publish.
 - Manual `workflow_dispatch` accepts an optional `dist_tag` override. Use `latest` only when the default npm install command should resolve to that version.
 - Prerelease versions publish under their prerelease dist-tag, for example `0.1.0-alpha.1` publishes with `--tag alpha`.
+
+The publish job checks npm before publishing. If the version already exists, the job skips `npm publish` so documentation-only or workflow-only merges do not fail because of an immutable npm version.
 
 For emergency local publishing of scoped public packages:
 
