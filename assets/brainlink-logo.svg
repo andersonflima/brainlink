@@ -1,0 +1,25 @@
+<svg width="900" height="220" viewBox="0 0 900 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Brainlink</title>
+  <desc id="desc">Brainlink logo with a linked memory graph mark and wordmark.</desc>
+  <rect width="900" height="220" fill="transparent"/>
+  <g transform="translate(42 24)">
+    <rect x="6" y="6" width="160" height="160" rx="36" fill="#F8FAFC"/>
+    <rect x="6" y="6" width="160" height="160" rx="36" stroke="#111827" stroke-width="8"/>
+    <path d="M47 84C47 65.225 62.225 50 81 50H92C110.775 50 126 65.225 126 84C126 102.775 110.775 118 92 118H81C62.225 118 47 102.775 47 84Z" stroke="#111827" stroke-width="12" stroke-linecap="round"/>
+    <path d="M67 84C67 76.268 73.268 70 81 70H92C99.732 70 106 76.268 106 84C106 91.732 99.732 98 92 98H81C73.268 98 67 91.732 67 84Z" fill="#FFFFFF"/>
+    <path d="M54 132L43 121L54 110" stroke="#2563EB" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M118 110L129 121L118 132" stroke="#2563EB" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="55" cy="43" r="12" fill="#14B8A6"/>
+    <circle cx="121" cy="43" r="12" fill="#2563EB"/>
+    <circle cx="86" cy="136" r="12" fill="#111827"/>
+    <path d="M66.5 47.5L109.5 47.5" stroke="#94A3B8" stroke-width="7" stroke-linecap="round"/>
+    <path d="M62 54L79 125" stroke="#94A3B8" stroke-width="7" stroke-linecap="round"/>
+    <path d="M115 54L92 125" stroke="#94A3B8" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(244 68)">
+    <text x="0" y="62" fill="#111827" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="72" font-weight="760">Brainlink</text>
+    <text x="4" y="102" fill="#475569" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="24" font-weight="500">Local-first memory for AI agents</text>
+    <path d="M0 124H268" stroke="#14B8A6" stroke-width="8" stroke-linecap="round"/>
+    <path d="M292 124H392" stroke="#2563EB" stroke-width="8" stroke-linecap="round"/>
+  </g>
+</svg>

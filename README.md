@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/brainlink-logo.svg" alt="Brainlink" width="720">
+</p>
+
 # Brainlink
 
 Local-first memory and knowledge graph for AI agents.
