@@ -35,14 +35,23 @@ jobs:
       - run: npm run check
       - run: npm run pack:smoke
 
+      - name: Resolve npm dist tag
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *-* ]]; then
+            echo "NPM_DIST_TAG=${VERSION#*-}" | sed 's/[.].*//' >> "$GITHUB_ENV"
+          else
+            echo "NPM_DIST_TAG=latest" >> "$GITHUB_ENV"
+          fi
+
       - name: Publish dry run
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
-        run: npm publish --dry-run --access public
+        run: npm publish --dry-run --access public --tag "$NPM_DIST_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish package
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --tag "$NPM_DIST_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
