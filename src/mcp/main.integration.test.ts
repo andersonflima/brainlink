@@ -45,7 +45,7 @@ describe('brainlink mcp integration', () => {
           vault,
           agent: 'coding-agent',
           title: 'Architecture',
-          content: 'Brainlink MCP stores durable Markdown memory with [[Related Concept]] links. #architecture #mcp'
+          content: 'Brainlink MCP stores durable Markdown memory with [[Related Concept]] priority: high. #architecture #mcp'
         }
       })
 
@@ -72,6 +72,26 @@ describe('brainlink mcp integration', () => {
       })
       expect(contextResult.content[0]).toMatchObject({
         type: 'text'
+      })
+
+      const graphResult = await client.callTool({
+        name: 'brainlink_graph',
+        arguments: {
+          vault,
+          agent: 'coding-agent'
+        }
+      })
+
+      expect(graphResult.structuredContent).toMatchObject({
+        vault,
+        agent: 'coding-agent',
+        edges: [
+          expect.objectContaining({
+            targetTitle: 'Related Concept',
+            weight: 4,
+            priority: 'high'
+          })
+        ]
       })
     } finally {
       await client.close()

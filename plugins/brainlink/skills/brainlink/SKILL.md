@@ -14,6 +14,7 @@ Use this skill when a task may benefit from project memory, durable decisions, r
 - `brainlink_context` is read-only.
 - Retrieved context does not create notes, backlinks or graph edges.
 - Real relationships require explicit `[[wiki links]]` in Markdown notes.
+- Important relationships should put a priority marker on the same line as the link, such as `priority: high`, `#important` or `#critical`.
 - Run indexing after writes. The MCP `brainlink_add_note` tool already writes and reindexes.
 - Store durable knowledge only. Do not store secrets, credentials, private keys, access tokens or transient chat noise.
 
@@ -43,6 +44,7 @@ Good memory content includes:
 
 - A concise durable statement.
 - At least one `[[Existing Note Title]]` link when a related concept exists.
+- Priority markers near important links when the relationship should be ranked above ordinary links.
 - Useful tags such as `#architecture`, `#decision`, `#runbook`, `#testing` or `#preference`.
 
 Example:
@@ -62,6 +64,10 @@ We rebuild old indexes now.
 ```
 
 That may be searchable, but it does not create useful graph traversal paths.
+
+## Weighted Graph Reads
+
+Use `brainlink_graph` when a task needs relationship structure. Edges include `weight` and `priority`; prefer stronger edges when choosing which related notes matter most.
 
 ## Validation
 

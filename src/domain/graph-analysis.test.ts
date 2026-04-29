@@ -10,8 +10,8 @@ describe('graph analysis', () => {
       { id: 'c', agentId: 'shared', title: 'C', path: 'c.md', content: '', tags: ['x'] }
     ],
     edges: [
-      { source: 'a', target: 'b', targetTitle: 'B' },
-      { source: 'a', target: null, targetTitle: 'Missing' }
+      { source: 'a', target: 'b', targetTitle: 'B', weight: 1, priority: 'normal' },
+      { source: 'a', target: null, targetTitle: 'Missing', weight: 1, priority: 'normal' }
     ]
   }
 

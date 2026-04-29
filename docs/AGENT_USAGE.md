@@ -133,6 +133,7 @@ Rules:
 
 - Use a clear title.
 - Use `[[Note Title]]` for relationships.
+- Put priority markers near links when the relationship is important.
 - Use tags for retrieval.
 - Keep each note focused.
 - Prefer summaries over raw transcripts.
@@ -143,6 +144,15 @@ Rules:
 Brainlink only builds graph edges from Markdown `[[wiki links]]`.
 
 The `context` command is read-only. It retrieves indexed notes and returns a compact package for the model, but it does not write memory, create backlinks, infer relationships or modify the graph. If an agent reads context and then learns something durable, the agent must write a note with explicit links before that knowledge becomes connected memory.
+
+Graph edges are weighted during indexing. Repeated links increase weight. Links inside headings or task-list lines receive a small boost. Priority markers on the same line as a link raise its priority:
+
+```md
+- [ ] Review [[Architecture]] priority: high
+Related: [[Incident Runbook]] #critical
+```
+
+Agents should use weighted graph output to sort relationships by importance. Edges expose `weight` and `priority`, where priority is one of `low`, `normal`, `high` or `critical`.
 
 Required write behavior:
 
@@ -463,6 +473,8 @@ Available MCP tools:
 - `brainlink_orphans`
 
 MCP clients can pass `vault` and `agent` arguments per tool call. Set `BRAINLINK_ALLOWED_VAULTS` when exposing Brainlink to an external agent process so a tool cannot pass arbitrary vault paths:
+
+`brainlink_graph` returns weighted edges. Agents should prefer higher `weight` and stronger `priority` when deciding which related notes matter most.
 
 ```bash
 export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault"

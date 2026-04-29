@@ -64,7 +64,7 @@ export const createBrainlinkMcpServer = (): McpServer => {
     'brainlink_add_note',
     {
       title: 'Add Brainlink Note',
-      description: 'Write durable Markdown memory, then reindex the vault. Include explicit [[wiki links]] for connected graph memory.',
+      description: 'Write durable Markdown memory, then reindex the vault. Include explicit [[wiki links]] for connected graph memory. Add priority markers near links, such as priority: high, #important or #critical, when a relationship should be weighted higher.',
       inputSchema: addNoteInputSchema
     },
     addNoteTool
@@ -94,7 +94,7 @@ export const createBrainlinkMcpServer = (): McpServer => {
     'brainlink_graph',
     {
       title: 'Read Brainlink Graph',
-      description: 'Read indexed graph nodes and wiki-link edges.',
+      description: 'Read indexed graph nodes and wiki-link edges. Edges include weight and priority fields so agents can rank importance and priority.',
       inputSchema: graphInputSchema
     },
     graphTool

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { createCauliflowerGraphLayout, getMinimumLayoutDistance } from './graph-layout.js'
-import type { KnowledgeGraph } from './types.js'
+import type { GraphEdge, KnowledgeGraph } from './types.js'
+
+const normalEdge = (edge: Omit<GraphEdge, 'weight' | 'priority'>): GraphEdge => ({
+  ...edge,
+  weight: 1,
+  priority: 'normal'
+})
 
 describe('graph layout', () => {
   it('keeps content group metadata while assigning graph segments', () => {
@@ -11,9 +17,9 @@ describe('graph layout', () => {
         { id: 'context', agentId: 'shared', title: 'Context Builder', path: '50-retrieval/context-builder.md', content: '', tags: [] }
       ],
       edges: [
-        { source: 'moc', target: 'agent', targetTitle: 'Agent Runtime Loop' },
-        { source: 'moc', target: 'context', targetTitle: 'Context Builder' },
-        { source: 'agent', target: 'context', targetTitle: 'Context Builder' }
+        normalEdge({ source: 'moc', target: 'agent', targetTitle: 'Agent Runtime Loop' }),
+        normalEdge({ source: 'moc', target: 'context', targetTitle: 'Context Builder' }),
+        normalEdge({ source: 'agent', target: 'context', targetTitle: 'Context Builder' })
       ]
     }
     const layout = createCauliflowerGraphLayout(graph)
@@ -41,11 +47,11 @@ describe('graph layout', () => {
         { id: 'decision-b', agentId: 'shared', title: 'Ranking Strategy', path: '50-retrieval/ranking-strategy.md', content: '', tags: [] }
       ],
       edges: [
-        { source: 'moc-a', target: 'concept-a', targetTitle: 'API Gateway' },
-        { source: 'moc-a', target: 'decision-a', targetTitle: 'HTTP Local API ADR' },
-        { source: 'moc-b', target: 'concept-b', targetTitle: 'Context Builder' },
-        { source: 'moc-b', target: 'decision-b', targetTitle: 'Ranking Strategy' },
-        { source: 'concept-a', target: 'concept-b', targetTitle: 'Context Builder' }
+        normalEdge({ source: 'moc-a', target: 'concept-a', targetTitle: 'API Gateway' }),
+        normalEdge({ source: 'moc-a', target: 'decision-a', targetTitle: 'HTTP Local API ADR' }),
+        normalEdge({ source: 'moc-b', target: 'concept-b', targetTitle: 'Context Builder' }),
+        normalEdge({ source: 'moc-b', target: 'decision-b', targetTitle: 'Ranking Strategy' }),
+        normalEdge({ source: 'concept-a', target: 'concept-b', targetTitle: 'Context Builder' })
       ]
     }
     const layout = createCauliflowerGraphLayout(graph)
@@ -76,7 +82,7 @@ describe('graph layout', () => {
     }))
     const graph: KnowledgeGraph = {
       nodes,
-      edges: nodes.slice(1).map((node) => ({
+      edges: nodes.slice(1).map((node) => normalEdge({
         source: 'node-0',
         target: node.id,
         targetTitle: node.title
@@ -112,7 +118,7 @@ describe('graph layout', () => {
     const edges = nodes.flatMap((node, index) =>
       [index + 1, index + 7, index + 31]
         .filter((targetIndex) => targetIndex < nodes.length)
-        .map((targetIndex) => ({
+        .map((targetIndex) => normalEdge({
           source: node.id,
           target: nodes[targetIndex]?.id ?? null,
           targetTitle: nodes[targetIndex]?.title ?? ''

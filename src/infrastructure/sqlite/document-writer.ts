@@ -2,6 +2,9 @@ import Database from 'better-sqlite3'
 import { createEmbeddingBuckets } from '../../domain/embeddings.js'
 import type { SqliteIndexWriter } from './types.js'
 
+const toTitleKey = (title: string): string =>
+  title.toLowerCase()
+
 export const createIndexWriter = (database: Database.Database): SqliteIndexWriter => ({
   reset: () => {
     database.exec(`
@@ -30,8 +33,8 @@ export const createIndexWriter = (database: Database.Database): SqliteIndexWrite
       VALUES (?, ?)
     `)
     const insertLink = database.prepare(`
-      INSERT INTO links (from_document_id, to_title, to_document_id)
-      VALUES (?, ?, ?)
+      INSERT INTO links (from_document_id, to_title, to_title_key, to_document_id, weight, priority)
+      VALUES (?, ?, ?, ?, ?, ?)
     `)
 
     const transaction = database.transaction(() => {
@@ -65,7 +68,7 @@ export const createIndexWriter = (database: Database.Database): SqliteIndexWrite
 
       documents.forEach(({ links }) => {
         links.forEach((link) => {
-          insertLink.run(link.fromDocumentId, link.toTitle, link.toDocumentId)
+          insertLink.run(link.fromDocumentId, link.toTitle, toTitleKey(link.toTitle), link.toDocumentId, link.weight, link.priority)
         })
       })
     })

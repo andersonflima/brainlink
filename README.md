@@ -62,6 +62,7 @@ Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable
 
 - Local-first Markdown vault.
 - Obsidian-compatible `[[wiki links]]` and `#tags`.
+- Weighted graph edges so agents can rank relationship importance and priority.
 - Backlinks, broken-link reports, orphan detection and validation.
 - Full-text, semantic and hybrid retrieval modes.
 - SQLite-backed semantic candidate buckets for larger vaults.
@@ -390,11 +391,20 @@ Available tools:
 - `brainlink_add_note`: write durable Markdown memory and reindex.
 - `brainlink_index`: rebuild the vault index.
 - `brainlink_validate`: validate broken links and orphan notes.
-- `brainlink_graph`: read indexed graph nodes and links.
+- `brainlink_graph`: read indexed graph nodes and weighted links.
 - `brainlink_broken_links`: list unresolved wiki links.
 - `brainlink_orphans`: list disconnected notes.
 
 The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]` followed by indexing.
+
+Agents can raise the importance of a relationship by putting priority markers on the same line as a wiki link:
+
+```md
+- [ ] Review [[Architecture]] priority: high
+Related: [[Incident Runbook]] #critical
+```
+
+Indexed edges expose `weight` and `priority` (`low`, `normal`, `high`, `critical`) through CLI JSON, HTTP graph APIs and `brainlink_graph`.
 
 ## Graph UI
 
@@ -409,7 +419,7 @@ By default, the server uses `$HOME/.brainlink/vault`. Pass `--vault ./vault` onl
 The graph UI shows:
 
 - notes as nodes
-- `[[wiki links]]` as edges
+- `[[wiki links]]` as weighted edges
 - backlinks and outgoing links
 - full Markdown content for the selected note
 - neutral graph nodes with segment/group metadata
@@ -523,7 +533,7 @@ blink links --vault ./vault
 blink links --vault ./vault --agent coding-agent
 ```
 
-Lists indexed wiki links.
+Lists indexed wiki links. JSON output includes `weight` and `priority` for each relationship.
 
 ### `backlinks`
 
@@ -532,7 +542,7 @@ blink backlinks "Architecture" --vault ./vault
 blink backlinks "Architecture" --vault ./vault --agent coding-agent
 ```
 
-Lists notes pointing to a target title.
+Lists notes pointing to a target title, ordered by strongest relationship first. JSON output includes `weight` and `priority`.
 
 ### `graph`
 
@@ -541,7 +551,7 @@ blink graph --vault ./vault --json
 blink graph --vault ./vault --agent coding-agent --json
 ```
 
-Prints indexed graph data.
+Prints indexed graph data. Edges include `weight` and `priority` so agents can categorize importance.
 
 ### `stats`
 

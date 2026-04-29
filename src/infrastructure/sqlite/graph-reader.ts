@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { sanitizeAgentId } from '../../domain/agents.js'
-import type { AgentSummary, GraphEdge, GraphLink, GraphNode, KnowledgeGraph } from '../../domain/types.js'
+import type { AgentSummary, GraphEdge, GraphLink, GraphNode, KnowledgeGraph, LinkPriority } from '../../domain/types.js'
 import type { SqliteGraphReader } from './types.js'
 
 type GraphLinkRow = {
@@ -9,6 +9,8 @@ type GraphLinkRow = {
   readonly from_path: string
   readonly to_title: string
   readonly to_path: string | null
+  readonly weight: number
+  readonly priority: LinkPriority
 }
 
 type GraphNodeRow = {
@@ -24,6 +26,8 @@ type GraphEdgeRow = {
   readonly source: string
   readonly target: string | null
   readonly target_title: string
+  readonly weight: number
+  readonly priority: LinkPriority
 }
 
 const toGraphLink = (row: GraphLinkRow): GraphLink => ({
@@ -31,7 +35,9 @@ const toGraphLink = (row: GraphLinkRow): GraphLink => ({
   fromTitle: row.from_title,
   fromPath: row.from_path,
   toTitle: row.to_title,
-  toPath: row.to_path
+  toPath: row.to_path,
+  weight: row.weight,
+  priority: row.priority
 })
 
 type AgentSummaryRow = {
@@ -41,6 +47,9 @@ type AgentSummaryRow = {
 
 const normalizeAgentFilter = (agentId?: string): string | undefined =>
   agentId ? sanitizeAgentId(agentId) : undefined
+
+const toTitleKey = (title: string): string =>
+  title.toLowerCase()
 
 export const createGraphReader = (database: Database.Database): SqliteGraphReader => ({
   listLinks: (agentId) => {
@@ -54,12 +63,14 @@ export const createGraphReader = (database: Database.Database): SqliteGraphReade
             source.title AS from_title,
             source.path AS from_path,
             COALESCE(target.title, links.to_title) AS to_title,
-            target.path AS to_path
+            target.path AS to_path,
+            links.weight AS weight,
+            links.priority AS priority
           FROM links
           JOIN documents source ON source.id = links.from_document_id
           LEFT JOIN documents target ON target.id = links.to_document_id
           ${agentFilter}
-          ORDER BY source.title, to_title
+          ORDER BY source.title, links.weight DESC, to_title
         `
         )
         .all(...(normalizedAgentId ? [normalizedAgentId] : [])) as unknown as readonly GraphLinkRow[]
@@ -69,6 +80,7 @@ export const createGraphReader = (database: Database.Database): SqliteGraphReade
   listBacklinks: (title, agentId) => {
       const normalizedAgentId = normalizeAgentFilter(agentId)
       const agentFilter = normalizedAgentId ? 'AND source.agent_id = ?' : ''
+      const titleKey = toTitleKey(title)
       const rows = database
         .prepare(
           `
@@ -77,16 +89,18 @@ export const createGraphReader = (database: Database.Database): SqliteGraphReade
             source.title AS from_title,
             source.path AS from_path,
             COALESCE(target.title, links.to_title) AS to_title,
-            target.path AS to_path
+            target.path AS to_path,
+            links.weight AS weight,
+            links.priority AS priority
           FROM links
           JOIN documents source ON source.id = links.from_document_id
           LEFT JOIN documents target ON target.id = links.to_document_id
-          WHERE (lower(links.to_title) = lower(?) OR lower(target.title) = lower(?))
+          WHERE links.to_title_key = ?
           ${agentFilter}
-          ORDER BY source.title
+          ORDER BY links.weight DESC, source.title
         `
         )
-        .all(...(normalizedAgentId ? [title, title, normalizedAgentId] : [title, title])) as unknown as readonly GraphLinkRow[]
+        .all(...(normalizedAgentId ? [titleKey, normalizedAgentId] : [titleKey])) as unknown as readonly GraphLinkRow[]
 
       return rows.map(toGraphLink)
     },
@@ -110,11 +124,13 @@ export const createGraphReader = (database: Database.Database): SqliteGraphReade
           SELECT
             links.from_document_id AS source,
             links.to_document_id AS target,
-            links.to_title AS target_title
+            links.to_title AS target_title,
+            links.weight AS weight,
+            links.priority AS priority
           FROM links
           JOIN documents source ON source.id = links.from_document_id
           ${edgeAgentFilter}
-          ORDER BY links.from_document_id, links.to_title
+          ORDER BY links.from_document_id, links.weight DESC, links.to_title
         `
         )
         .all(...(normalizedAgentId ? [normalizedAgentId] : [])) as unknown as readonly GraphEdgeRow[]
@@ -129,7 +145,9 @@ export const createGraphReader = (database: Database.Database): SqliteGraphReade
       const edges: readonly GraphEdge[] = edgeRows.map((row) => ({
         source: row.source,
         target: row.target,
-        targetTitle: row.target_title
+        targetTitle: row.target_title,
+        weight: row.weight,
+        priority: row.priority
       }))
 
       return {

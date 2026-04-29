@@ -40,8 +40,30 @@ describe('sqlite schema', () => {
       expect(
         database.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get()
       ).toEqual({
-        value: '4'
+        value: '5'
       })
+    } finally {
+      database.close()
+    }
+  })
+
+  it('creates weighted link columns and lookup indexes', () => {
+    const database = new Database(':memory:')
+
+    try {
+      createSchema(database)
+
+      expect(getColumns(database, 'links')).toEqual([
+        'from_document_id',
+        'to_title',
+        'to_title_key',
+        'to_document_id',
+        'weight',
+        'priority'
+      ])
+      expect(
+        database.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_links_to_title_key'").get()
+      ).toEqual({ name: 'idx_links_to_title_key' })
     } finally {
       database.close()
     }

@@ -13,7 +13,12 @@ export const openSqliteIndex = (vaultPath: string): SqliteIndex => {
 
   chmodSync(databasePath, 0o600)
 
-  database.exec('PRAGMA foreign_keys = ON;')
+  database.exec(`
+    PRAGMA foreign_keys = ON;
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA temp_store = MEMORY;
+  `)
   createSchema(database)
 
   return {
