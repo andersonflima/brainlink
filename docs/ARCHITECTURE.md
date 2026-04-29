@@ -105,13 +105,15 @@ Application code depends on domain rules and infrastructure interfaces.
 The infrastructure layer handles side effects:
 
 - reading Markdown files from disk
+- mirroring S3-compatible bucket Markdown into a local cache
 - writing Markdown notes
 - creating `.brainlink`
 - writing and querying SQLite
 - running FTS, semantic and hybrid retrieval
 - narrowing semantic candidates through SQLite embedding buckets before cosine scoring
 
-SQLite is an index, not the canonical storage model.
+SQLite is an index, not the canonical storage model. For bucket vaults, Markdown
+objects in the bucket remain canonical and SQLite is still local derived data.
 
 ## Indexing Flow
 
@@ -240,6 +242,7 @@ Relevant content
 Permanent:
 
 - Markdown files
+- S3-compatible Markdown objects when the vault is `s3://bucket/prefix`
 - optional Git history around the vault
 
 Canonical agent memory lives under:
@@ -251,6 +254,7 @@ vault/agents/<agent-id>/**/*.md
 Rebuildable:
 
 - `.brainlink/brainlink.db`
+- `$BRAINLINK_HOME/bucket-cache`
 - FTS records
 - local embedding vectors
 - local embedding bucket index
