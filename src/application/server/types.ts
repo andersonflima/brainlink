@@ -4,7 +4,6 @@ export type StartServerInput = {
   readonly port: number
   readonly shouldIndex: boolean
   readonly shouldWatch: boolean
-  readonly allowPublic?: boolean
 }
 
 export type RunningServer = {

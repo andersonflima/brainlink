@@ -32,7 +32,7 @@ blink context "release smoke" --vault ./tmp-vault --mode hybrid --json
 blink server --vault ./tmp-vault --host 127.0.0.1 --port 4321
 ```
 
-9. Verify the server refuses accidental public binds:
+9. Verify the server refuses public binds:
 
 ```bash
 blink server --vault ./tmp-vault --host 0.0.0.0

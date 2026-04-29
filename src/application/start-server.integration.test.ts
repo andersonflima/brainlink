@@ -120,7 +120,7 @@ describe('brainlink http server integration', () => {
     }
   })
 
-  it('refuses non-loopback hosts without explicit public opt-in', async () => {
+  it('always refuses non-loopback hosts', async () => {
     const vault = await mkdtemp(join(tmpdir(), 'brainlink-public-host-'))
     tempPaths.push(vault)
 
@@ -132,6 +132,6 @@ describe('brainlink http server integration', () => {
         shouldIndex: false,
         shouldWatch: false
       })
-    ).rejects.toThrow('Refusing to bind Brainlink server')
+    ).rejects.toThrow('Brainlink HTTP only runs on localhost')
   })
 })

@@ -5,7 +5,7 @@ Brainlink is local-first.
 ## Defaults
 
 - The HTTP server binds to `127.0.0.1` by default.
-- The HTTP server refuses non-loopback hosts unless `--allow-public` is passed.
+- The HTTP server always refuses non-loopback hosts.
 - The HTTP server is read-only and does not expose note creation, indexing or update routes.
 - The SQLite database is a derived local index.
 - Markdown files are user-owned source data.
@@ -14,7 +14,7 @@ Brainlink is local-first.
 
 ## Remote Exposure
 
-Do not expose the HTTP server on a public interface without adding authentication, authorization and transport security.
+Brainlink HTTP is intentionally localhost-only. It does not support binding to a public interface.
 
 ## Sensitive Memory
 

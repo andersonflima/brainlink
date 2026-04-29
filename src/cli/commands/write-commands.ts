@@ -111,7 +111,6 @@ export const registerWriteCommands = (program: Command): void => {
   .option('-p, --port <port>', 'server port', '4321')
   .option('--no-index', 'skip indexing before starting the server')
   .option('-w, --watch', 'watch markdown files and reindex on changes')
-  .option('--allow-public', 'allow binding the server to a non-loopback host')
   .option('--json', 'print machine-readable JSON')
   .description('start a local web UI for the knowledge graph')
   .action(async (options: ServerOptions) => {
@@ -121,8 +120,7 @@ export const registerWriteCommands = (program: Command): void => {
       host: options.host ?? resolved.config.host,
       port: parsePositiveInteger(options.port ?? String(resolved.config.port), resolved.config.port),
       shouldIndex: options.index,
-      shouldWatch: Boolean(options.watch),
-      allowPublic: Boolean(options.allowPublic)
+      shouldWatch: Boolean(options.watch)
     })
 
     print(options.json, { url: server.url, watch: Boolean(options.watch), readonly: true }, () => `Brainlink graph server running at ${server.url}`)
