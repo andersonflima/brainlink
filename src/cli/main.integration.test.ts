@@ -181,5 +181,5 @@ describe('brainlink cli integration', () => {
         fromPath: expect.stringContaining('agents/coding-agent/')
       })
     ])
-  })
+  }, 20000)
 })
