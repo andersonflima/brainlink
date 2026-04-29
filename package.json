@@ -25,7 +25,8 @@
   ],
   "bin": {
     "brainlink": "dist/cli/main.js",
-    "blink": "dist/cli/main.js"
+    "blink": "dist/cli/main.js",
+    "brainlink-mcp": "dist/mcp/main.js"
   },
   "files": [
     "dist",
@@ -44,6 +45,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc -p tsconfig.json",
     "dev": "tsx src/cli/main.ts",
+    "dev:mcp": "tsx src/mcp/main.ts",
     "test": "vitest run --config vitest.config.ts",
     "check": "npm run build && npm run test",
     "benchmark:large": "tsx src/benchmarks/large-vault.ts",
@@ -51,8 +53,10 @@
     "pack:smoke": "npm pack --dry-run"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.9.0",
-    "commander": "^14.0.2"
+    "commander": "^14.0.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

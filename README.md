@@ -64,7 +64,7 @@ Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable
 - Agent namespaces under `agents/<agent-id>/`.
 - CLI with machine-readable `--json` output.
 - Short CLI alias: `blink`.
-- Compatible with MCP servers that execute local CLI commands.
+- Built-in MCP stdio server for agent tool integration.
 - Local HTTP API.
 - Realtime graph UI with agent selector and colored knowledge groups.
 
@@ -330,50 +330,36 @@ This allows `coding-agent` and `research-agent` to both have a note named `Archi
 
 ## MCP Server Integration
 
-Brainlink is not an MCP server. It is a CLI-first memory engine.
-
-An MCP server can use Brainlink by spawning `blink` or `brainlink` as a subprocess and reading `--json` output. This keeps Brainlink decoupled from any specific MCP SDK while still making it usable by MCP-compatible agents.
-
-Minimum integration contract:
+Brainlink ships a stdio MCP server with the npm package:
 
 ```bash
-blink context "<task>" --agent "$BLINK_AGENT" --json
-blink add "Decision Title" --agent "$BLINK_AGENT" --content "Durable memory. #decision"
-blink index
+brainlink-mcp
 ```
 
-Example Node.js wrapper inside an external MCP server:
+Example MCP client configuration:
 
-```js
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execFileAsync = promisify(execFile)
-
-export const brainlinkContext = async ({ vault, agent, query }) => {
-  const { stdout } = await execFileAsync('blink', [
-    'context',
-    query,
-    '--vault',
-    vault,
-    '--agent',
-    agent,
-    '--mode',
-    'hybrid',
-    '--json'
-  ])
-
-  return JSON.parse(stdout)
+```json
+{
+  "mcpServers": {
+    "brainlink": {
+      "command": "brainlink-mcp"
+    }
+  }
 }
 ```
 
-Recommended MCP tools exposed by the external server:
+Available tools:
 
-- `brainlink_context`: calls `blink context ... --json`.
-- `brainlink_search`: calls `blink search ... --json`.
-- `brainlink_add_note`: calls `blink add ... --json`, then `blink index`.
-- `brainlink_graph`: calls `blink graph ... --json`.
-- `brainlink_validate`: calls `blink validate ... --json`.
+- `brainlink_context`: read indexed context for a task or question.
+- `brainlink_search`: search indexed notes.
+- `brainlink_add_note`: write durable Markdown memory and reindex.
+- `brainlink_index`: rebuild the vault index.
+- `brainlink_validate`: validate broken links and orphan notes.
+- `brainlink_graph`: read indexed graph nodes and links.
+- `brainlink_broken_links`: list unresolved wiki links.
+- `brainlink_orphans`: list disconnected notes.
+
+The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]` followed by indexing.
 
 ## Graph UI
 
@@ -708,7 +694,6 @@ Detailed notes:
 - Semantic search uses SQLite embedding buckets to narrow candidates before cosine scoring.
 - `embeddingProvider` currently supports `local` and `none`.
 - Link resolution is title-based inside each agent namespace, with `shared` as fallback.
-- No embedded MCP server is shipped; MCP integration is done by external servers wrapping the CLI.
 - HTTP API is local and unauthenticated.
 - Watch mode depends on the platform filesystem watcher.
 
