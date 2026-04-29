@@ -19,7 +19,7 @@ on:
         default: ""
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 concurrency:
@@ -28,6 +28,7 @@ concurrency:
 
 jobs:
   publish:
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip publish]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,17 +40,55 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: npm ci
-      - run: npm run check
-      - run: npm run pack:smoke
 
       - name: Resolve package metadata
         env:
           DIST_TAG_INPUT: ${{ github.event.inputs.dist_tag || '' }}
+          SHOULD_AUTO_BUMP: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
+          set -euo pipefail
+
           PACKAGE_NAME=$(node -p "require('./package.json').name")
           VERSION=$(node -p "require('./package.json').version")
+
+          next_version() {
+            node - "$1" <<'NODE'
+          const version = process.argv[2]
+          const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+)\.(\d+))?$/)
+          if (!match) {
+            throw new Error(`Unsupported package version: ${version}`)
+          }
+
+          const [, major, minor, patch, prereleaseName, prereleaseNumber] = match
+          if (prereleaseName && prereleaseNumber) {
+            console.log(`${major}.${minor}.${patch}-${prereleaseName}.${Number(prereleaseNumber) + 1}`)
+          } else {
+            console.log(`${major}.${minor}.${Number(patch) + 1}`)
+          }
+          NODE
+          }
+
+          VERSION_BUMPED=false
+          PACKAGE_ALREADY_PUBLISHED=false
+
+          if npm view "$PACKAGE_NAME@$VERSION" version >/dev/null 2>&1; then
+            if [[ "$SHOULD_AUTO_BUMP" == "true" ]]; then
+              while npm view "$PACKAGE_NAME@$VERSION" version >/dev/null 2>&1; do
+                VERSION=$(next_version "$VERSION")
+              done
+
+              npm version "$VERSION" --no-git-tag-version
+              VERSION_BUMPED=true
+            else
+              PACKAGE_ALREADY_PUBLISHED=true
+              echo "$PACKAGE_NAME@$VERSION is already published. Skipping npm publish."
+            fi
+          fi
+
           echo "PACKAGE_NAME=$PACKAGE_NAME" >> "$GITHUB_ENV"
           echo "PACKAGE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "VERSION_BUMPED=$VERSION_BUMPED" >> "$GITHUB_ENV"
+          echo "PACKAGE_ALREADY_PUBLISHED=$PACKAGE_ALREADY_PUBLISHED" >> "$GITHUB_ENV"
 
           if [[ "$VERSION" == *-* ]]; then
             echo "NPM_PRERELEASE_TAG=${VERSION#*-}" | sed 's/[.].*//' >> "$GITHUB_ENV"
@@ -67,14 +106,8 @@ jobs:
             echo "NPM_DIST_TAG=latest" >> "$GITHUB_ENV"
           fi
 
-      - name: Check published version
-        run: |
-          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version >/dev/null 2>&1; then
-            echo "PACKAGE_ALREADY_PUBLISHED=true" >> "$GITHUB_ENV"
-            echo "$PACKAGE_NAME@$PACKAGE_VERSION is already published. Skipping npm publish."
-          else
-            echo "PACKAGE_ALREADY_PUBLISHED=false" >> "$GITHUB_ENV"
-          fi
+      - run: npm run check
+      - run: npm run pack:smoke
 
       - name: Publish dry run
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
@@ -93,3 +126,12 @@ jobs:
         run: npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" "$NPM_PRERELEASE_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit automatic version bump
+        if: env.VERSION_BUMPED == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "Bump package to $PACKAGE_VERSION [skip publish] [skip ci]"
+          git push
