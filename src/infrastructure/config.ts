@@ -1,9 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { BrainlinkConfig, EmbeddingProviderName, SearchMode } from '../domain/types.js'
+import { getDefaultVaultPath } from './paths.js'
 
 export const defaultBrainlinkConfig: BrainlinkConfig = {
-  vault: '.',
+  vault: getDefaultVaultPath(),
   host: '127.0.0.1',
   port: 4321,
   allowedVaults: [],

@@ -1,5 +1,6 @@
 import { chmod, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { resolvePath } from './paths.js'
 
 export type MarkdownFile = {
   readonly absolutePath: string
@@ -31,7 +32,7 @@ const walkMarkdownFiles = async (directory: string): Promise<readonly string[]> 
 }
 
 export const resolveVaultPath = (vaultPath: string): string =>
-  resolve(process.cwd(), vaultPath)
+  resolvePath(vaultPath)
 
 const isPathInside = (parent: string, child: string): boolean => {
   const path = relative(parent, child)

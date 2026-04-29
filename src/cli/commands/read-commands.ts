@@ -13,7 +13,7 @@ export const registerReadCommands = (program: Command): void => {
   program
     .command('search')
   .argument('<query>', 'search query')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('-l, --limit <limit>', 'maximum results', '10')
   .option('-m, --mode <mode>', 'search mode: fts, semantic or hybrid')
@@ -36,7 +36,7 @@ export const registerReadCommands = (program: Command): void => {
 
   program
     .command('links')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('--json', 'print machine-readable JSON')
   .description('list indexed wiki links')
@@ -58,7 +58,7 @@ export const registerReadCommands = (program: Command): void => {
   program
     .command('backlinks')
   .argument('<title>', 'target note title')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('--json', 'print machine-readable JSON')
   .description('list notes linking to a target note')
@@ -74,7 +74,7 @@ export const registerReadCommands = (program: Command): void => {
   program
     .command('context')
   .argument('<query>', 'context query')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('-l, --limit <limit>', 'maximum search results before context selection', '12')
   .option('-t, --tokens <tokens>', 'maximum estimated context tokens', '2000')
@@ -98,7 +98,7 @@ export const registerReadCommands = (program: Command): void => {
 
   program
     .command('graph')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('--json', 'print machine-readable JSON')
   .description('print indexed graph data')
@@ -111,7 +111,7 @@ export const registerReadCommands = (program: Command): void => {
 
   program
     .command('agents')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('--json', 'print machine-readable JSON')
   .description('list indexed agent memory namespaces')
   .action(async (options: VaultOptions) => {
@@ -123,7 +123,7 @@ export const registerReadCommands = (program: Command): void => {
 
   program
     .command('stats')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('--json', 'print machine-readable JSON')
   .description('print indexed vault statistics')
@@ -145,7 +145,7 @@ export const registerReadCommands = (program: Command): void => {
 
   program
     .command('broken-links')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('--json', 'print machine-readable JSON')
   .description('list unresolved wiki links')
@@ -162,7 +162,7 @@ export const registerReadCommands = (program: Command): void => {
 
   program
     .command('orphans')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('--json', 'print machine-readable JSON')
   .description('list indexed notes without incoming or outgoing links')
@@ -177,7 +177,7 @@ export const registerReadCommands = (program: Command): void => {
 
   program
     .command('validate')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'filter by agent memory namespace')
   .option('--json', 'print machine-readable JSON')
   .description('validate indexed vault graph health')

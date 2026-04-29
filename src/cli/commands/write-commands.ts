@@ -12,12 +12,12 @@ import type { AddOptions, ServerOptions, VaultOptions } from '../types.js'
 export const registerWriteCommands = (program: Command): void => {
   program
     .command('init')
-  .argument('[vault]', 'vault directory', '.')
+  .argument('[vault]', 'vault directory')
   .option('--json', 'print machine-readable JSON')
   .description('initialize a Brainlink vault')
-  .action(async (vault: string, options: { readonly json?: boolean }) => {
+  .action(async (vault: string | undefined, options: { readonly json?: boolean }) => {
     const config = await loadBrainlinkConfig()
-    const path = await ensureVault(assertVaultAllowed(vault, config.allowedVaults))
+    const path = await ensureVault(assertVaultAllowed(vault ?? config.vault, config.allowedVaults))
 
     print(options.json, { path }, () => `Initialized Brainlink vault at ${path}`)
   })
@@ -26,7 +26,7 @@ export const registerWriteCommands = (program: Command): void => {
     .command('add')
   .argument('<title>', 'note title')
   .requiredOption('-c, --content <content>', 'markdown content')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'agent memory namespace', 'shared')
   .option('--allow-sensitive', 'allow writing content that looks like a secret')
   .option('--json', 'print machine-readable JSON')
@@ -42,7 +42,7 @@ export const registerWriteCommands = (program: Command): void => {
 
   program
     .command('index')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('--json', 'print machine-readable JSON')
   .description('index markdown notes, links, tags and chunks')
   .action(async (options: VaultOptions) => {
@@ -58,7 +58,7 @@ export const registerWriteCommands = (program: Command): void => {
 
   program
     .command('doctor')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('--json', 'print machine-readable JSON')
   .description('run Brainlink environment and vault checks')
   .action(async (options: VaultOptions) => {
@@ -73,7 +73,7 @@ export const registerWriteCommands = (program: Command): void => {
 
   program
     .command('watch')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('--json', 'print machine-readable JSON events')
   .description('watch markdown files and reindex on changes')
   .action(async (options: VaultOptions) => {
@@ -106,7 +106,7 @@ export const registerWriteCommands = (program: Command): void => {
 
   program
     .command('server')
-  .option('-v, --vault <vault>', 'vault directory', '.')
+  .option('-v, --vault <vault>', 'vault directory')
   .option('-h, --host <host>', 'server host', '127.0.0.1')
   .option('-p, --port <port>', 'server port', '4321')
   .option('--no-index', 'skip indexing before starting the server')
