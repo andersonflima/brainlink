@@ -49,12 +49,24 @@ const groupKey = (node: GraphNode): string => {
 const groupLabel = (key: string): string =>
   groupLabels[key] ?? key
 
-const incrementDegree = (degrees: ReadonlyMap<string, number>, id: string): ReadonlyMap<string, number> =>
-  new Map([...degrees, [id, (degrees.get(id) ?? 0) + 1]])
+const incrementDegreeBy = (degrees: Map<string, number>, id: string, amount: number): Map<string, number> => {
+  degrees.set(id, (degrees.get(id) ?? 0) + amount)
+
+  return degrees
+}
+
+const edgeDegreeWeight = (edge: GraphEdge): number =>
+  Math.max(1, Math.min(edge.weight, 8))
 
 const countDegrees = (edges: readonly GraphEdge[]): ReadonlyMap<string, number> =>
-  edges.reduce<ReadonlyMap<string, number>>(
-    (degrees, edge) => (edge.target ? incrementDegree(incrementDegree(degrees, edge.source), edge.target) : incrementDegree(degrees, edge.source)),
+  edges.reduce<Map<string, number>>(
+    (degrees, edge) => {
+      const weight = edgeDegreeWeight(edge)
+
+      return edge.target
+        ? incrementDegreeBy(incrementDegreeBy(degrees, edge.source, weight), edge.target, weight)
+        : incrementDegreeBy(degrees, edge.source, weight)
+    },
     new Map()
   )
 

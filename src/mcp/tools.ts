@@ -69,7 +69,7 @@ export const addNoteInputSchema = {
   content: z
     .string()
     .min(1)
-    .describe('Durable Markdown memory. Include explicit [[wiki links]] and #tags when the memory should be connected.'),
+    .describe('Durable Markdown memory. Include explicit [[wiki links]] and #tags when the memory should be connected. Put priority markers near important links, for example priority: high, #important or #critical.'),
   agent: z.string().min(1).optional().default('shared').describe('Agent memory namespace. Defaults to shared.'),
   allowSensitive: z.boolean().optional().default(false).describe('Allow content that looks like a secret.')
 }

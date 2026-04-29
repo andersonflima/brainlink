@@ -27,6 +27,8 @@ export type KnowledgeLink = {
   readonly fromDocumentId: string
   readonly toTitle: string
   readonly toDocumentId: string | null
+  readonly weight: number
+  readonly priority: LinkPriority
 }
 
 export type IndexedDocument = {
@@ -55,6 +57,8 @@ export type GraphLink = {
   readonly fromPath: string
   readonly toTitle: string
   readonly toPath: string | null
+  readonly weight: number
+  readonly priority: LinkPriority
 }
 
 export type GraphNode = {
@@ -70,7 +74,11 @@ export type GraphEdge = {
   readonly source: string
   readonly target: string | null
   readonly targetTitle: string
+  readonly weight: number
+  readonly priority: LinkPriority
 }
+
+export type LinkPriority = 'low' | 'normal' | 'high' | 'critical'
 
 export type KnowledgeGraph = {
   readonly nodes: readonly GraphNode[]

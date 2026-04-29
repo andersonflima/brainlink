@@ -83,6 +83,8 @@ const visibleEdges = () => {
   return state.edges.filter(edge => ids.has(edge.source) && edge.target && ids.has(edge.target))
 }
 
+const edgeWeight = edge => Number.isFinite(edge.weight) ? Math.max(1, edge.weight) : 1
+
 const resetView = () => {
   const rect = canvas.getBoundingClientRect()
   state.transform = { x: Math.max(rect.width, 320) / 2, y: Math.max(rect.height, 320) / 2, scale: 1 }
@@ -103,7 +105,7 @@ const createLayout = graph => {
 
 const graphSignature = graph => JSON.stringify({
   nodes: graph.nodes.map(node => [node.id, node.title, node.path, node.content, node.tags]),
-  edges: graph.edges.map(edge => [edge.source, edge.target, edge.targetTitle])
+  edges: graph.edges.map(edge => [edge.source, edge.target, edge.targetTitle, edge.weight, edge.priority])
 })
 
 const tick = delta => {
@@ -207,7 +209,7 @@ const render = now => {
     ctx.moveTo(edge.sourceNode.x, edge.sourceNode.y)
     ctx.lineTo(edge.targetNode.x, edge.targetNode.y)
     ctx.strokeStyle = selectedEdge ? graphTheme.edgeActive : graphTheme.edge
-    ctx.lineWidth = selectedEdge ? 1.8 : 1
+    ctx.lineWidth = (selectedEdge ? 1.8 : 1) + Math.min(edgeWeight(edge) - 1, 8) * 0.22
     ctx.stroke()
   })
 
@@ -241,7 +243,7 @@ const render = now => {
 }
 
 const list = items => items.length
-  ? items.map(item => '<li>' + (item.id ? '<button type="button" data-node-id="' + escapeHtml(item.id) + '">' + escapeHtml(item.title) + '</button>' : escapeHtml(item.title)) + '<small>' + escapeHtml(item.path) + '</small></li>').join('')
+  ? items.map(item => '<li>' + (item.id ? '<button type="button" data-node-id="' + escapeHtml(item.id) + '">' + escapeHtml(item.title) + '</button>' : escapeHtml(item.title)) + '<small>' + escapeHtml(item.path) + (item.weight ? ' · weight ' + escapeHtml(item.weight) + ' · ' + escapeHtml(item.priority || 'normal') : '') + '</small></li>').join('')
   : '<li><small>No links found.</small></li>'
 
 const allNotesList = () => state.nodes.length
@@ -261,13 +263,18 @@ const selectNode = node => {
     return
   }
   const nodeById = new Map(state.nodes.map(item => [item.id, item]))
+  const withEdgeMeta = (linkedNode, edge) => linkedNode ? {
+    ...linkedNode,
+    weight: edge.weight,
+    priority: edge.priority
+  } : null
   const outgoing = state.graph.edges
     .filter(edge => edge.source === node.id)
-    .map(edge => edge.target ? nodeById.get(edge.target) : { title: edge.targetTitle + ' (unresolved)', path: 'Missing note' })
+    .map(edge => withEdgeMeta(edge.target ? nodeById.get(edge.target) : { title: edge.targetTitle + ' (unresolved)', path: 'Missing note' }, edge))
     .filter(Boolean)
   const incoming = state.graph.edges
     .filter(edge => edge.target === node.id)
-    .map(edge => nodeById.get(edge.source))
+    .map(edge => withEdgeMeta(nodeById.get(edge.source), edge))
     .filter(Boolean)
 
   elements.title.textContent = node.title

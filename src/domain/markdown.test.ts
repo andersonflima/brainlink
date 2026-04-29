@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createIndexedDocument, extractTags, extractWikiLinks, parseMarkdownDocument } from './markdown.js'
+import { createIndexedDocument, extractTags, extractWikiLinkWeights, extractWikiLinks, parseMarkdownDocument } from './markdown.js'
 
 describe('markdown domain', () => {
   it('extracts wiki links from markdown content', () => {
@@ -11,6 +11,20 @@ describe('markdown domain', () => {
 
   it('extracts tags from markdown content', () => {
     expect(extractTags('A #auth note with #jwt and #auth again')).toEqual(['auth', 'jwt'])
+  })
+
+  it('derives wiki link weights from repeated links and priority markers', () => {
+    const content = [
+      '# Architecture Map',
+      '- [ ] Escalate [[Architecture]] priority: high',
+      'Reference [[Architecture]] again.',
+      'Keep [[Notes]] priority: low'
+    ].join('\n')
+
+    expect(extractWikiLinkWeights(content)).toEqual([
+      { title: 'Architecture', weight: 6, priority: 'high' },
+      { title: 'Notes', weight: 1, priority: 'low' }
+    ])
   })
 
   it('ignores wiki links and tags inside fenced code blocks', () => {
@@ -61,7 +75,9 @@ describe('markdown domain', () => {
       {
         fromDocumentId: auth.id,
         toTitle: 'Architecture',
-        toDocumentId: architecture.id
+        toDocumentId: architecture.id,
+        weight: 1,
+        priority: 'normal'
       }
     ])
     expect(indexed.chunks).toHaveLength(1)

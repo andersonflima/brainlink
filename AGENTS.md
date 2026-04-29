@@ -37,6 +37,8 @@ Use this loop when using Brainlink as memory:
 
 When an agent adds durable memory, it should connect the new note to at least one existing concept unless the note is intentionally a root concept. Prefer exact note titles in links, for example `[[Architecture]]`, and run `broken-links`, `orphans` or `validate` when the graph looks disconnected.
 
+Agents can mark important relationships by placing priority hints on the same line as a wiki link, for example `[[Architecture]] priority: high`, `[[Incident Runbook]] #important` or `[[Incident Runbook]] #critical`. Indexed graph edges expose `weight` and `priority` so agents can sort related notes by importance.
+
 ## Commands
 
 ```bash

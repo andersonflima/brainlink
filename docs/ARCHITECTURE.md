@@ -218,6 +218,23 @@ source note -> target note
 
 The `backlinks` command queries indexed links pointing to a target title. With `--agent`, it only returns links from that namespace.
 
+## Weighted Links
+
+Each indexed wiki link is stored as a graph edge with:
+
+- `weight`: numeric relationship strength.
+- `priority`: one of `low`, `normal`, `high` or `critical`.
+
+The parser derives weight from repeated links, task-list context, heading context and priority markers on the same line as a wiki link. Examples:
+
+```md
+Related: [[Architecture]]
+- [ ] Review [[Architecture]] priority: high
+Escalate [[Incident Runbook]] #critical
+```
+
+Backlink and graph readers return those fields to CLI JSON, HTTP API and MCP clients. Backlink queries use the normalized `to_title_key` column instead of applying `lower(...)` at read time.
+
 ## Context Building
 
 `context` uses search results and selects one chunk per document while staying inside an estimated token budget.

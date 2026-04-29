@@ -94,6 +94,9 @@ The plugin starts the `brainlink-mcp` stdio server and gives Codex a skill that 
 1. Read memory with `brainlink_context` before work.
 2. Write durable memory with `brainlink_add_note`.
 3. Use explicit `[[wiki links]]` and `#tags`.
-4. Validate graph health with `brainlink_validate`, `brainlink_broken_links` and `brainlink_orphans`.
+4. Add priority markers near important links, for example `priority: high`, `#important` or `#critical`.
+5. Validate graph health with `brainlink_validate`, `brainlink_broken_links` and `brainlink_orphans`.
 
 `brainlink_context` is read-only. It does not create graph links, backlinks or durable memory.
+
+`brainlink_graph` returns weighted edges with `weight` and `priority` so Codex can rank related notes by importance.

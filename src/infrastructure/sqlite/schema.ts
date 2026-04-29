@@ -1,9 +1,10 @@
 import Database from 'better-sqlite3'
 
-const schemaVersion = 4
+const schemaVersion = 5
 const requiredTableColumns: Readonly<Record<string, readonly string[]>> = {
   documents: ['id', 'agent_id', 'title', 'path', 'content', 'tags_json', 'frontmatter_json', 'created_at', 'updated_at'],
   chunks: ['id', 'document_id', 'ordinal', 'content', 'token_count', 'embedding_provider', 'embedding_json'],
+  links: ['from_document_id', 'to_title', 'to_title_key', 'to_document_id', 'weight', 'priority'],
   chunks_fts: ['chunk_id', 'document_id', 'agent_id', 'title', 'content']
 }
 
@@ -82,6 +83,9 @@ export const createSchema = (database: Database.Database): void => {
       FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
     );
 
+    CREATE INDEX IF NOT EXISTS idx_documents_agent_title ON documents(agent_id, title);
+    CREATE INDEX IF NOT EXISTS idx_chunks_document_ordinal ON chunks(document_id, ordinal);
+
     CREATE TABLE IF NOT EXISTS embedding_buckets (
       bucket TEXT NOT NULL,
       chunk_id TEXT NOT NULL,
@@ -94,10 +98,17 @@ export const createSchema = (database: Database.Database): void => {
     CREATE TABLE IF NOT EXISTS links (
       from_document_id TEXT NOT NULL,
       to_title TEXT NOT NULL,
+      to_title_key TEXT NOT NULL,
       to_document_id TEXT,
+      weight INTEGER NOT NULL,
+      priority TEXT NOT NULL,
+      PRIMARY KEY (from_document_id, to_title_key),
       FOREIGN KEY (from_document_id) REFERENCES documents(id) ON DELETE CASCADE,
       FOREIGN KEY (to_document_id) REFERENCES documents(id) ON DELETE SET NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_links_to_document_id ON links(to_document_id);
+    CREATE INDEX IF NOT EXISTS idx_links_to_title_key ON links(to_title_key);
 
     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
       chunk_id UNINDEXED,
