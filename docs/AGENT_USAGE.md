@@ -552,4 +552,5 @@ Weak retrieval usually means:
 - Local embeddings are deterministic and provider-free; remote embedding providers are not implemented yet.
 - MCP integration is available through the `brainlink-mcp` stdio server.
 - HTTP API is local and unauthenticated.
-- Watch mode depends on platform filesystem watcher behavior.
+- Bucket vaults support S3-compatible `s3://bucket/prefix` URIs and use a local cache for SQLite indexes.
+- Watch mode depends on platform filesystem watcher behavior and is only supported for local filesystem vaults.

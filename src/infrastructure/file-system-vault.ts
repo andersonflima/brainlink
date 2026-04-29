@@ -1,6 +1,7 @@
 import { chmod, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { resolvePath } from './paths.js'
+import { getBucketVaultCachePath, isBucketVaultUri, parseBucketVaultUri, syncBucketVaultToCache, writeBucketMarkdownFile } from './bucket-vault.js'
 
 export type MarkdownFile = {
   readonly absolutePath: string
@@ -32,7 +33,10 @@ const walkMarkdownFiles = async (directory: string): Promise<readonly string[]> 
 }
 
 export const resolveVaultPath = (vaultPath: string): string =>
-  resolvePath(vaultPath)
+  isBucketVaultUri(vaultPath) ? getBucketVaultCachePath(vaultPath) : resolvePath(vaultPath)
+
+export const isBucketVaultPath = (vaultPath: string): boolean =>
+  isBucketVaultUri(vaultPath)
 
 const isPathInside = (parent: string, child: string): boolean => {
   const path = relative(parent, child)
@@ -40,14 +44,31 @@ const isPathInside = (parent: string, child: string): boolean => {
   return path === '' || (!path.startsWith('..') && !isAbsolute(path))
 }
 
+const isBucketPrefixInside = (parent: string, child: string): boolean =>
+  parent === '' || child === parent || child.startsWith(`${parent}/`)
+
 const secureDirectory = async (path: string): Promise<void> => {
   await mkdir(path, { recursive: true, mode: directoryMode })
   await chmod(path, directoryMode)
 }
 
 export const assertVaultAllowed = (vaultPath: string, allowedVaults: readonly string[]): string => {
+  if (isBucketVaultUri(vaultPath)) {
+    const vault = parseBucketVaultUri(vaultPath)
+    const allowed = allowedVaults.filter(isBucketVaultUri).map(parseBucketVaultUri)
+
+    if (
+      allowedVaults.length > 0 &&
+      !allowed.some((allowedVault) => vault.bucket === allowedVault.bucket && isBucketPrefixInside(allowedVault.prefix, vault.prefix))
+    ) {
+      throw new Error(`Vault path is not allowed: ${vault.uri}. Configure BRAINLINK_ALLOWED_VAULTS or allowedVaults.`)
+    }
+
+    return vault.uri
+  }
+
   const absoluteVaultPath = resolveVaultPath(vaultPath)
-  const allowed = allowedVaults.map(resolveVaultPath)
+  const allowed = allowedVaults.filter((allowedVault) => !isBucketVaultUri(allowedVault)).map(resolveVaultPath)
 
   if (allowed.length > 0 && !allowed.some((allowedPath) => isPathInside(allowedPath, absoluteVaultPath))) {
     throw new Error(`Vault path is not allowed: ${absoluteVaultPath}. Configure BRAINLINK_ALLOWED_VAULTS or allowedVaults.`)
@@ -57,6 +78,10 @@ export const assertVaultAllowed = (vaultPath: string, allowedVaults: readonly st
 }
 
 export const ensureVault = async (vaultPath: string): Promise<string> => {
+  if (isBucketVaultUri(vaultPath)) {
+    return syncBucketVaultToCache(vaultPath)
+  }
+
   const absoluteVaultPath = resolveVaultPath(vaultPath)
 
   await secureDirectory(join(absoluteVaultPath, '.brainlink'))
@@ -65,7 +90,7 @@ export const ensureVault = async (vaultPath: string): Promise<string> => {
 }
 
 export const readMarkdownFiles = async (vaultPath: string): Promise<readonly MarkdownFile[]> => {
-  const absoluteVaultPath = resolveVaultPath(vaultPath)
+  const absoluteVaultPath = await ensureVault(vaultPath)
   const paths = await walkMarkdownFiles(absoluteVaultPath)
 
   return Promise.all(
@@ -83,6 +108,10 @@ export const readMarkdownFiles = async (vaultPath: string): Promise<readonly Mar
 }
 
 export const writeMarkdownFile = async (vaultPath: string, filename: string, content: string): Promise<string> => {
+  if (isBucketVaultUri(vaultPath)) {
+    return writeBucketMarkdownFile(vaultPath, filename, content)
+  }
+
   const absoluteVaultPath = await ensureVault(vaultPath)
   const absolutePath = resolve(absoluteVaultPath, filename.endsWith('.md') ? filename : `${filename}.md`)
 

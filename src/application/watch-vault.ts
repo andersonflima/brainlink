@@ -1,7 +1,7 @@
 import { watch, type FSWatcher } from 'node:fs'
 import type { IndexVaultResult } from './index-vault.js'
 import { indexVault } from './index-vault.js'
-import { resolveVaultPath } from '../infrastructure/file-system-vault.js'
+import { isBucketVaultPath, resolveVaultPath } from '../infrastructure/file-system-vault.js'
 
 type WatchVaultInput = {
   readonly vaultPath: string
@@ -23,6 +23,10 @@ const shouldIgnore = (filename: string | null): boolean => {
 }
 
 export const startVaultWatcher = (input: WatchVaultInput): RunningWatcher => {
+  if (isBucketVaultPath(input.vaultPath)) {
+    throw new Error('Watch mode is only supported for local filesystem vaults.')
+  }
+
   const absoluteVaultPath = resolveVaultPath(input.vaultPath)
   const debounceMs = input.debounceMs ?? 350
   let timeout: NodeJS.Timeout | null = null

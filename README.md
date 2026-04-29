@@ -66,6 +66,7 @@ Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable
 - Full-text, semantic and hybrid retrieval modes.
 - SQLite-backed semantic candidate buckets for larger vaults.
 - Agent namespaces under `agents/<agent-id>/`.
+- S3-compatible bucket vaults through `s3://bucket/prefix` URIs.
 - CLI with machine-readable `--json` output.
 - Short CLI alias: `blink`.
 - Built-in MCP stdio server for agent tool integration.
@@ -255,6 +256,36 @@ http://127.0.0.1:4321
 ```
 
 When `--vault` is omitted, commands use the default vault at `$HOME/.brainlink/vault`. Pass `--vault` or configure `vault` in `brainlink.config.json` when you want a custom project-local vault.
+
+## Bucket Vaults
+
+Brainlink can use an S3-compatible bucket as the Markdown source of truth:
+
+```bash
+export AWS_REGION="us-east-1"
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
+
+blink add "Architecture" \
+  --vault "s3://my-memory-bucket/brainlink" \
+  --content "Bucket Markdown is the source of truth. #architecture"
+
+blink index --vault "s3://my-memory-bucket/brainlink"
+blink context "architecture" --vault "s3://my-memory-bucket/brainlink"
+```
+
+For Cloudflare R2, MinIO or another S3-compatible endpoint:
+
+```bash
+export BRAINLINK_S3_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
+export BRAINLINK_S3_FORCE_PATH_STYLE=1
+```
+
+Bucket vaults mirror Markdown into a local cache under
+`$BRAINLINK_HOME/bucket-cache`. The bucket remains canonical; the local
+`.brainlink/brainlink.db` stays a disposable index. Run `index` after remote
+bucket changes before relying on `search`, `context`, graph or validation
+commands. Watch mode is only supported for local filesystem vaults.
 
 ## Core Model
 
@@ -610,6 +641,12 @@ Set `BRAINLINK_ALLOWED_VAULTS` for external wrappers, including MCP servers, so 
 
 ```bash
 export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault,/absolute/path/to/team-vault"
+```
+
+Bucket vaults can be allowlisted with the same variable:
+
+```bash
+export BRAINLINK_ALLOWED_VAULTS="s3://my-memory-bucket/brainlink"
 ```
 
 ## Note Format

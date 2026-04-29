@@ -32,4 +32,16 @@ External tool wrappers, including MCP servers, should set `BRAINLINK_ALLOWED_VAU
 export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault"
 ```
 
+For bucket vaults, allowlist the S3 URI prefix:
+
+```bash
+export BRAINLINK_ALLOWED_VAULTS="s3://my-memory-bucket/brainlink"
+```
+
 When the allowlist is set, CLI commands fail if `--vault` points outside the allowed roots.
+
+## Bucket Credentials
+
+Bucket vaults use the standard AWS SDK credential chain. Prefer short-lived,
+least-privilege credentials scoped to the specific bucket prefix used by
+Brainlink. Do not store bucket credentials in Markdown notes.
