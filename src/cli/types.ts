@@ -18,7 +18,6 @@ export type ServerOptions = VaultOptions & {
   readonly port?: string
   readonly index: boolean
   readonly watch?: boolean
-  readonly allowPublic?: boolean
 }
 
 export type AddOptions = VaultOptions & {

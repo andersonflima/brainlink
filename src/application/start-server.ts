@@ -1,13 +1,13 @@
 import { createServer } from 'node:http'
 import { indexVault } from './index-vault.js'
 import { startVaultWatcher } from './watch-vault.js'
-import { assertPublicBindAllowed } from './server/host-security.js'
+import { assertLoopbackHost } from './server/host-security.js'
 import { contentTypes, createJsonResponse, isHttpError } from './server/http.js'
 import { route } from './server/routes.js'
 import type { RunningServer, StartServerInput } from './server/types.js'
 
 export const startServer = async (input: StartServerInput): Promise<RunningServer> => {
-  assertPublicBindAllowed(input.host, input.allowPublic)
+  assertLoopbackHost(input.host)
 
   if (input.shouldIndex) {
     await indexVault(input.vaultPath)

@@ -395,7 +395,7 @@ blink server --vault ./vault --no-index
 
 The HTTP API is read-only and exists only to power the graph UI and local inspection workflows.
 
-The server refuses non-loopback hosts by default. Use `--allow-public` only behind your own authentication, authorization and TLS.
+The server always refuses non-loopback hosts. Brainlink HTTP only runs on localhost.
 
 Routes:
 
@@ -570,7 +570,7 @@ blink server --vault ./vault --watch
 
 Starts the local read-only graph UI and HTTP API.
 
-To bind outside localhost, pass `--allow-public` and put the server behind your own auth and TLS.
+The HTTP server only binds to loopback hosts such as `127.0.0.1`, `localhost` or `::1`.
 
 ## Machine-Readable Output
 
@@ -718,6 +718,7 @@ The alpha includes local semantic retrieval. Remote embedding providers, remote 
 Brainlink is local-first by default.
 
 - Do not expose the HTTP server publicly without authentication.
+- Brainlink HTTP is localhost-only and refuses non-loopback hosts.
 - Brainlink blocks common secret patterns by default when adding notes. Use `--allow-sensitive` only for intentional, protected vaults.
 - Do not store secrets, credentials, API keys or regulated personal data unless the vault is protected by your own storage controls.
 - Treat `.brainlink/brainlink.db` as disposable derived data.
