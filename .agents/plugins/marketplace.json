@@ -1,0 +1,20 @@
+{
+  "name": "brainlink-local",
+  "interface": {
+    "displayName": "Brainlink Local"
+  },
+  "plugins": [
+    {
+      "name": "brainlink",
+      "source": {
+        "source": "local",
+        "path": "./plugins/brainlink"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
