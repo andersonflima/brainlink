@@ -49,6 +49,7 @@ The preferred path is the `Publish npm` GitHub Actions workflow:
 
 - GitHub Release `published`: runs checks, pack smoke, then publishes to npm with provenance.
 - Manual `workflow_dispatch`: runs a dry run by default. Disable `dry_run` only for an intentional manual publish.
+- Manual `workflow_dispatch` accepts an optional `dist_tag` override. Use `latest` only when the default npm install command should resolve to that version.
 - Prerelease versions publish under their prerelease dist-tag, for example `0.1.0-alpha.1` publishes with `--tag alpha`.
 
 For emergency local publishing of scoped public packages:

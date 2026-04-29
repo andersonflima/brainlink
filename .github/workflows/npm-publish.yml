@@ -10,6 +10,11 @@ on:
         required: true
         type: boolean
         default: true
+      dist_tag:
+        description: Optional npm dist-tag override, for example latest
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -36,9 +41,13 @@ jobs:
       - run: npm run pack:smoke
 
       - name: Resolve npm dist tag
+        env:
+          DIST_TAG_INPUT: ${{ github.event.inputs.dist_tag }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          if [[ "$VERSION" == *-* ]]; then
+          if [[ -n "$DIST_TAG_INPUT" ]]; then
+            echo "NPM_DIST_TAG=$DIST_TAG_INPUT" >> "$GITHUB_ENV"
+          elif [[ "$VERSION" == *-* ]]; then
             echo "NPM_DIST_TAG=${VERSION#*-}" | sed 's/[.].*//' >> "$GITHUB_ENV"
           else
             echo "NPM_DIST_TAG=latest" >> "$GITHUB_ENV"
