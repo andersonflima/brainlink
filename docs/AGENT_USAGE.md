@@ -431,19 +431,38 @@ blink watch --vault ./vault
 
 This process watches Markdown files and rebuilds the index after changes.
 
-### Use From An External MCP Server
+### Use From MCP
 
-Brainlink does not ship an MCP server. An MCP server can use Brainlink by executing the CLI and parsing `--json`.
+Brainlink ships a stdio MCP server:
 
-Recommended wrapper mapping:
+```bash
+brainlink-mcp
+```
 
-- `brainlink_context`: run `blink context "<query>" --vault <vault> --agent <agent> --mode hybrid --json`.
-- `brainlink_search`: run `blink search "<query>" --vault <vault> --agent <agent> --mode hybrid --json`.
-- `brainlink_add_note`: run `blink add "<title>" --vault <vault> --agent <agent> --content "<content>" --json`, then `blink index`.
-- `brainlink_graph`: run `blink graph --vault <vault> --agent <agent> --json`.
-- `brainlink_validate`: run `blink validate --vault <vault> --agent <agent> --json`.
+Example MCP client configuration:
 
-External wrappers should set `BRAINLINK_ALLOWED_VAULTS` before invoking the CLI:
+```json
+{
+  "mcpServers": {
+    "brainlink": {
+      "command": "brainlink-mcp"
+    }
+  }
+}
+```
+
+Available MCP tools:
+
+- `brainlink_context`
+- `brainlink_search`
+- `brainlink_add_note`
+- `brainlink_index`
+- `brainlink_validate`
+- `brainlink_graph`
+- `brainlink_broken_links`
+- `brainlink_orphans`
+
+MCP clients can pass `vault` and `agent` arguments per tool call. Set `BRAINLINK_ALLOWED_VAULTS` when exposing Brainlink to an external agent process so a tool cannot pass arbitrary vault paths:
 
 ```bash
 export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault"
@@ -531,6 +550,6 @@ Weak retrieval usually means:
 
 - Search supports FTS, local semantic embeddings, SQLite semantic buckets and hybrid ranking.
 - Local embeddings are deterministic and provider-free; remote embedding providers are not implemented yet.
-- MCP integration is external: wrap the CLI from your own MCP server.
+- MCP integration is available through the `brainlink-mcp` stdio server.
 - HTTP API is local and unauthenticated.
 - Watch mode depends on platform filesystem watcher behavior.

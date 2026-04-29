@@ -167,20 +167,18 @@ HTTP request
 
 The HTTP API is local-first and unauthenticated. It is meant for local agents, browser UI, and development workflows.
 
-## External MCP Flow
+## MCP Flow
 
-Brainlink does not contain an MCP server. MCP compatibility is achieved by an external MCP server wrapping the CLI.
+Brainlink includes a stdio MCP server for agent integrations.
 
 ```txt
 MCP client
-  -> external MCP server
-  -> child_process execFile("blink", ["context", ..., "--json"])
-  -> Brainlink CLI
+  -> brainlink-mcp
   -> application use case
-  -> JSON stdout
+  -> MCP tool result
 ```
 
-This keeps the package CLI-first and avoids coupling the core project to one MCP SDK.
+The MCP adapter stays thin. It validates tool inputs, resolves the configured vault and calls the same application use cases used by the CLI.
 
 ## Link Resolution
 

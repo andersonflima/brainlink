@@ -86,7 +86,7 @@ npm run dev -- watch --vault ./vault
 Start MCP over stdio:
 
 ```bash
-npm run dev -- mcp
+npm run dev:mcp
 ```
 
 Automation-facing CLI commands support `--json`. When invoking through `npm`, use `npm run --silent dev -- ...` so stdout remains valid JSON.
