@@ -27,11 +27,15 @@ By default, the installed Brainlink CLI uses `$HOME/.brainlink/vault` as its vau
 Use this loop when using Brainlink as memory:
 
 1. Write durable knowledge into Markdown notes.
-2. Link related notes with `[[Note Title]]`.
+2. Link related notes with explicit `[[Note Title]]` wiki links inside the note body.
 3. Add explicit `#tags` for retrieval.
 4. Run `index` after writes.
 5. Run `context "<task or question>"` before answering.
 6. Use the returned sources as grounded context.
+
+`context` is read-only. It does not create notes, backlinks, graph edges or durable memory by itself. A relationship exists only when a Markdown note contains a `[[wiki link]]` to another note and the vault has been indexed after that write.
+
+When an agent adds durable memory, it should connect the new note to at least one existing concept unless the note is intentionally a root concept. Prefer exact note titles in links, for example `[[Architecture]]`, and run `broken-links`, `orphans` or `validate` when the graph looks disconnected.
 
 ## Commands
 

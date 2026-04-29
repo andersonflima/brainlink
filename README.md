@@ -185,6 +185,15 @@ blink add "Testing Policy" \
   --content "Run npm run check before final delivery. Related: [[Release Checklist]]. #testing #process"
 ```
 
+Brainlink does not infer durable graph relationships from generated context. A context result is only a read package for the model. To create a real link in the knowledge graph, the agent must write Markdown that contains an explicit `[[Note Title]]` wiki link and then rebuild the index.
+
+When adding memory, follow this contract:
+
+- Link the new note to at least one existing note when there is a related concept.
+- Use the exact target note title inside `[[...]]`.
+- Add retrieval tags such as `#architecture`, `#decision`, `#runbook` or `#preference`.
+- Do not leave isolated notes unless they are intentionally root concepts.
+
 Rebuild the index:
 
 ```bash
@@ -207,9 +216,9 @@ Use this loop during real work:
 2. Run `blink context "<task>" --agent "$BLINK_AGENT" --json`.
 3. Use returned sources as project memory.
 4. Perform the task.
-5. Save only durable learnings with `blink add`.
+5. Save only durable learnings with `blink add`, including `[[wiki links]]` to related notes.
 6. Run `blink index`.
-7. Validate with `blink validate`.
+7. Validate with `blink validate`, `blink broken-links` and `blink orphans` when graph links matter.
 
 Do not store secrets, credentials, private keys, access tokens or transient chat noise.
 

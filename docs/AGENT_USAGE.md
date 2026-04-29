@@ -138,6 +138,41 @@ Rules:
 - Prefer summaries over raw transcripts.
 - Preserve dates when the timing matters.
 
+## Linking Contract
+
+Brainlink only builds graph edges from Markdown `[[wiki links]]`.
+
+The `context` command is read-only. It retrieves indexed notes and returns a compact package for the model, but it does not write memory, create backlinks, infer relationships or modify the graph. If an agent reads context and then learns something durable, the agent must write a note with explicit links before that knowledge becomes connected memory.
+
+Required write behavior:
+
+1. Choose a clear title for the new note.
+2. Look for an existing related concept with `search`, `links` or `backlinks`.
+3. Add at least one `[[Existing Note Title]]` link unless the note is intentionally a root concept.
+4. Add useful `#tags` for retrieval.
+5. Run `index` after the write.
+6. Run `validate`, `broken-links` or `orphans` when the graph should be connected.
+
+Good linked note:
+
+```bash
+blink add "SQLite Index Rebuild" \
+  --agent coding-agent \
+  --content "Legacy derived indexes without agent columns are rebuilt because SQLite is disposable. Related: [[Architecture]], [[Agent Namespaces]]. #sqlite #architecture #decision"
+blink index
+blink validate --agent coding-agent
+```
+
+Poor disconnected note:
+
+```bash
+blink add "SQLite Index Rebuild" \
+  --agent coding-agent \
+  --content "We rebuild old indexes now."
+```
+
+The poor note may be searchable, but it will not create graph links, backlinks or useful traversal paths.
+
 ## Read Policy
 
 Before answering a memory-dependent question, run:
@@ -453,6 +488,12 @@ Output:
 
 Agents should include source paths in their reasoning or final answer when the user needs traceability.
 
+Non-goals:
+
+- `context` must not be treated as a write operation.
+- Retrieved context must not be assumed to create graph edges.
+- Backlinks are derived only from indexed `[[wiki links]]`.
+
 ## Operational Rules
 
 - Re-run `index` after modifying notes.
@@ -461,6 +502,8 @@ Agents should include source paths in their reasoning or final answer when the u
 - Do not manually edit the database.
 - Keep generated context short enough for the target model.
 - Prefer specific queries over broad queries.
+- Write explicit `[[wiki links]]` when durable memory should be connected.
+- Check `orphans` before assuming the graph is healthy.
 
 ## Failure Modes
 
