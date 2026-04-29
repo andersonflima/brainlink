@@ -76,7 +76,7 @@ Requirements:
 - npm
 
 ```bash
-npm install -g @andespindola/brainlink
+npm install -g @andespindola/brainlink@latest
 ```
 
 The package installs two equivalent commands:
@@ -87,6 +87,14 @@ blink --help
 ```
 
 Use `brainlink` when clarity matters. Use `blink` for faster daily terminal usage.
+
+The npm package page may show `npm i @andespindola/brainlink`. That installs
+Brainlink as a project dependency. Use `-g` when you want the terminal commands
+available globally, or run it without a global install:
+
+```bash
+npx @andespindola/brainlink@latest --help
+```
 
 ## Agent Autonomous Setup
 
@@ -101,7 +109,7 @@ command -v blink || command -v brainlink
 If neither command exists, install it:
 
 ```bash
-npm install -g @andespindola/brainlink
+npm install -g @andespindola/brainlink@latest
 ```
 
 Then verify:
