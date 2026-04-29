@@ -53,9 +53,9 @@ The preferred path is the `Publish npm` GitHub Actions workflow:
 - Manual `workflow_dispatch` accepts an optional `dist_tag` override. Use `latest` only when the default npm install command should resolve to that version.
 - Prerelease versions publish under their prerelease dist-tag, for example `0.1.0-alpha.1` publishes with `--tag alpha`.
 
-On `main`, the publish job checks npm before publishing. If the version already exists, it automatically bumps to the next available version before checks, packing and publishing. For example, `0.1.0-alpha.4` becomes `0.1.0-alpha.5`.
+On `main`, the publish job checks npm before publishing. If the version already exists, it automatically bumps the package inside the runner to the next available version before checks, packing and publishing. For example, `0.1.0-alpha.4` becomes `0.1.0-alpha.5`.
 
-After a successful automatic bump publish, the workflow commits the updated `package.json` and `package-lock.json` back to `main` with `[skip publish]` to avoid a publish loop.
+The automatic bump is intentionally not pushed back to `main`. The branch stays protected, and npm remains the source of truth for the latest published package version.
 
 Manual and GitHub Release publishes do not auto-bump. If their version already exists, they skip `npm publish` because npm versions are immutable.
 

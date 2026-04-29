@@ -19,7 +19,7 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
 
 concurrency:
@@ -126,12 +126,3 @@ jobs:
         run: npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" "$NPM_PRERELEASE_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Commit automatic version bump
-        if: env.VERSION_BUMPED == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
-          git commit -m "Bump package to $PACKAGE_VERSION [skip publish] [skip ci]"
-          git push
