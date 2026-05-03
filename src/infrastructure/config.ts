@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { BrainlinkConfig, EmbeddingProviderName, SearchMode } from '../domain/types.js'
+import { sanitizeAgentId } from '../domain/agents.js'
 import { getDefaultVaultPath } from './paths.js'
 
 export const defaultBrainlinkConfig: BrainlinkConfig = {
@@ -8,6 +9,7 @@ export const defaultBrainlinkConfig: BrainlinkConfig = {
   host: '127.0.0.1',
   port: 4321,
   allowedVaults: [],
+  defaultAgent: undefined,
   defaultSearchLimit: 10,
   defaultContextTokens: 2000,
   embeddingProvider: 'local',
@@ -57,6 +59,10 @@ const sanitizeConfig = (value: Partial<BrainlinkConfig>): BrainlinkConfig => ({
   ...defaultBrainlinkConfig,
   ...value,
   port: typeof value.port === 'number' && value.port > 0 ? value.port : defaultBrainlinkConfig.port,
+  defaultAgent:
+    typeof value.defaultAgent === 'string' && value.defaultAgent.trim().length > 0
+      ? sanitizeAgentId(value.defaultAgent)
+      : defaultBrainlinkConfig.defaultAgent,
   defaultSearchLimit:
     typeof value.defaultSearchLimit === 'number' && value.defaultSearchLimit > 0
       ? value.defaultSearchLimit

@@ -51,10 +51,15 @@ describe('brainlink http server integration', () => {
       }
       expect(researchGraph.nodes).toHaveLength(1)
 
-      const layout = (await fetch(`${server.url}/api/graph-layout?agent=shared`).then((response) => response.json())) as {
-        readonly nodes: readonly { readonly segment: string; readonly group: string }[]
-        readonly edges: readonly unknown[]
+      const layoutResponse = (await fetch(`${server.url}/api/graph-layout?agent=shared`).then((response) => response.json())) as {
+        readonly layout?: {
+          readonly nodes: readonly { readonly segment: string; readonly group: string }[]
+          readonly edges: readonly unknown[]
+        }
+        readonly nodes?: readonly { readonly segment: string; readonly group: string }[]
+        readonly edges?: readonly unknown[]
       }
+      const layout = layoutResponse.layout ?? layoutResponse
       expect(layout.nodes).toHaveLength(2)
       expect(layout.edges).toHaveLength(1)
       expect(layout.nodes.every((node) => typeof node.segment === 'string' && node.segment.length > 0)).toBe(true)

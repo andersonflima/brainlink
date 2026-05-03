@@ -9,7 +9,8 @@ export const sanitizeAgentId = (agentId: string): string =>
     .replace(/^-+|-+$/g, '') || sharedAgentId
 
 export const resolveAgentIdFromPath = (path: string): string => {
-  const [scope, agentId] = path.split('/')
+  const normalizedPath = path.replace(/\\/g, '/')
+  const [scope, agentId] = normalizedPath.split('/')
 
   return scope === 'agents' && agentId ? sanitizeAgentId(agentId) : sharedAgentId
 }

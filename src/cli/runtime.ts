@@ -15,7 +15,8 @@ export const resolveOptions = async (options: VaultOptions) => {
 
   return {
     config,
-    vault: allowedVault
+    vault: allowedVault,
+    agent: options.agent ?? config.defaultAgent
   }
 }
 

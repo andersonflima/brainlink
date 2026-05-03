@@ -192,7 +192,7 @@ export const extractWikiLinks = (content: string): readonly string[] =>
   unique(extractWikiLinkReferences(content).map((reference) => reference.title))
 
 export const extractTags = (content: string): readonly string[] =>
-  unique(Array.from(stripFencedCodeBlocks(content).matchAll(tagPattern), (match) => match[2]))
+  unique(Array.from(stripFencedCodeBlocks(stripFrontmatter(content)).matchAll(tagPattern), (match) => match[2]))
 
 const normalizeChunkContent = (content: string): string =>
   content

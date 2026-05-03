@@ -637,15 +637,26 @@ Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current wo
   "host": "127.0.0.1",
   "port": 4321,
   "allowedVaults": [".brainlink-vault"],
+  "defaultAgent": "shared",
   "defaultSearchLimit": 10,
   "defaultContextTokens": 2000,
   "embeddingProvider": "local",
   "defaultSearchMode": "hybrid",
   "chunkSize": 1200
 }
+
+`defaultAgent` is optional. When set, CLI and MCP calls that omit `--agent`/`agent` use this value automatically. If not set, behavior remains as before.
 ```
 
 Use `"embeddingProvider": "none"` when you want FTS-only indexing.
+
+For local security checks, set your Snyk token in the environment:
+
+```bash
+export SNYK_TOKEN="snyk_..."
+```
+
+For GitHub Actions, add a repository secret `SNYK_TOKEN` and the CI/publish workflows will consume it automatically during build/test.
 
 Set `BRAINLINK_ALLOWED_VAULTS` for external wrappers, including MCP servers, so a tool cannot pass arbitrary `--vault` paths:
 
@@ -779,3 +790,20 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+### Memory Optimization Loop (1-7)
+
+Use this when your agent work needs consistent memory quality:
+
+1. Start with `blink context "<task>" --agent "$BLINK_AGENT" --json`.
+2. Keep notes focused with explicit `[[wiki links]]` and `#tags`.
+3. Route agent-specific knowledge to dedicated namespaces under `agents/<agent-id>/`.
+4. Keep `shared` as a curated global layer only.
+5. Use targeted queries (`--limit`, explicit terms, `--mode hybrid`) before broad scans.
+6. Run the sync command after writing notes:
+
+```bash
+npm run brainlink:sync -- --vault ./vault --agent "$BLINK_AGENT"
+```
+
+7. Before final response, keep the returned context sources as the grounding baseline.

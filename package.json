@@ -1,6 +1,6 @@
 {
   "name": "@andespindola/brainlink",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-beta.0",
   "description": "Local-first knowledge memory for agents with Markdown, backlinks, indexing and context retrieval.",
   "type": "module",
   "license": "MIT",
@@ -44,9 +44,11 @@
   },
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "npm run clean && tsc -p tsconfig.json",
+    "build": "npm run clean && npx --yes snyk test && tsc -p tsconfig.json",
     "dev": "tsx src/cli/main.ts",
     "dev:mcp": "tsx src/mcp/main.ts",
+    "brainlink:sync": "bash scripts/brainlink-sync.sh",
+    "security": "npx --yes snyk test",
     "test": "vitest run --config vitest.config.ts",
     "check": "npm run build && npm run test",
     "benchmark:large": "tsx src/benchmarks/large-vault.ts",
