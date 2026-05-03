@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   addNoteInputSchema,
+  addFileInputSchema,
+  addFileTool,
   addNoteTool,
   brokenLinksInputSchema,
   brokenLinksTool,
@@ -72,6 +74,16 @@ export const createBrainlinkMcpServer = (): McpServer => {
       inputSchema: addNoteInputSchema
     },
     addNoteTool
+  )
+
+  server.registerTool(
+    'brainlink_add_file',
+    {
+      title: 'Ingest Markdown File',
+      description: 'Read a local markdown/text file and ingest it as a Brainlink note. Reindex defaults to true.',
+      inputSchema: addFileInputSchema
+    },
+    addFileTool
   )
 
   server.registerTool(

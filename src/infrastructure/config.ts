@@ -10,6 +10,7 @@ export const defaultBrainlinkConfig: BrainlinkConfig = {
   port: 4321,
   allowedVaults: [],
   defaultAgent: undefined,
+  autoIndexOnWrite: true,
   defaultSearchLimit: 10,
   defaultContextTokens: 2000,
   embeddingProvider: 'local',
@@ -63,6 +64,7 @@ const sanitizeConfig = (value: Partial<BrainlinkConfig>): BrainlinkConfig => ({
     typeof value.defaultAgent === 'string' && value.defaultAgent.trim().length > 0
       ? sanitizeAgentId(value.defaultAgent)
       : defaultBrainlinkConfig.defaultAgent,
+  autoIndexOnWrite: typeof value.autoIndexOnWrite === 'boolean' ? value.autoIndexOnWrite : defaultBrainlinkConfig.autoIndexOnWrite,
   defaultSearchLimit:
     typeof value.defaultSearchLimit === 'number' && value.defaultSearchLimit > 0
       ? value.defaultSearchLimit

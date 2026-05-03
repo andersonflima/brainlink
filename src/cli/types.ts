@@ -21,6 +21,8 @@ export type ServerOptions = VaultOptions & {
 }
 
 export type AddOptions = VaultOptions & {
-  readonly content: string
+  readonly content?: string
   readonly allowSensitive?: boolean
+  readonly contentFile?: string
+  readonly autoIndex?: boolean
 }
