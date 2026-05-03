@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { addNote } from '../../application/add-note.js'
 import { indexVault } from '../../application/index-vault.js'
@@ -8,6 +9,18 @@ import { loadBrainlinkConfig } from '../../infrastructure/config.js'
 import { assertVaultAllowed, ensureVault } from '../../infrastructure/file-system-vault.js'
 import { parsePositiveInteger, print, resolveOptions } from '../runtime.js'
 import type { AddOptions, ServerOptions, VaultOptions } from '../types.js'
+
+const resolveAddContent = (options: AddOptions): string => {
+  if (options.content != null && options.content.trim().length > 0) {
+    return options.content
+  }
+
+  if (options.contentFile == null || options.contentFile.trim().length === 0) {
+    throw new Error('Use --content or --content-file to provide note content.')
+  }
+
+  return readFileSync(options.contentFile, 'utf8')
+}
 
 export const registerWriteCommands = (program: Command): void => {
   program
@@ -25,19 +38,28 @@ export const registerWriteCommands = (program: Command): void => {
   program
     .command('add')
   .argument('<title>', 'note title')
-  .requiredOption('-c, --content <content>', 'markdown content')
+  .option('-c, --content <content>', 'markdown content')
+  .option('-f, --content-file <contentFile>', 'read markdown content from a file')
   .option('-v, --vault <vault>', 'vault directory')
   .option('-a, --agent <agent>', 'agent memory namespace')
   .option('--allow-sensitive', 'allow writing content that looks like a secret')
+  .option('--no-auto-index', 'skip reindexing after add')
   .option('--json', 'print machine-readable JSON')
   .description('add a markdown note to the vault')
   .action(async (title: string, options: AddOptions) => {
     const resolved = await resolveOptions(options)
-    const path = await addNote(resolved.vault, title, options.content, resolved.agent, {
+    const content = resolveAddContent(options)
+    const notePath = await addNote(resolved.vault, title, content, resolved.agent, {
       allowSensitive: Boolean(options.allowSensitive)
     })
+    const shouldAutoIndex = options.autoIndex !== false && resolved.config.autoIndexOnWrite
+    const index = shouldAutoIndex ? await indexVault(resolved.vault) : undefined
 
-    print(options.json, { title, agent: resolved.agent ?? 'shared', path }, () => `Created note at ${path}`)
+    print(
+      options.json,
+      { title, agent: resolved.agent ?? 'shared', path: notePath, ...(index ? { index } : {}) },
+      () => `Created note at ${notePath}`
+    )
   })
 
   program

@@ -1,4 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { readFile } from 'node:fs/promises'
+import { basename, extname } from 'node:path'
 import { z } from 'zod'
 import { getBrokenLinksReport, getOrphansReport, getStats, validateVault } from '../application/analyze-vault.js'
 import { addNote } from '../application/add-note.js'
@@ -45,11 +47,24 @@ const resolveExecutionContext = async (input: ToolInput) => {
   const agent = input.agent ?? config.defaultAgent
 
   return {
-    vault,
     config,
+    vault,
     agent
   }
 }
+
+const inferTitleFromPath = (filePath: string): string => {
+  const extension = extname(filePath)
+  const fromFileName = basename(filePath, extension)
+
+  return fromFileName
+    .trim()
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const isTruthy = (value: boolean | undefined): boolean => value !== false
 
 const jsonResult = (value: Readonly<Record<string, unknown>>): CallToolResult => ({
   content: [
@@ -84,8 +99,20 @@ export const addNoteInputSchema = {
   content: z
     .string()
     .min(1)
-    .describe('Durable Markdown memory. Include explicit [[wiki links]] and #tags when the memory should be connected. Put priority markers near important links, for example priority: high, #important or #critical.'),
-  agent: z.string().min(1).optional().describe('Agent memory namespace.'),
+    .describe(
+      'Durable Markdown memory. Include explicit [[wiki links]] and #tags when the memory should be connected. Put priority markers near important links, for example priority: high, #important or #critical.'
+    ),
+  ...agentInput,
+  allowSensitive: z.boolean().optional().default(false).describe('Allow content that looks like a secret.'),
+  autoIndex: z.boolean().optional().default(true).describe('Reindex vault after writing note.')
+}
+
+export const addFileInputSchema = {
+  ...vaultInput,
+  ...agentInput,
+  title: z.string().min(1).optional().describe('Optional note title override. If omitted, uses file name.'),
+  filePath: z.string().min(1).describe('Filesystem path to markdown or text file to ingest.'),
+  autoIndex: z.boolean().optional().default(true).describe('Reindex vault after ingesting file.'),
   allowSensitive: z.boolean().optional().default(false).describe('Allow content that looks like a secret.')
 }
 
@@ -164,17 +191,44 @@ export const searchTool = async (input: z.infer<z.ZodObject<typeof searchInputSc
 
 export const addNoteTool = async (input: z.infer<z.ZodObject<typeof addNoteInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
+  const shouldIndex = isTruthy(input.autoIndex)
   const path = await addNote(context.vault, input.title, input.content, context.agent, {
     allowSensitive: input.allowSensitive
   })
-  const index = await indexVault(context.vault)
+  const index = shouldIndex ? await indexVault(context.vault) : undefined
 
   return jsonResult({
     vault: context.vault,
     title: input.title,
     agent: context.agent,
     path,
-    index
+    ...(index ? { index } : {})
+  })
+}
+
+export const addFileTool = async (input: z.infer<z.ZodObject<typeof addFileInputSchema>>): Promise<CallToolResult> => {
+  const context = await resolveExecutionContext(input)
+  const content = await readFile(input.filePath, 'utf8')
+  const inferredTitle = inferTitleFromPath(input.filePath)
+  const title = input.title ?? inferredTitle
+
+  if (title == null || title.length === 0) {
+    throw new Error('Cannot infer note title from file path. Provide a title explicitly.')
+  }
+
+  const shouldIndex = isTruthy(input.autoIndex)
+  const path = await addNote(context.vault, title, content, context.agent, {
+    allowSensitive: input.allowSensitive
+  })
+  const index = shouldIndex ? await indexVault(context.vault) : undefined
+
+  return jsonResult({
+    vault: context.vault,
+    title,
+    agent: context.agent,
+    filePath: input.filePath,
+    path,
+    ...(index ? { index } : {})
   })
 }
 

@@ -191,7 +191,9 @@ blink add "Testing Policy" \
   --content "Run npm run check before final delivery. Related: [[Release Checklist]]. #testing #process"
 ```
 
-Brainlink does not infer durable graph relationships from generated context. A context result is only a read package for the model. To create a real link in the knowledge graph, the agent must write Markdown that contains an explicit `[[Note Title]]` wiki link and then rebuild the index.
+Brainlink does not infer durable graph relationships from generated context. A context result is only a read package for the model. To create a real link in the knowledge graph, the agent must write Markdown that contains an explicit `[[Note Title]]` wiki link.
+
+Writes with `blink add` reindex the vault automatically by default. This can be disabled with `--no-auto-index` and controlled globally with `autoIndexOnWrite` in `brainlink.config.json`.
 
 When adding memory, follow this contract:
 
@@ -200,11 +202,7 @@ When adding memory, follow this contract:
 - Add retrieval tags such as `#architecture`, `#decision`, `#runbook` or `#preference`.
 - Do not leave isolated notes unless they are intentionally root concepts.
 
-Rebuild the index:
-
-```bash
-blink index
-```
+If you disable auto-index, run `blink index` after batched writes.
 
 ### 6. Validate Memory Health
 
@@ -223,7 +221,7 @@ Use this loop during real work:
 3. Use returned sources as project memory.
 4. Perform the task.
 5. Save only durable learnings with `blink add`, including `[[wiki links]]` to related notes.
-6. Run `blink index`.
+6. Run `blink index` only when auto-index was disabled during a batch.
 7. Validate with `blink validate`, `blink broken-links` and `blink orphans` when graph links matter.
 
 Do not store secrets, credentials, private keys, access tokens or transient chat noise.
@@ -240,8 +238,6 @@ blink add "Architecture" \
 blink add "Auth Decision" \
   --vault ./vault \
   --content "We chose JWT for API clients. [[Architecture]] #auth #jwt"
-
-blink index --vault ./vault
 
 blink search "jwt auth" --vault ./vault
 
@@ -389,13 +385,14 @@ Available tools:
 - `brainlink_context`: read indexed context for a task or question.
 - `brainlink_search`: search indexed notes.
 - `brainlink_add_note`: write durable Markdown memory and reindex.
+- `brainlink_add_file`: ingest a local file as a note and reindex.
 - `brainlink_index`: rebuild the vault index.
 - `brainlink_validate`: validate broken links and orphan notes.
 - `brainlink_graph`: read indexed graph nodes and weighted links.
 - `brainlink_broken_links`: list unresolved wiki links.
 - `brainlink_orphans`: list disconnected notes.
 
-The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]` followed by indexing.
+The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]`. `brainlink_add_note` and `brainlink_add_file` reindex by default and include the index result when enabled.
 
 Agents can raise the importance of a relationship by putting priority markers on the same line as a wiki link:
 
@@ -478,7 +475,11 @@ Initializes vault metadata. Without an argument, Brainlink initializes the defau
 ```bash
 blink add "Note Title" --agent coding-agent --content "Markdown content"
 blink add "Note Title" --vault ./vault --agent coding-agent --content "Markdown content"
+blink add "Note Title" --vault ./vault --content-file ./notes.md
+blink add "Note Title" --vault ./vault --content-file ./notes.md --no-auto-index
 ```
+
+`--content` and `--content-file` are mutually exclusive. Add `--no-auto-index` when you want to defer reindexing.
 
 Creates a Markdown note under `agents/<agent-id>/`. Common secret patterns are blocked by default; use `--allow-sensitive` only for an intentionally protected vault.
 
@@ -638,6 +639,7 @@ Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current wo
   "port": 4321,
   "allowedVaults": [".brainlink-vault"],
   "defaultAgent": "shared",
+  "autoIndexOnWrite": true,
   "defaultSearchLimit": 10,
   "defaultContextTokens": 2000,
   "embeddingProvider": "local",
@@ -646,7 +648,9 @@ Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current wo
 }
 
 `defaultAgent` is optional. When set, CLI and MCP calls that omit `--agent`/`agent` use this value automatically. If not set, behavior remains as before.
-```
+
+`autoIndexOnWrite` is optional and defaults to `true`. Set it to `false` to defer indexing after writes.
+``` 
 
 Use `"embeddingProvider": "none"` when you want FTS-only indexing.
 

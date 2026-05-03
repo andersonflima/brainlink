@@ -43,6 +43,8 @@ Use `--vault <path>` for a one-off custom vault, or set `vault` in `brainlink.co
 
 You can also set `defaultAgent` in `brainlink.config.json` / `.brainlink.json` (for example `"defaultAgent": "coding-agent"`). When set, CLI commands and MCP calls reuse it when `--agent`/`agent` is not passed.
 
+`autoIndexOnWrite` (default: `true`) controls whether `add` and MCP write tools index right after writing.
+
 ## Agent Namespaces
 
 Each agent writes into a dedicated namespace under `agents/<agent-id>/`:
@@ -162,7 +164,7 @@ Required write behavior:
 2. Look for an existing related concept with `search`, `links` or `backlinks`.
 3. Add at least one `[[Existing Note Title]]` link unless the note is intentionally a root concept.
 4. Add useful `#tags` for retrieval.
-5. Run `index` after the write.
+5. `add` writes are indexed by default. Only batch with explicit `--no-auto-index`, then run `index` once.
 6. Run `validate`, `broken-links` or `orphans` when the graph should be connected.
 
 Good linked note:
@@ -171,7 +173,6 @@ Good linked note:
 blink add "SQLite Index Rebuild" \
   --agent coding-agent \
   --content "Legacy derived indexes without agent columns are rebuilt because SQLite is disposable. Related: [[Architecture]], [[Agent Namespaces]]. #sqlite #architecture #decision"
-blink index
 blink validate --agent coding-agent
 ```
 
@@ -247,7 +248,7 @@ When using MCP, use this compact sequence for the same memory discipline:
 1. Bootstrap context:
    - `brainlink_context` with `agent`, `query`, `mode: hybrid`, `limit`.
 2. Capture durable decisions:
-   - `brainlink_add_note` with explicit `[[wiki links]]` and `#tags`.
+   - `brainlink_add_note` or `brainlink_add_file` with explicit `[[wiki links]]` and `#tags`.
 3. Run maintenance before handoff or before the next step:
    - `brainlink_sync` with `agent`, `contextQuery`, `mode: hybrid`.
 4. Diagnose graph issues only when needed:
@@ -346,7 +347,11 @@ $HOME/.brainlink/vault/
 
 ```bash
 blink add "Note Title" --vault ./vault --content "Markdown content"
+blink add "Note Title" --vault ./vault --content-file ./notes.md
+blink add "Note Title" --vault ./vault --content-file ./notes.md --no-auto-index
 ```
+
+`--content` and `--content-file` are mutually exclusive. Use `--no-auto-index` if you want to defer indexing in batch operations.
 
 This creates a slugged Markdown file with frontmatter and a heading.
 
@@ -516,6 +521,7 @@ Available MCP tools:
 - `brainlink_context`
 - `brainlink_search`
 - `brainlink_add_note`
+- `brainlink_add_file`
 - `brainlink_index`
 - `brainlink_validate`
 - `brainlink_graph`
