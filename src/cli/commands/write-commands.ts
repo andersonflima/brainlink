@@ -27,17 +27,17 @@ export const registerWriteCommands = (program: Command): void => {
   .argument('<title>', 'note title')
   .requiredOption('-c, --content <content>', 'markdown content')
   .option('-v, --vault <vault>', 'vault directory')
-  .option('-a, --agent <agent>', 'agent memory namespace', 'shared')
+  .option('-a, --agent <agent>', 'agent memory namespace')
   .option('--allow-sensitive', 'allow writing content that looks like a secret')
   .option('--json', 'print machine-readable JSON')
   .description('add a markdown note to the vault')
   .action(async (title: string, options: AddOptions) => {
     const resolved = await resolveOptions(options)
-    const path = await addNote(resolved.vault, title, options.content, options.agent, {
+    const path = await addNote(resolved.vault, title, options.content, resolved.agent, {
       allowSensitive: Boolean(options.allowSensitive)
     })
 
-    print(options.json, { title, agent: options.agent ?? 'shared', path }, () => `Created note at ${path}`)
+    print(options.json, { title, agent: resolved.agent ?? 'shared', path }, () => `Created note at ${path}`)
   })
 
   program

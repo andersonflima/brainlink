@@ -41,6 +41,8 @@ $HOME/.brainlink/vault
 
 Use `--vault <path>` for a one-off custom vault, or set `vault` in `brainlink.config.json` / `.brainlink.json` for a workspace-level custom default. Set `BRAINLINK_HOME` when the whole Brainlink home directory should live somewhere else.
 
+You can also set `defaultAgent` in `brainlink.config.json` / `.brainlink.json` (for example `"defaultAgent": "coding-agent"`). When set, CLI commands and MCP calls reuse it when `--agent`/`agent` is not passed.
+
 ## Agent Namespaces
 
 Each agent writes into a dedicated namespace under `agents/<agent-id>/`:
@@ -205,6 +207,54 @@ If the context is empty or weak:
 2. Run `search` to inspect raw matches.
 3. Inspect links and backlinks.
 4. Only then answer from general reasoning.
+
+## Optimized Agent Workflow (1 to 7)
+
+Use this exact loop for higher signal and lower noise:
+
+1. Read memory before decisions:
+   - `blink context "<task>" --agent "$BLINK_AGENT" --json`
+   - Add `--mode hybrid` for mixed retrieval.
+2. Keep vault structure deterministic:
+   - Keep shared knowledge in `agents/shared`.
+   - Keep private work-in-progress in your own agent namespace.
+3. Write durable notes only, with explicit links and tags:
+   - include at least one `[[...]]` link
+   - include `#tags` for retrieval
+4. Store only stable decisions and update an existing note when possible.
+5. Use cache-conscious read/refresh cycle:
+   - prefer targeted queries over broad dumps.
+   - avoid re-indexing unless note set changed.
+6. Run guardrails regularly:
+   - `npm run brainlink:sync -- --vault ./vault --agent "$BLINK_AGENT"`.
+   - the sync flow runs `index`, `stats`, `validate`, `broken-links`, `orphans` and a quick context probe.
+7. Before responding:
+   - cite sources from context output
+   - keep output anchored in retrieved references.
+
+Templates are available in `docs/templates` for quick note creation.
+
+Recommended template:
+
+```bash
+cp docs/templates/agent-note-template.md /tmp/agent-note.md
+```
+
+### MCP Usage for the Optimized Flow
+
+When using MCP, use this compact sequence for the same memory discipline:
+
+1. Bootstrap context:
+   - `brainlink_context` with `agent`, `query`, `mode: hybrid`, `limit`.
+2. Capture durable decisions:
+   - `brainlink_add_note` with explicit `[[wiki links]]` and `#tags`.
+3. Run maintenance before handoff or before the next step:
+   - `brainlink_sync` with `agent`, `contextQuery`, `mode: hybrid`.
+4. Diagnose graph issues only when needed:
+   - `brainlink_validate`, `brainlink_broken_links`, `brainlink_orphans`.
+5. Inspect relationships:
+   - `brainlink_graph`.
+6. Use `brainlink_stats` for a quick health snapshot.
 
 ## Examples For Common Coding Agents
 

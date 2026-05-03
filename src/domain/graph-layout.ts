@@ -229,35 +229,96 @@ const createSegmentNodes = (
 const distanceBetween = (left: GraphLayoutNode, right: GraphLayoutNode): number =>
   Math.hypot(right.x - left.x, right.y - left.y)
 
-const separatePair = (
-  minDistance: number,
-  left: GraphLayoutNode,
-  right: GraphLayoutNode
-): readonly [GraphLayoutNode, GraphLayoutNode] => {
+type MutableGraphLayoutNode = Omit<GraphLayoutNode, 'x' | 'y'> & {
+  x: number
+  y: number
+}
+
+const resolveCollisionPair = (left: MutableGraphLayoutNode, right: MutableGraphLayoutNode, minDistance: number): void => {
   const dx = right.x - left.x
   const dy = right.y - left.y
   const distance = Math.max(Math.hypot(dx, dy), 0.001)
 
   if (distance >= minDistance) {
-    return [left, right]
+    return
   }
 
   const push = (minDistance - distance) / 2
   const ux = dx / distance
   const uy = dy / distance
 
-  return [
-    {
-      ...left,
-      x: left.x - ux * push,
-      y: left.y - uy * push
-    },
-    {
-      ...right,
-      x: right.x + ux * push,
-      y: right.y + uy * push
+  left.x -= ux * push
+  left.y -= uy * push
+  right.x += ux * push
+  right.y += uy * push
+}
+
+const buildCollisionGrid = (
+  nodes: readonly MutableGraphLayoutNode[],
+  cellSize: number
+): ReadonlyMap<string, readonly number[]> => {
+  const grid = new Map<string, number[]>()
+
+  nodes.forEach((node, index) => {
+    const x = Math.floor(node.x / cellSize)
+    const y = Math.floor(node.y / cellSize)
+    const key = `${x},${y}`
+    const bucket = grid.get(key)
+
+    if (bucket) {
+      bucket.push(index)
+      return
     }
-  ]
+
+    grid.set(key, [index])
+  })
+
+  return grid
+}
+
+const neighborCellKeys = (x: number, y: number): readonly string[] => [
+  `${x - 1},${y - 1}`,
+  `${x},${y - 1}`,
+  `${x + 1},${y - 1}`,
+  `${x - 1},${y}`,
+  `${x},${y}`,
+  `${x + 1},${y}`,
+  `${x - 1},${y + 1}`,
+  `${x},${y + 1}`,
+  `${x + 1},${y + 1}`
+]
+
+const resolveCollisionsSpatial = (nodes: readonly MutableGraphLayoutNode[], minDistance: number): void => {
+  const gridCellSize = minDistance * 1.05
+  const grid = buildCollisionGrid(nodes, gridCellSize)
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const left = nodes[index]
+    const leftCellX = Math.floor(left.x / gridCellSize)
+    const leftCellY = Math.floor(left.y / gridCellSize)
+
+    neighborCellKeys(leftCellX, leftCellY).forEach((key) => {
+      const candidateIndices = grid.get(key) ?? []
+
+      candidateIndices.forEach((candidateIndex) => {
+        if (candidateIndex <= index) {
+          return
+        }
+
+        resolveCollisionPair(left, nodes[candidateIndex], minDistance)
+      })
+    })
+  }
+}
+
+const resolveCollisionsBrute = (nodes: readonly MutableGraphLayoutNode[], minDistance: number): void => {
+  for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
+    const left = nodes[leftIndex]
+
+    for (let rightIndex = leftIndex + 1; rightIndex < nodes.length; rightIndex += 1) {
+      resolveCollisionPair(left, nodes[rightIndex], minDistance)
+    }
+  }
 }
 
 const relaxCollisions = (
@@ -265,30 +326,31 @@ const relaxCollisions = (
   minDistance = 132,
   rounds = 32
 ): readonly GraphLayoutNode[] => {
-  const relaxRound = (currentNodes: readonly GraphLayoutNode[]): readonly GraphLayoutNode[] =>
-    currentNodes.reduce<readonly GraphLayoutNode[]>((resolvedNodes, node) => {
-      const resolved = resolvedNodes.reduce<{
-        readonly previous: readonly GraphLayoutNode[]
-        readonly current: GraphLayoutNode
-      }>(
-        (state, previousNode) => {
-          const [nextPrevious, nextCurrent] = separatePair(minDistance, previousNode, state.current)
+  if (nodes.length <= 1) {
+    return nodes
+  }
 
-          return {
-            previous: [...state.previous, nextPrevious],
-            current: nextCurrent
-          }
-        },
-        {
-          previous: [],
-          current: node
-        }
-      )
+  const effectiveRounds =
+    nodes.length > 1000
+      ? Math.min(rounds, 12)
+      : nodes.length > 500
+        ? Math.min(rounds, 20)
+        : Math.min(rounds, 26)
+  const layoutNodes: MutableGraphLayoutNode[] = nodes.map((node) => ({
+    ...node,
+    x: Number.isFinite(node.x) ? node.x : 0,
+    y: Number.isFinite(node.y) ? node.y : 0
+  }))
 
-      return [...resolved.previous, resolved.current]
-    }, [])
+  for (let round = 0; round < effectiveRounds; round += 1) {
+    if (nodes.length <= 250) {
+      resolveCollisionsBrute(layoutNodes, minDistance)
+    } else {
+      resolveCollisionsSpatial(layoutNodes, minDistance)
+    }
+  }
 
-  return Array.from({ length: rounds }).reduce<readonly GraphLayoutNode[]>((currentNodes) => relaxRound(currentNodes), nodes)
+  return layoutNodes
 }
 
 export const createCauliflowerGraphLayout = (graph: KnowledgeGraph): KnowledgeGraphLayout => {

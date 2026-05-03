@@ -17,6 +17,10 @@ import {
   orphansTool,
   searchInputSchema,
   searchTool,
+  statsInputSchema,
+  statsTool,
+  syncInputSchema,
+  syncTool,
   validateInputSchema,
   validateTool
 } from './tools.js'
@@ -81,6 +85,16 @@ export const createBrainlinkMcpServer = (): McpServer => {
   )
 
   server.registerTool(
+    'brainlink_stats',
+    {
+      title: 'Get Brainlink Vault Stats',
+      description: 'Read indexed vault statistics, including node, edge and tag totals.',
+      inputSchema: statsInputSchema
+    },
+    statsTool
+  )
+
+  server.registerTool(
     'brainlink_validate',
     {
       title: 'Validate Brainlink Vault',
@@ -88,6 +102,16 @@ export const createBrainlinkMcpServer = (): McpServer => {
       inputSchema: validateInputSchema
     },
     validateTool
+  )
+
+  server.registerTool(
+    'brainlink_sync',
+    {
+      title: 'Run Brainlink Sync Flow',
+      description: 'Run index, stats, validate, broken-links and orphans checks in one call. Optionally run context probe.',
+      inputSchema: syncInputSchema
+    },
+    syncTool
   )
 
   server.registerTool(

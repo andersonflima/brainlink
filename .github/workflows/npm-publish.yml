@@ -30,6 +30,8 @@ jobs:
   publish:
     if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip publish]')
     runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
       - uses: actions/checkout@v6
 

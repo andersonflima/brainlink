@@ -34,6 +34,34 @@ const createResponse = (body: string, statusCode = 200, contentType = 'text/plai
   }
 })
 
+const normalizeHeaderToken = (value: string | undefined): string =>
+  value?.trim().replace(/^"|"$/g, '') ?? ''
+
+const decodeEntityTag = (candidate: string): string => {
+  const token = normalizeHeaderToken(candidate)
+  if (!/^[A-Za-z0-9_-]+$/.test(token)) return token
+
+  try {
+    return Buffer.from(token, 'base64url').toString('utf8')
+  } catch {
+    return token
+  }
+}
+
+const encodeEntityTag = (signature: string): string =>
+  JSON.stringify(Buffer.from(signature, 'utf8').toString('base64url'))
+
+const sameEntityTag = (candidate: string | string[] | undefined, signature: string): boolean => {
+  if (Array.isArray(candidate)) {
+    return candidate.some((value) => sameEntityTag(value, signature))
+  }
+  if (candidate === undefined) {
+    return false
+  }
+
+  return decodeEntityTag(candidate) === signature
+}
+
 const readAgentQuery = (url: URL): string | undefined =>
   url.searchParams.get('agent') ?? undefined
 
@@ -55,7 +83,31 @@ export const route = async (request: IncomingMessage, url: URL, vaultPath: strin
   }
 
   if (isReadMethod(request) && url.pathname === '/api/graph-layout') {
-    return createResponse(createJsonResponse(await getGraphLayout(vaultPath, readAgentQuery(url))), 200, contentTypes['.json'])
+    const { signature, layout } = await getGraphLayout(vaultPath, readAgentQuery(url))
+    const requestEtags = request.headers['if-none-match']
+    const notModified = sameEntityTag(requestEtags, signature)
+    const etag = encodeEntityTag(signature)
+    const body = createJsonResponse({ signature, layout })
+    const jsonResponse = createResponse(body, 200, contentTypes['.json'])
+    const notModifiedResponse = createResponse('', 304, contentTypes['.json'])
+
+    if (notModified) {
+      return {
+        ...notModifiedResponse,
+        headers: {
+          ...notModifiedResponse.headers,
+          etag
+        }
+      }
+    }
+
+    return {
+      ...jsonResponse,
+      headers: {
+        ...jsonResponse.headers,
+        etag
+      }
+    }
   }
 
   if (isReadMethod(request) && url.pathname === '/api/agents') {

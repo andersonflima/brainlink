@@ -14,47 +14,60 @@ export type IndexVaultResult = {
 
 type ParsedDocument = ReturnType<typeof parseMarkdownDocument>
 
+type IndexedTitle = {
+  readonly id: string
+  readonly path: string
+}
+
 type TitleMaps = {
-  readonly shared: ReadonlyMap<string, string>
-  readonly byAgent: ReadonlyMap<string, ReadonlyMap<string, string>>
+  readonly shared: ReadonlyMap<string, IndexedTitle>
+  readonly byAgent: ReadonlyMap<string, ReadonlyMap<string, IndexedTitle>>
 }
 
 type MutableTitleMaps = {
-  readonly shared: Map<string, string>
-  readonly byAgent: Map<string, Map<string, string>>
+  readonly shared: Map<string, IndexedTitle>
+  readonly byAgent: Map<string, Map<string, IndexedTitle>>
 }
 
 const toTitleKey = (title: string): string =>
   title.toLowerCase()
 
-const appendTitleEntry = (map: Map<string, string>, document: ParsedDocument): Map<string, string> => {
-  map.set(toTitleKey(document.title), document.id)
+const appendTitleEntry = (map: Map<string, IndexedTitle>, document: ParsedDocument): Map<string, IndexedTitle> => {
+  const key = toTitleKey(document.title)
+
+  if (!map.has(key)) {
+    map.set(key, {
+      id: document.id,
+      path: document.path
+    })
+  }
 
   return map
 }
 
 const createTitleMaps = (documents: readonly ParsedDocument[]): TitleMaps =>
-  documents.reduce<MutableTitleMaps>(
-    (state, document) => {
-      const agentMap = state.byAgent.get(document.agentId) ?? new Map<string, string>()
-      appendTitleEntry(agentMap, document)
-      state.byAgent.set(document.agentId, agentMap)
+  [...documents]
+    .sort((left, right) => left.path.localeCompare(right.path))
+    .reduce<MutableTitleMaps>(
+      (state, document) => {
+        const agentMap = state.byAgent.get(document.agentId) ?? new Map<string, IndexedTitle>()
+        appendTitleEntry(agentMap, document)
+        state.byAgent.set(document.agentId, agentMap)
 
-      if (document.agentId === sharedAgentId) {
-        appendTitleEntry(state.shared, document)
+        if (document.agentId === sharedAgentId) {
+          appendTitleEntry(state.shared, document)
+        }
+
+        return state
+      },
+      {
+        shared: new Map(),
+        byAgent: new Map()
       }
-
-      return state
-    },
-    {
-      shared: new Map(),
-      byAgent: new Map()
-    }
-  )
-
+    )
 const createScopedTitleResolver = (document: ParsedDocument, titleMaps: TitleMaps) => ({
   get: (title: string): string | undefined =>
-    titleMaps.byAgent.get(document.agentId)?.get(title) ?? titleMaps.shared.get(title)
+    titleMaps.byAgent.get(document.agentId)?.get(title)?.id ?? titleMaps.shared.get(title)?.id
 })
 
 const embedIndexedDocuments = async (

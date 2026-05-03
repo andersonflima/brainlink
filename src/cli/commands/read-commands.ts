@@ -23,9 +23,9 @@ export const registerReadCommands = (program: Command): void => {
     const resolved = await resolveOptions(options)
     const limit = parsePositiveInteger(options.limit ?? String(resolved.config.defaultSearchLimit), resolved.config.defaultSearchLimit)
     const mode = sanitizeSearchMode(options.mode, resolved.config.defaultSearchMode)
-    const results = await searchKnowledge(resolved.vault, query, limit, options.agent, mode)
+    const results = await searchKnowledge(resolved.vault, query, limit, resolved.agent, mode)
 
-    print(options.json, { query, agent: options.agent, limit, mode, results }, () =>
+    print(options.json, { query, agent: resolved.agent, limit, mode, results }, () =>
       results
         .map((result, index) =>
           [`${index + 1}. ${result.title} (${result.path}) score=${result.score.toFixed(3)} mode=${result.searchMode}`, result.content].join('\n')
@@ -42,7 +42,7 @@ export const registerReadCommands = (program: Command): void => {
   .description('list indexed wiki links')
   .action(async (options: VaultOptions) => {
     const resolved = await resolveOptions(options)
-    const links = await listLinks(resolved.vault, options.agent)
+    const links = await listLinks(resolved.vault, resolved.agent)
 
     print(options.json, { links }, () =>
       links
@@ -64,7 +64,7 @@ export const registerReadCommands = (program: Command): void => {
   .description('list notes linking to a target note')
   .action(async (title: string, options: VaultOptions) => {
     const resolved = await resolveOptions(options)
-    const backlinks = await listBacklinks(resolved.vault, title, options.agent)
+    const backlinks = await listBacklinks(resolved.vault, title, resolved.agent)
 
     print(options.json, { title, backlinks }, () =>
       backlinks.map((link) => `${link.fromTitle} (${link.fromPath}) -> ${link.toTitle}`).join('\n')
@@ -89,7 +89,7 @@ export const registerReadCommands = (program: Command): void => {
       query,
       parsePositiveInteger(options.limit ?? '12', 12),
       parsePositiveInteger(options.tokens ?? String(resolved.config.defaultContextTokens), resolved.config.defaultContextTokens),
-      options.agent,
+      resolved.agent,
       mode
     )
 
@@ -104,7 +104,7 @@ export const registerReadCommands = (program: Command): void => {
   .description('print indexed graph data')
   .action(async (options: VaultOptions) => {
     const resolved = await resolveOptions(options)
-    const graph = await getGraph(resolved.vault, options.agent)
+    const graph = await getGraph(resolved.vault, resolved.agent)
 
     print(options.json, graph, () => JSON.stringify(graph, null, 2))
   })
@@ -129,7 +129,7 @@ export const registerReadCommands = (program: Command): void => {
   .description('print indexed vault statistics')
   .action(async (options: VaultOptions) => {
     const resolved = await resolveOptions(options)
-    const stats = await getStats(resolved.vault, options.agent)
+    const stats = await getStats(resolved.vault, resolved.agent)
 
     print(options.json, stats, () =>
       [
@@ -151,7 +151,7 @@ export const registerReadCommands = (program: Command): void => {
   .description('list unresolved wiki links')
   .action(async (options: VaultOptions) => {
     const resolved = await resolveOptions(options)
-    const brokenLinks = await getBrokenLinksReport(resolved.vault, options.agent)
+    const brokenLinks = await getBrokenLinksReport(resolved.vault, resolved.agent)
 
     print(options.json, { brokenLinks }, () =>
       brokenLinks.length === 0
@@ -168,7 +168,7 @@ export const registerReadCommands = (program: Command): void => {
   .description('list indexed notes without incoming or outgoing links')
   .action(async (options: VaultOptions) => {
     const resolved = await resolveOptions(options)
-    const orphans = await getOrphansReport(resolved.vault, options.agent)
+    const orphans = await getOrphansReport(resolved.vault, resolved.agent)
 
     print(options.json, { orphans }, () =>
       orphans.length === 0 ? 'No orphan notes found' : orphans.map((node) => `${node.title} (${node.path})`).join('\n')
@@ -183,7 +183,7 @@ export const registerReadCommands = (program: Command): void => {
   .description('validate indexed vault graph health')
   .action(async (options: VaultOptions) => {
     const resolved = await resolveOptions(options)
-    const validation = await validateVault(resolved.vault, options.agent)
+    const validation = await validateVault(resolved.vault, resolved.agent)
 
     print(options.json, validation, () =>
       validation.ok

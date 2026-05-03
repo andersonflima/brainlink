@@ -103,6 +103,17 @@ const createLayout = graph => {
   return { nodes, edges }
 }
 
+const encodeEntityTag = (value) => {
+  const utf8 = new TextEncoder().encode(value)
+  let binary = ''
+
+  for (let index = 0; index < utf8.length; index += 1) {
+    binary += String.fromCharCode(utf8[index])
+  }
+
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
 const graphSignature = graph => JSON.stringify({
   nodes: graph.nodes.map(node => [node.id, node.title, node.path, node.content, node.tags]),
   edges: graph.edges.map(edge => [edge.source, edge.target, edge.targetTitle, edge.weight, edge.priority])
@@ -384,9 +395,21 @@ const loadAgents = async () => {
 }
 
 const loadGraph = async (options = { reset: false }) => {
-  const response = await fetch('/api/graph-layout' + agentQuery())
-  const graph = await response.json()
-  const signature = graphSignature(graph)
+  const response = await fetch('/api/graph-layout' + agentQuery(), {
+    headers: state.graphSignature
+      ? {
+          'if-none-match': encodeEntityTag(state.graphSignature)
+        }
+      : undefined
+  })
+
+  if (response.status === 304) {
+    return
+  }
+
+  const payload = await response.json()
+  const graph = payload?.layout ?? payload
+  const signature = payload?.signature ?? graphSignature(graph)
   if (!options.reset && signature === state.graphSignature) return
   const selectedId = state.selected?.id
   const layout = createLayout(graph)
@@ -409,15 +432,47 @@ requestAnimationFrame(() => {
   resize()
   resetView()
 })
-loadAgents().then(() => loadGraph({ reset: true })).then(() => {
-  requestAnimationFrame(render)
-  setInterval(() => {
-    loadAgents().then(() => loadGraph()).catch(error => {
-      elements.stats.textContent = 'Failed to refresh graph'
+
+const pollIntervalMs = 5000
+let tickCounter = 0
+
+const refreshGraphLoop = () => {
+  if (document.hidden) {
+    return
+  }
+
+  loadGraph().catch((error) => {
+    elements.stats.textContent = 'Failed to refresh graph'
+    console.error(error)
+  })
+
+  tickCounter += 1
+  if (tickCounter % 3 === 0) {
+    loadAgents().catch((error) => {
       console.error(error)
     })
-  }, 2000)
-}).catch(error => {
-  elements.stats.textContent = 'Failed to load graph'
-  console.error(error)
-})`
+  }
+}
+
+loadAgents()
+  .then(() => loadGraph({ reset: true }))
+  .then(() => {
+    requestAnimationFrame(render)
+    setInterval(refreshGraphLoop, pollIntervalMs)
+  })
+  .catch(error => {
+    elements.stats.textContent = 'Failed to load graph'
+    console.error(error)
+  })
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    return
+  }
+
+  loadGraph({ reset: true }).catch(error => {
+    elements.stats.textContent = 'Failed to refresh graph'
+    console.error(error)
+  })
+})
+`
