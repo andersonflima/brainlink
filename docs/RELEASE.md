@@ -2,7 +2,7 @@
 
 Brainlink releases are built from the CLI package. Do not publish until the package name, npm account and version are confirmed.
 
-## Alpha Release Checklist
+## Beta Release Checklist
 
 1. Confirm `package.json` name, version, repository, license and bin entries.
 2. Run `npm install` from a clean checkout when dependencies changed.
@@ -51,9 +51,9 @@ The preferred path is the `Publish npm` GitHub Actions workflow:
 - GitHub Release `published`: runs checks, pack smoke, then publishes to npm with provenance.
 - Manual `workflow_dispatch`: runs a dry run by default. Disable `dry_run` only for an intentional manual publish.
 - Manual `workflow_dispatch` accepts an optional `dist_tag` override. Use `latest` only when the default npm install command should resolve to that version.
-- Prerelease versions publish under their prerelease dist-tag, for example `0.1.0-alpha.1` publishes with `--tag alpha`.
+- Prerelease versions publish under their prerelease dist-tag, for example `0.1.0-beta.1` publishes with `--tag beta`.
 
-On `main`, the publish job checks npm before publishing. If the version already exists, it automatically bumps the package inside the runner to the next available version before checks, packing and publishing. For example, `0.1.0-alpha.4` becomes `0.1.0-alpha.5`.
+On `main`, the publish job checks npm before publishing. If the version already exists, it automatically bumps the package inside the runner to the next available version before checks, packing and publishing. For example, `0.1.0-beta.4` becomes `0.1.0-beta.5`.
 
 The automatic bump is intentionally not pushed back to `main`. The branch stays protected, and npm remains the source of truth for the latest published package version.
 
