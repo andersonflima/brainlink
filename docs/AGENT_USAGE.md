@@ -523,7 +523,9 @@ Available MCP tools:
 - `brainlink_add_note`
 - `brainlink_add_file`
 - `brainlink_index`
+- `brainlink_stats`
 - `brainlink_validate`
+- `brainlink_sync`
 - `brainlink_graph`
 - `brainlink_broken_links`
 - `brainlink_orphans`

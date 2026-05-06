@@ -380,6 +380,99 @@ Example MCP client configuration:
 }
 ```
 
+For a locked-down setup, allowlist the vaults that MCP clients may access:
+
+```json
+{
+  "mcpServers": {
+    "brainlink": {
+      "command": "brainlink-mcp",
+      "env": {
+        "BRAINLINK_ALLOWED_VAULTS": "/absolute/path/to/project-vault,/absolute/path/to/team-vault"
+      }
+    }
+  }
+}
+```
+
+### Install In MCP Client Stores
+
+Brainlink can be exposed to MCP-compatible client stores in two ways:
+
+1. Register the stdio server directly when the client accepts `mcpServers` configuration.
+2. Register the local plugin from this repository when the client supports a plugin gallery or local marketplace.
+
+Direct MCP server setup:
+
+```bash
+npm install -g @andespindola/brainlink@latest
+command -v brainlink-mcp
+```
+
+Use this server configuration in any MCP-compatible client that reads a JSON MCP manifest:
+
+```json
+{
+  "mcpServers": {
+    "brainlink": {
+      "command": "brainlink-mcp"
+    }
+  }
+}
+```
+
+Local plugin gallery setup:
+
+```bash
+npm install -g @andespindola/brainlink@latest
+git clone https://github.com/andersonflima/brainlink.git "$HOME/brainlink"
+mkdir -p "$HOME/plugins"
+ln -s "$HOME/brainlink/plugins/brainlink" "$HOME/plugins/brainlink"
+```
+
+Then register the plugin in the local marketplace file used by compatible clients:
+
+```bash
+node <<'NODE'
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+
+const marketplacePath = path.join(os.homedir(), '.agents', 'plugins', 'marketplace.json')
+const pluginEntry = {
+  name: 'brainlink',
+  source: {
+    source: 'local',
+    path: './plugins/brainlink'
+  },
+  policy: {
+    installation: 'AVAILABLE',
+    authentication: 'ON_INSTALL'
+  },
+  category: 'Productivity'
+}
+
+fs.mkdirSync(path.dirname(marketplacePath), { recursive: true })
+
+const marketplace = fs.existsSync(marketplacePath)
+  ? JSON.parse(fs.readFileSync(marketplacePath, 'utf8'))
+  : {
+      name: 'local',
+      interface: {
+        displayName: 'Local'
+      },
+      plugins: []
+    }
+
+const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : []
+marketplace.plugins = [...plugins.filter((plugin) => plugin?.name !== 'brainlink'), pluginEntry]
+
+fs.writeFileSync(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`)
+NODE
+```
+
+Restart the client after changing marketplace or MCP configuration so it reloads the Brainlink entry. The plugin starts `brainlink-mcp` and exposes the same tool set listed below.
+
 Available tools:
 
 - `brainlink_context`: read indexed context for a task or question.
@@ -387,7 +480,9 @@ Available tools:
 - `brainlink_add_note`: write durable Markdown memory and reindex.
 - `brainlink_add_file`: ingest a local file as a note and reindex.
 - `brainlink_index`: rebuild the vault index.
+- `brainlink_stats`: read indexed vault statistics.
 - `brainlink_validate`: validate broken links and orphan notes.
+- `brainlink_sync`: run index, stats, validation, broken-link and orphan checks in one call.
 - `brainlink_graph`: read indexed graph nodes and weighted links.
 - `brainlink_broken_links`: list unresolved wiki links.
 - `brainlink_orphans`: list disconnected notes.
@@ -646,11 +741,11 @@ Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current wo
   "defaultSearchMode": "hybrid",
   "chunkSize": 1200
 }
+```
 
 `defaultAgent` is optional. When set, CLI and MCP calls that omit `--agent`/`agent` use this value automatically. If not set, behavior remains as before.
 
 `autoIndexOnWrite` is optional and defaults to `true`. Set it to `false` to defer indexing after writes.
-``` 
 
 Use `"embeddingProvider": "none"` when you want FTS-only indexing.
 
@@ -763,17 +858,18 @@ Detailed notes:
 - HTTP API is local and unauthenticated.
 - Watch mode depends on the platform filesystem watcher.
 
-## Alpha Scope
+## Beta Scope
 
-`0.1.0-alpha.0` is intended to prove the local-first memory loop:
+`0.1.0-beta.0` is intended to stabilize the local-first memory loop:
 
 - Markdown as durable memory.
 - SQLite FTS plus local embeddings and semantic buckets as rebuildable retrieval index.
 - CLI as the primary agent interface.
 - HTTP graph API and frontend as inspection tools.
 - Agent namespaces to avoid context mixing.
+- MCP tools for context retrieval, durable memory writes and graph maintenance.
 
-The alpha includes local semantic retrieval. Remote embedding providers, remote auth, advanced deduplication and graph editing are future milestones.
+The beta includes local semantic retrieval. Remote embedding providers, remote auth, advanced deduplication and graph editing are future milestones.
 
 ## Security
 

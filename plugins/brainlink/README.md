@@ -18,7 +18,7 @@ the plugin folder in your local Codex marketplace.
 
 ```bash
 npm install -g @andespindola/brainlink@latest
-brainlink-mcp --help
+command -v brainlink-mcp
 ```
 
 ### 2. Clone This Repository
