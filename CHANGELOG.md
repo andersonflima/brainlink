@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.0-beta.2
+
+- Added MCP installation guidance for direct server configuration and local client stores.
+- Documented MCP vault allowlisting with `BRAINLINK_ALLOWED_VAULTS`.
+- Aligned the documented MCP tool list with the current server tools.
+- Updated release documentation for the beta package line.
+
+## 0.1.0-beta.0
+
+- Promoted the package from alpha to beta.
+- Added built-in MCP stdio server distribution through `brainlink-mcp`.
+- Added agent namespaces, auto-indexing on writes and file ingestion flows.
+- Added S3-compatible bucket vault support and weighted graph relationships.
+
 ## 0.1.0-alpha.0
 
 - Added local-first Markdown vault indexing.

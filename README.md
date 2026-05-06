@@ -860,7 +860,7 @@ Detailed notes:
 
 ## Beta Scope
 
-`0.1.0-beta.0` is intended to stabilize the local-first memory loop:
+The `0.1.0-beta` line is intended to stabilize the local-first memory loop:
 
 - Markdown as durable memory.
 - SQLite FTS plus local embeddings and semantic buckets as rebuildable retrieval index.
