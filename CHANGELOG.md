@@ -9,7 +9,7 @@
 
 ## 0.1.0-beta.0
 
-- Promoted the package from alpha to beta.
+- Promoted the package to the beta prerelease channel.
 - Added built-in MCP stdio server distribution through `brainlink-mcp`.
 - Added agent namespaces, auto-indexing on writes and file ingestion flows.
 - Added S3-compatible bucket vault support and weighted graph relationships.
