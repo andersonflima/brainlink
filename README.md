@@ -561,9 +561,11 @@ Every command works with either `brainlink` or `blink`.
 ```bash
 blink init
 blink init ./vault
+blink init ./team-vault --migrate-from ~/.brainlink/vault
 ```
 
 Initializes vault metadata. Without an argument, Brainlink initializes the default vault at `$HOME/.brainlink/vault`.
+When initializing an empty custom vault, existing Markdown content from the default vault is copied into it and reindexed so context is not left behind. Use `--no-migrate-existing` to start with an empty custom vault, or `--migrate-from <vault>` to copy from a specific source. Existing target files are never overwritten; conflicting source files are preserved with a `.conflict-<timestamp>` suffix.
 
 ### `add`
 

@@ -2,13 +2,15 @@ import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { addNote } from '../../application/add-note.js'
 import { indexVault } from '../../application/index-vault.js'
+import { migrateVaultContent, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
 import { startServer } from '../../application/start-server.js'
 import { startVaultWatcher } from '../../application/watch-vault.js'
 import { doctorVault } from '../../application/analyze-vault.js'
+import { defaultBrainlinkConfig } from '../../infrastructure/config.js'
 import { loadBrainlinkConfig } from '../../infrastructure/config.js'
 import { assertVaultAllowed, ensureVault } from '../../infrastructure/file-system-vault.js'
 import { parsePositiveInteger, print, resolveOptions } from '../runtime.js'
-import type { AddOptions, ServerOptions, VaultOptions } from '../types.js'
+import type { AddOptions, InitOptions, ServerOptions, VaultOptions } from '../types.js'
 
 const resolveAddContent = (options: AddOptions): string => {
   if (options.content != null && options.content.trim().length > 0) {
@@ -26,13 +28,33 @@ export const registerWriteCommands = (program: Command): void => {
   program
     .command('init')
   .argument('[vault]', 'vault directory')
+  .option('--migrate-from <vault>', 'copy existing vault content into the initialized vault')
+  .option('--no-migrate-existing', 'skip automatic migration from the default Brainlink vault into an empty custom vault')
   .option('--json', 'print machine-readable JSON')
   .description('initialize a Brainlink vault')
-  .action(async (vault: string | undefined, options: { readonly json?: boolean }) => {
+  .action(async (vault: string | undefined, options: InitOptions) => {
     const config = await loadBrainlinkConfig()
-    const path = await ensureVault(assertVaultAllowed(vault ?? config.vault, config.allowedVaults))
+    const targetVault = assertVaultAllowed(vault ?? config.vault, config.allowedVaults)
+    const path = await ensureVault(targetVault)
+    const explicitSource = options.migrateFrom ? assertVaultAllowed(options.migrateFrom, config.allowedVaults) : undefined
+    const shouldAutoMigrate =
+      explicitSource === undefined &&
+      options.migrateExisting !== false &&
+      (await shouldMigrateDefaultVault(defaultBrainlinkConfig.vault, targetVault))
+    const migration = explicitSource || shouldAutoMigrate ? await migrateVaultContent(explicitSource ?? defaultBrainlinkConfig.vault, targetVault) : undefined
+    const index = migration && migration.copied + migration.conflicted > 0 ? await indexVault(targetVault) : undefined
 
-    print(options.json, { path }, () => `Initialized Brainlink vault at ${path}`)
+    print(
+      options.json,
+      { path, ...(migration ? { migration } : {}), ...(index ? { index } : {}) },
+      () => {
+        const migrated = migration
+          ? ` Migrated ${migration.copied} files, preserved ${migration.conflicted} conflicts and kept ${migration.unchanged} unchanged files.`
+          : ''
+
+        return `Initialized Brainlink vault at ${path}.${migrated}`
+      }
+    )
   })
 
   program

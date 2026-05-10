@@ -341,7 +341,7 @@ $HOME/.brainlink/vault/
   .brainlink/
 ```
 
-`blink init ./vault` creates a custom vault instead.
+`blink init ./vault` creates a custom vault instead. If the custom vault is empty and the default `$HOME/.brainlink/vault` already has Markdown memory, Brainlink copies that content into the custom vault and reindexes it. Use `blink init ./vault --no-migrate-existing` to intentionally start empty, or `blink init ./vault --migrate-from <old-vault>` to migrate from a specific previous vault. Existing target files are not overwritten; conflicting source files are preserved with a `.conflict-<timestamp>` suffix.
 
 ### Add A Note
 
