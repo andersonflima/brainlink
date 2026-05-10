@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createCauliflowerGraphLayout } from '../domain/graph-layout.js'
 import type { KnowledgeGraph, KnowledgeGraphLayout } from '../domain/types.js'
 import { getGraph } from './get-graph.js'
@@ -20,7 +21,9 @@ const createGraphSignature = (graph: KnowledgeGraph): string => {
     .map((edge) => `${edge.source}|${edge.target ?? ''}|${edge.targetTitle}|${edge.weight}|${edge.priority}`)
     .join('\n')
 
-  return `${graph.nodes.length}:${nodesSignature}|${graph.edges.length}:${edgesSignature}`
+  return createHash('sha256')
+    .update(`${graph.nodes.length}:${nodesSignature}|${graph.edges.length}:${edgesSignature}`)
+    .digest('hex')
 }
 
 export const getGraphLayout = async (vaultPath: string, agentId?: string): Promise<GraphLayoutPayload> => {
