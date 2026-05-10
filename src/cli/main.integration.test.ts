@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -37,7 +37,7 @@ describe('brainlink cli integration', () => {
     const vault = await mkdtemp(join(tmpdir(), 'brainlink-vault-'))
     tempPaths.push(vault)
 
-    const init = parseJson<{ path: string }>(await cli(['init', vault, '--json'], projectPath))
+    const init = parseJson<{ path: string }>(await cli(['init', vault, '--no-migrate-existing', '--json'], projectPath))
     expect(init.path).toBe(vault)
 
     const architecture = parseJson<{ path: string }>(
@@ -194,6 +194,7 @@ describe('brainlink cli integration', () => {
 
     const env = { BRAINLINK_HOME: brainlinkHome }
     const defaultVault = join(brainlinkHome, 'vault')
+    const migratedVault = join(brainlinkHome, 'migrated-vault')
 
     const init = parseJson<{ path: string }>(await cli(['init', '--json'], projectPath, env))
     expect(init.path).toBe(defaultVault)
@@ -205,6 +206,29 @@ describe('brainlink cli integration', () => {
 
     const defaultIndex = parseJson<{ documentCount: number }>(await cli(['index', '--json'], projectPath, env))
     expect(defaultIndex.documentCount).toBe(1)
+
+    const migratedInit = parseJson<{
+      path: string
+      migration: { copied: number; conflicted: number; unchanged: number }
+      index: { documentCount: number }
+    }>(await cli(['init', migratedVault, '--json'], projectPath, env))
+    expect(migratedInit.path).toBe(migratedVault)
+    expect(migratedInit.migration).toMatchObject({ copied: 1, conflicted: 0, unchanged: 0 })
+    expect(migratedInit.index.documentCount).toBe(1)
+    await expect(readFile(join(migratedVault, 'agents/shared/default-memory.md'), 'utf8')).resolves.toContain('Default Brainlink memory')
+
+    const conflictVault = join(brainlinkHome, 'conflict-vault')
+    await mkdir(join(conflictVault, 'agents/shared'), { recursive: true })
+    await writeFile(join(conflictVault, 'agents/shared/default-memory.md'), 'Different existing memory. #different')
+    const conflictInit = parseJson<{
+      migration: { copied: number; conflicted: number; unchanged: number }
+      index: { documentCount: number }
+    }>(await cli(['init', conflictVault, '--migrate-from', defaultVault, '--json'], projectPath, env))
+    expect(conflictInit.migration).toMatchObject({ copied: 0, conflicted: 1, unchanged: 0 })
+    expect(conflictInit.index.documentCount).toBe(2)
+    expect(await readdir(join(conflictVault, 'agents/shared'))).toEqual(
+      expect.arrayContaining(['default-memory.md', expect.stringMatching(/^default-memory\.conflict-\d+T\d+Z\.md$/)])
+    )
 
     const explicitNote = parseJson<{ path: string }>(
       await cli(

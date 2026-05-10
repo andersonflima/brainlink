@@ -4,6 +4,12 @@ export type VaultOptions = {
   readonly json?: boolean
 }
 
+export type InitOptions = {
+  readonly json?: boolean
+  readonly migrateFrom?: string
+  readonly migrateExisting?: boolean
+}
+
 export type SearchOptions = VaultOptions & {
   readonly limit?: string
   readonly mode?: string

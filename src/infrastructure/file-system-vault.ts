@@ -32,6 +32,24 @@ const walkMarkdownFiles = async (directory: string): Promise<readonly string[]> 
   return nested.flat()
 }
 
+const walkVaultFiles = async (directory: string): Promise<readonly string[]> => {
+  const entries = await readdir(directory, { withFileTypes: true })
+
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const absolutePath = join(directory, entry.name)
+
+      if (entry.isDirectory()) {
+        return excludedDirectories.has(entry.name) ? [] : walkVaultFiles(absolutePath)
+      }
+
+      return entry.isFile() ? [absolutePath] : []
+    })
+  )
+
+  return nested.flat()
+}
+
 export const resolveVaultPath = (vaultPath: string): string =>
   isBucketVaultUri(vaultPath) ? getBucketVaultCachePath(vaultPath) : resolvePath(vaultPath)
 
@@ -105,6 +123,12 @@ export const readMarkdownFiles = async (vaultPath: string): Promise<readonly Mar
       }
     })
   )
+}
+
+export const listVaultFiles = async (vaultPath: string): Promise<readonly string[]> => {
+  const absoluteVaultPath = await ensureVault(vaultPath)
+
+  return walkVaultFiles(absoluteVaultPath)
 }
 
 export const writeMarkdownFile = async (vaultPath: string, filename: string, content: string): Promise<string> => {
