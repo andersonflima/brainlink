@@ -12,6 +12,7 @@ const state = {
   transform: { x: 0, y: 0, scale: 1 },
   pointer: { x: 0, y: 0, down: false, dragNode: null, moved: false },
   graphSignature: '',
+  graphStatus: '',
   last: performance.now()
 }
 
@@ -42,6 +43,22 @@ const elements = {
 }
 
 const agentQuery = () => state.agentId ? '?agent=' + encodeURIComponent(state.agentId) : ''
+
+const setGraphStatus = text => {
+  state.graphStatus = text
+  elements.stats.textContent = text
+}
+
+const handleGraphRefreshError = error => {
+  if (state.graphSignature) {
+    elements.stats.textContent = state.graphStatus
+    console.error(error)
+    return
+  }
+
+  elements.stats.textContent = 'Failed to load graph'
+  console.error(error)
+}
 
 const graphTheme = {
   node: '#aeb8c5',
@@ -418,7 +435,7 @@ const loadGraph = async (options = { reset: false }) => {
   state.nodes = layout.nodes
   state.edges = layout.edges
   const tags = new Set(graph.nodes.flatMap(node => node.tags))
-  elements.stats.textContent = state.agentId + ' · ' + graph.nodes.length + ' notes · ' + graph.edges.length + ' links · live'
+  setGraphStatus(state.agentId + ' · ' + graph.nodes.length + ' notes · ' + graph.edges.length + ' links · live')
   elements.nodeCount.textContent = graph.nodes.length
   elements.edgeCount.textContent = graph.edges.length
   elements.tagCount.textContent = tags.size
@@ -441,10 +458,7 @@ const refreshGraphLoop = () => {
     return
   }
 
-  loadGraph().catch((error) => {
-    elements.stats.textContent = 'Failed to refresh graph'
-    console.error(error)
-  })
+  loadGraph().catch(handleGraphRefreshError)
 
   tickCounter += 1
   if (tickCounter % 3 === 0) {
@@ -470,9 +484,6 @@ document.addEventListener('visibilitychange', () => {
     return
   }
 
-  loadGraph({ reset: true }).catch(error => {
-    elements.stats.textContent = 'Failed to refresh graph'
-    console.error(error)
-  })
+  loadGraph({ reset: true }).catch(handleGraphRefreshError)
 })
 `
