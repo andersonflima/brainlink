@@ -31,7 +31,6 @@ const elements = {
   path: byId('path'),
   tags: byId('tags'),
   notes: byId('notes'),
-  content: byId('content'),
   outgoing: byId('outgoing'),
   incoming: byId('incoming'),
   nodeCount: byId('nodeCount'),
@@ -39,7 +38,12 @@ const elements = {
   tagCount: byId('tagCount'),
   zoomIn: byId('zoomIn'),
   zoomOut: byId('zoomOut'),
-  reset: byId('reset')
+  reset: byId('reset'),
+  contentDialog: byId('contentDialog'),
+  contentTitle: byId('contentTitle'),
+  contentPath: byId('contentPath'),
+  contentBody: byId('contentBody'),
+  contentClose: byId('contentClose')
 }
 
 const agentQuery = () => state.agentId ? '?agent=' + encodeURIComponent(state.agentId) : ''
@@ -128,7 +132,7 @@ const encodeEntityTag = (value) => {
     binary += String.fromCharCode(utf8[index])
   }
 
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '')
 }
 
 const graphSignature = graph => JSON.stringify({
@@ -278,14 +282,23 @@ const allNotesList = () => state.nodes.length
   ? state.nodes.map(node => '<li><button type="button" data-node-id="' + escapeHtml(node.id) + '">' + escapeHtml(node.title) + '</button><small>' + escapeHtml(node.path) + '</small></li>').join('')
   : '<li><small>No notes indexed.</small></li>'
 
-const selectNode = node => {
+const openContentDialog = node => {
+  if (!node) return
+  elements.contentTitle.textContent = node.title
+  elements.contentPath.textContent = node.path
+  elements.contentBody.textContent = node.content
+  if (!elements.contentDialog.open) {
+    elements.contentDialog.showModal()
+  }
+}
+
+const selectNode = (node, options = { openContent: false }) => {
   state.selected = node
   if (!node) {
     elements.title.textContent = 'Graph Overview'
     elements.path.textContent = state.nodes.length + ' notes and ' + state.graph.edges.length + ' links indexed.'
     elements.tags.innerHTML = ''
     elements.notes.innerHTML = allNotesList()
-    elements.content.textContent = 'Selecione uma nota no grafo ou na lista para ver o Markdown completo, backlinks e links de saida.'
     elements.outgoing.innerHTML = '<li><small>Select a note to inspect outgoing links.</small></li>'
     elements.incoming.innerHTML = '<li><small>Select a note to inspect backlinks.</small></li>'
     return
@@ -311,14 +324,14 @@ const selectNode = node => {
     ? node.tags.map(tag => '<span>#' + escapeHtml(tag) + '</span>').join('')
     : '<span>No tags</span>'
   elements.notes.innerHTML = allNotesList()
-  elements.content.textContent = node.content
   elements.outgoing.innerHTML = list(outgoing)
   elements.incoming.innerHTML = list(incoming)
+  if (options.openContent) openContentDialog(node)
 }
 
 const selectNodeById = id => {
   const node = state.nodes.find(item => item.id === id)
-  if (node) selectNode(node)
+  if (node) selectNode(node, { openContent: true })
 }
 
 const zoom = factor => {
@@ -344,6 +357,10 @@ const bindEvents = () => {
   elements.zoomIn.addEventListener('click', () => zoom(1.18))
   elements.zoomOut.addEventListener('click', () => zoom(0.84))
   elements.reset.addEventListener('click', resetView)
+  elements.contentClose.addEventListener('click', () => elements.contentDialog.close())
+  elements.contentDialog.addEventListener('click', event => {
+    if (event.target === elements.contentDialog) elements.contentDialog.close()
+  })
   ;[elements.notes, elements.outgoing, elements.incoming].forEach(element => {
     element.addEventListener('click', event => {
       const target = event.target
@@ -384,8 +401,8 @@ const bindEvents = () => {
     state.transform.y += dy
   })
   canvas.addEventListener('pointerup', event => {
-    if (state.pointer.dragNode && !state.pointer.moved) selectNode(state.pointer.dragNode)
-    if (!state.pointer.dragNode && !state.pointer.moved) selectNode(state.hovered)
+    if (state.pointer.dragNode && !state.pointer.moved) selectNode(state.pointer.dragNode, { openContent: true })
+    if (!state.pointer.dragNode && !state.pointer.moved) selectNode(state.hovered, { openContent: true })
     state.pointer = { x: 0, y: 0, down: false, dragNode: null, moved: false }
     canvas.releasePointerCapture(event.pointerId)
   })

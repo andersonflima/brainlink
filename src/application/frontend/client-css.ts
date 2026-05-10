@@ -140,7 +140,7 @@ select {
 
 .inspector {
   display: grid;
-  grid-template-rows: auto auto auto auto auto 1fr 1fr;
+  grid-template-rows: auto auto auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 22px;
   min-width: 0;
   height: 100%;
@@ -253,7 +253,7 @@ li small {
 }
 
 .note-content {
-  max-height: 32svh;
+  max-height: min(68svh, 760px);
   margin: 0;
   padding: 12px;
   border: 1px solid var(--line);
@@ -265,6 +265,80 @@ li small {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.content-dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-height: calc(100svh - 32px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+}
+
+.content-dialog::backdrop {
+  background: rgba(4, 7, 10, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.content-dialog article {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: calc(100svh - 34px);
+}
+
+.content-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.content-dialog h2,
+.content-dialog p {
+  margin: 0;
+}
+
+.content-dialog h2 {
+  margin-top: 6px;
+  font-size: 24px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.content-dialog p {
+  margin-top: 8px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.content-dialog button {
+  flex: 0 0 auto;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.content-dialog button:hover,
+.content-dialog button:focus {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.content-dialog .note-content {
+  max-height: none;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 22px;
 }
 
 @media (max-width: 860px) {
@@ -290,5 +364,10 @@ li small {
 
   .agent-filter {
     width: 100%;
+  }
+
+  .content-dialog header {
+    align-items: stretch;
+    flex-direction: column;
   }
 }`
