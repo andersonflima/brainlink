@@ -78,6 +78,9 @@ describe('brainlink http server integration', () => {
       expect(page).toContain('<canvas id="graph"')
       expect(page).toContain('<select id="agent"')
 
+      const clientScript = await fetch(`${server.url}/app.js`).then((response) => response.text())
+      expect(() => new Function(clientScript)).not.toThrow()
+
       const search = (await fetch(`${server.url}/api/search?q=jwt&limit=5&mode=hybrid`).then((response) => response.json())) as {
         readonly mode: string
         readonly results: readonly { readonly title: string; readonly searchMode: string }[]

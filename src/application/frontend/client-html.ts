@@ -48,10 +48,6 @@ export const createClientHtml = (): string => `<!doctype html>
           <ul id="notes"></ul>
         </section>
         <section>
-          <h2>Content</h2>
-          <pre id="content" class="note-content"></pre>
-        </section>
-        <section>
           <h2>Outgoing</h2>
           <ul id="outgoing"></ul>
         </section>
@@ -61,6 +57,19 @@ export const createClientHtml = (): string => `<!doctype html>
         </section>
       </aside>
     </main>
+    <dialog id="contentDialog" class="content-dialog" aria-labelledby="contentTitle">
+      <article>
+        <header>
+          <div>
+            <span class="eyebrow">Markdown content</span>
+            <h2 id="contentTitle">Selected note</h2>
+            <p id="contentPath"></p>
+          </div>
+          <button id="contentClose" type="button">Close</button>
+        </header>
+        <pre id="contentBody" class="note-content"></pre>
+      </article>
+    </dialog>
     <script src="/app.js"></script>
   </body>
 </html>`
