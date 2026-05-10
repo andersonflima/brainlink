@@ -52,6 +52,7 @@ describe('brainlink http server integration', () => {
       expect(researchGraph.nodes).toHaveLength(1)
 
       const layoutResponse = (await fetch(`${server.url}/api/graph-layout?agent=shared`).then((response) => response.json())) as {
+        readonly signature?: string
         readonly layout?: {
           readonly nodes: readonly { readonly segment: string; readonly group: string }[]
           readonly edges: readonly unknown[]
@@ -64,6 +65,14 @@ describe('brainlink http server integration', () => {
       expect(layout.edges).toHaveLength(1)
       expect(layout.nodes.every((node) => typeof node.segment === 'string' && node.segment.length > 0)).toBe(true)
       expect(layout.nodes.every((node) => typeof node.group === 'string' && node.group.length > 0)).toBe(true)
+      expect(layoutResponse.signature).toMatch(/^[a-f0-9]{64}$/)
+
+      const cachedLayout = await fetch(`${server.url}/api/graph-layout?agent=shared`, {
+        headers: {
+          'if-none-match': Buffer.from(layoutResponse.signature ?? '', 'utf8').toString('base64url')
+        }
+      })
+      expect(cachedLayout.status).toBe(304)
 
       const page = await fetch(`${server.url}/`).then((response) => response.text())
       expect(page).toContain('<canvas id="graph"')
