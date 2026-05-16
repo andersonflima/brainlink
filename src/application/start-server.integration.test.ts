@@ -78,6 +78,15 @@ describe('brainlink http server integration', () => {
       expect(nodeDetails.node.id).toBe(layoutNode?.id)
       expect(nodeDetails.node.content.length).toBeGreaterThan(0)
 
+      const graphFilter = (await fetch(`${server.url}/api/graph-filter?q=source%20of%20truth&agent=shared`).then((response) =>
+        response.json()
+      )) as {
+        readonly query: string
+        readonly nodeIds: readonly string[]
+      }
+      expect(graphFilter.query).toBe('source of truth')
+      expect(graphFilter.nodeIds.length).toBeGreaterThan(0)
+
       const cachedLayout = await fetch(`${server.url}/api/graph-layout?agent=shared`, {
         headers: {
           'if-none-match': Buffer.from(layoutResponse.signature ?? '', 'utf8').toString('base64url')
