@@ -33,23 +33,23 @@ describe('brainlink http server integration', () => {
         readonly nodes: readonly unknown[]
         readonly edges: readonly unknown[]
       }
-      expect(graph.nodes).toHaveLength(2)
-      expect(graph.edges).toHaveLength(1)
+      expect(graph.nodes).toHaveLength(3)
+      expect(graph.edges).toHaveLength(2)
 
       const agents = (await fetch(`${server.url}/api/agents`).then((response) => response.json())) as {
         readonly agents: readonly { readonly id: string; readonly documentCount: number }[]
       }
       expect(agents.agents).toEqual(
         expect.arrayContaining([
-          { id: 'shared', documentCount: 2 },
-          { id: 'research-agent', documentCount: 1 }
+          { id: 'shared', documentCount: 3 },
+          { id: 'research-agent', documentCount: 2 }
         ])
       )
 
       const researchGraph = (await fetch(`${server.url}/api/graph?agent=research-agent`).then((response) => response.json())) as {
         readonly nodes: readonly unknown[]
       }
-      expect(researchGraph.nodes).toHaveLength(1)
+      expect(researchGraph.nodes).toHaveLength(2)
 
       const layoutResponse = (await fetch(`${server.url}/api/graph-layout?agent=shared`).then((response) => response.json())) as {
         readonly signature?: string
@@ -61,8 +61,8 @@ describe('brainlink http server integration', () => {
         readonly edges?: readonly unknown[]
       }
       const layout = layoutResponse.layout ?? layoutResponse
-      expect(layout.nodes).toHaveLength(2)
-      expect(layout.edges).toHaveLength(1)
+      expect(layout.nodes).toHaveLength(3)
+      expect(layout.edges).toHaveLength(2)
       expect(layout.nodes.every((node) => typeof node.segment === 'string' && node.segment.length > 0)).toBe(true)
       expect(layout.nodes.every((node) => typeof node.group === 'string' && node.group.length > 0)).toBe(true)
       expect(layoutResponse.signature).toMatch(/^[a-f0-9]{64}$/)
@@ -114,7 +114,7 @@ describe('brainlink http server integration', () => {
         readonly brokenLinkCount: number
       }
       expect(stats).toMatchObject({
-        documentCount: 3,
+        documentCount: 5,
         brokenLinkCount: 0
       })
 

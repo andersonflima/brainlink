@@ -77,7 +77,7 @@ describe('brainlink cli integration', () => {
     const indexed = parseJson<{ documentCount: number; linkCount: number }>(
       await cli(['index', '--vault', vault, '--json'], projectPath)
     )
-    expect(indexed).toMatchObject({ documentCount: 2, linkCount: 1 })
+    expect(indexed).toMatchObject({ documentCount: 3, linkCount: 2 })
 
     const search = parseJson<{ mode: string; results: readonly { title: string; searchMode: string }[] }>(
       await cli(['search', 'jwt auth', '--vault', vault, '--mode', 'hybrid', '--json'], projectPath)
@@ -114,7 +114,7 @@ describe('brainlink cli integration', () => {
       await cli(['stats', '--vault', vault, '--json'], projectPath)
     )
     expect(stats).toMatchObject({
-      documentCount: 2,
+      documentCount: 3,
       brokenLinkCount: 0,
       orphanCount: 0
     })
@@ -165,9 +165,9 @@ describe('brainlink cli integration', () => {
     )
     expect(agents.agents).toEqual(
       expect.arrayContaining([
-        { id: 'shared', documentCount: 2 },
-        { id: 'coding-agent', documentCount: 2 },
-        { id: 'research-agent', documentCount: 1 }
+        { id: 'shared', documentCount: 3 },
+        { id: 'coding-agent', documentCount: 3 },
+        { id: 'research-agent', documentCount: 2 }
       ])
     )
 
@@ -207,7 +207,7 @@ describe('brainlink cli integration', () => {
     expect(defaultNote.path).toContain(join(defaultVault, 'agents/shared/default-memory.md'))
 
     const defaultIndex = parseJson<{ documentCount: number }>(await cli(['index', '--json'], projectPath, env))
-    expect(defaultIndex.documentCount).toBe(1)
+    expect(defaultIndex.documentCount).toBe(2)
 
     const migratedInit = parseJson<{
       path: string
@@ -215,8 +215,8 @@ describe('brainlink cli integration', () => {
       index: { documentCount: number }
     }>(await cli(['init', migratedVault, '--json'], projectPath, env))
     expect(migratedInit.path).toBe(migratedVault)
-    expect(migratedInit.migration).toMatchObject({ copied: 1, conflicted: 0, unchanged: 0 })
-    expect(migratedInit.index.documentCount).toBe(1)
+    expect(migratedInit.migration).toMatchObject({ copied: 2, conflicted: 0, unchanged: 0 })
+    expect(migratedInit.index.documentCount).toBe(2)
     await expect(readFile(join(migratedVault, 'agents/shared/default-memory.md'), 'utf8')).resolves.toContain('Default Brainlink memory')
 
     const conflictVault = join(brainlinkHome, 'conflict-vault')
@@ -226,8 +226,8 @@ describe('brainlink cli integration', () => {
       migration: { copied: number; conflicted: number; unchanged: number }
       index: { documentCount: number }
     }>(await cli(['init', conflictVault, '--migrate-from', defaultVault, '--json'], projectPath, env))
-    expect(conflictInit.migration).toMatchObject({ copied: 0, conflicted: 1, unchanged: 0 })
-    expect(conflictInit.index.documentCount).toBe(2)
+    expect(conflictInit.migration).toMatchObject({ copied: 1, conflicted: 1, unchanged: 0 })
+    expect(conflictInit.index.documentCount).toBe(3)
     expect(await readdir(join(conflictVault, 'agents/shared'))).toEqual(
       expect.arrayContaining(['default-memory.md', expect.stringMatching(/^default-memory\.conflict-\d+T\d+Z\.md$/)])
     )
@@ -280,8 +280,8 @@ describe('brainlink cli integration', () => {
 
     expect(setLocalVault.scope).toBe('local')
     expect(setLocalVault.vault).toBe(targetVault)
-    expect(setLocalVault.migration).toMatchObject({ copied: 1, conflicted: 0, unchanged: 0 })
-    expect(setLocalVault.index?.documentCount).toBe(1)
+    expect(setLocalVault.migration).toMatchObject({ copied: 2, conflicted: 0, unchanged: 0 })
+    expect(setLocalVault.index?.documentCount).toBe(2)
 
     const configuredLocalVault = parseJson<{ key: string; value: string }>(await cli(['config', 'get', 'vault', '--json'], workspace, env))
     expect(configuredLocalVault).toEqual({ key: 'vault', value: targetVault })
@@ -319,7 +319,7 @@ describe('brainlink cli integration', () => {
     )
     expect(preview).toMatchObject({
       dryRun: true,
-      copied: 1,
+      copied: 2,
       conflicted: 0,
       unchanged: 0
     })
@@ -329,11 +329,11 @@ describe('brainlink cli integration', () => {
     )
     expect(migrated).toMatchObject({
       dryRun: false,
-      copied: 1,
+      copied: 2,
       conflicted: 0,
       unchanged: 0
     })
-    expect(migrated.index.documentCount).toBe(1)
+    expect(migrated.index.documentCount).toBe(2)
     const report = parseJson<{ entries: readonly { kind: string; sourceRelativePath: string; targetRelativePath: string }[] }>(
       await readFile(reportPath, 'utf8')
     )
