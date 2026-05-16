@@ -20,6 +20,8 @@ Use this skill when a task may benefit from project memory, durable decisions, r
 
 ## Before Work
 
+When Brainlink MCP is available, call `brainlink_bootstrap` first in every task that may depend on project memory.
+
 Call `brainlink_bootstrap` before answering or changing code when memory may matter.
 
 Recommended arguments:

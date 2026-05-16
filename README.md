@@ -380,6 +380,28 @@ Example MCP client configuration:
 }
 ```
 
+### One-Command Agent Setup
+
+If your agent runtime is Codex-compatible, run:
+
+```bash
+blink agent install
+```
+
+This configures `~/.codex/config.toml` with Brainlink MCP (`brainlink-mcp`) so Brainlink is available by default in agent sessions.
+
+If you are inside this repository and want plugin gallery setup too:
+
+```bash
+blink agent install --plugin-path ./plugins/brainlink
+```
+
+To verify:
+
+```bash
+blink agent status
+```
+
 For a locked-down setup, allowlist the vaults that MCP clients may access:
 
 ```json
@@ -558,6 +580,18 @@ Read routes accept `agent=<agent-id>`:
 ## CLI Reference
 
 Every command works with either `brainlink` or `blink`.
+
+### `agent`
+
+```bash
+blink agent install
+blink agent install --plugin-path ./plugins/brainlink
+blink agent install --mcp-only --allowed-vaults "/absolute/vault,/absolute/team-vault"
+blink agent status
+```
+
+Installs/checks agent integration. `install` writes Brainlink MCP config into `~/.codex/config.toml`.
+When plugin files are available, it also links Brainlink plugin files into `~/plugins/brainlink` and updates `~/.agents/plugins/marketplace.json`.
 
 ### `config`
 

@@ -51,9 +51,9 @@ export const createBrainlinkMcpServer = (): McpServer => {
   server.registerTool(
     'brainlink_bootstrap',
     {
-      title: 'Bootstrap Brainlink For A Task',
+      title: 'Bootstrap Brainlink For A Task (Default Entrypoint)',
       description:
-        'Plug-and-play entrypoint for agents. Runs index and health checks, then optionally returns context for the current task query.',
+        'Default entrypoint for agents. Run this first to index/check memory state, then optionally retrieve context for the current task query.',
       inputSchema: bootstrapInputSchema
     },
     bootstrapTool
@@ -63,7 +63,8 @@ export const createBrainlinkMcpServer = (): McpServer => {
     'brainlink_context',
     {
       title: 'Build Brainlink Context',
-      description: 'Read indexed Brainlink memory for a task or question. Call this before answering or editing code. This is read-only and does not create graph links.',
+      description:
+        'Read indexed Brainlink memory for a task or question. Usually called after brainlink_bootstrap. This is read-only and does not create graph links.',
       inputSchema: contextInputSchema
     },
     contextTool

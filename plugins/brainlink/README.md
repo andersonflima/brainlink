@@ -8,6 +8,17 @@ It expects the Brainlink npm package to be installed:
 npm install -g @andespindola/brainlink
 ```
 
+## One-Command Setup
+
+From the Brainlink repository root:
+
+```bash
+blink agent install --plugin-path ./plugins/brainlink
+blink agent status
+```
+
+This configures Codex MCP and updates local plugin marketplace files automatically.
+
 ## Add To The Local Codex Plugin Gallery
 
 The npm package installs the `brainlink`, `blink` and `brainlink-mcp` commands.

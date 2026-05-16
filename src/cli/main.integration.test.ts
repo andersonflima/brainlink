@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -349,6 +349,53 @@ describe('brainlink cli integration', () => {
 
     const configDoctorHuman = await cli(['config', 'doctor'], workspace, env)
     expect(configDoctorHuman).toContain('Recommended next steps:')
+  }, 20000)
+
+  it('installs Brainlink agent integration in one command and reports status', async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), 'brainlink-agent-home-'))
+    const workspace = await mkdtemp(join(tmpdir(), 'brainlink-agent-workspace-'))
+    tempPaths.push(fakeHome, workspace)
+
+    const env = {
+      HOME: fakeHome
+    }
+
+    const install = parseJson<{
+      installed: boolean
+      codexConfigPath: string
+      mcpServer: string
+      command: string
+      pluginSymlinkPath: string
+      marketplacePath: string
+      warnings?: readonly string[]
+    }>(await cli(['agent', 'install', '--plugin-path', join(projectPath, 'plugins/brainlink'), '--json'], workspace, env))
+
+    expect(install).toMatchObject({
+      installed: true,
+      mcpServer: 'brainlink',
+      command: 'brainlink-mcp'
+    })
+    await expect(readFile(install.codexConfigPath, 'utf8')).resolves.toContain('[mcp_servers.brainlink]')
+    await expect(readFile(install.codexConfigPath, 'utf8')).resolves.toContain('command = "brainlink-mcp"')
+    const pluginLink = await lstat(install.pluginSymlinkPath)
+    expect(pluginLink.isSymbolicLink()).toBe(true)
+    await expect(readFile(install.marketplacePath, 'utf8')).resolves.toContain('"name": "brainlink"')
+
+    const status = parseJson<{
+      configured: boolean
+      hasMcpSection: boolean
+      hasCommand: boolean
+      pluginSymlinkExists: boolean
+      marketplaceEntryExists: boolean
+    }>(await cli(['agent', 'status', '--json'], workspace, env))
+
+    expect(status).toMatchObject({
+      configured: true,
+      hasMcpSection: true,
+      hasCommand: true,
+      pluginSymlinkExists: true,
+      marketplaceEntryExists: true
+    })
   }, 20000)
 
   it('prints the package version', async () => {

@@ -53,3 +53,15 @@ export type MigrateVaultOptions = {
   readonly dryRun?: boolean
   readonly index?: boolean
 }
+
+export type AgentInstallOptions = {
+  readonly json?: boolean
+  readonly mcpOnly?: boolean
+  readonly pluginPath?: string
+  readonly allowedVaults?: string
+  readonly brainlinkHome?: string
+}
+
+export type AgentStatusOptions = {
+  readonly json?: boolean
+}
