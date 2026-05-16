@@ -41,7 +41,15 @@ describe('brainlink mcp integration', () => {
       const toolNames = tools.tools.map((tool) => tool.name)
 
       expect(toolNames).toEqual(
-        expect.arrayContaining(['brainlink_bootstrap', 'brainlink_policy', 'brainlink_context', 'brainlink_add_note', 'brainlink_index', 'brainlink_validate'])
+        expect.arrayContaining([
+          'brainlink_bootstrap',
+          'brainlink_policy',
+          'brainlink_recommendations',
+          'brainlink_context',
+          'brainlink_add_note',
+          'brainlink_index',
+          'brainlink_validate'
+        ])
       )
 
       const addResult = await client.callTool({
@@ -132,6 +140,31 @@ describe('brainlink mcp integration', () => {
             targetTitle: 'Related Concept',
             weight: 4,
             priority: 'high'
+          })
+        ]
+      })
+
+      const recommendationsResult = await client.callTool({
+        name: 'brainlink_recommendations',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          query: 'How to evolve architecture?'
+        }
+      })
+
+      expect(recommendationsResult.structuredContent).toMatchObject({
+        vault,
+        agent: 'coding-agent',
+        defaults: {
+          mode: 'hybrid'
+        },
+        recommendations: [
+          expect.objectContaining({
+            tool: 'brainlink_context'
+          }),
+          expect.objectContaining({
+            tool: 'brainlink_add_note'
           })
         ]
       })

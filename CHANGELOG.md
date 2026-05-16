@@ -16,6 +16,7 @@
 - Added write-time non-orphan enforcement by auto-linking notes without wiki edges to agent hub notes.
 - Added MCP `brainlink_policy` presets (`fully-auto`, `strict`) for one-call policy switching.
 - Added MCP write connectivity metadata in `brainlink_add_note`/`brainlink_add_file` responses.
+- Added MCP `brainlink_recommendations` tool for plug-and-play workflow guidance.
 - Improved graph/index robustness by splitting oversized paragraphs into bounded chunks and dropping self-referential links.
 - Added `agentProfiles` configuration support so CLI and MCP can resolve per-agent defaults for mode/limit/tokens.
 - Added short-lived hybrid search cache with automatic invalidation on index changes.

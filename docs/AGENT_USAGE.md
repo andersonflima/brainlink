@@ -584,6 +584,7 @@ Available MCP tools:
 
 - `brainlink_bootstrap`
 - `brainlink_policy`
+- `brainlink_recommendations`
 - `brainlink_context`
 - `brainlink_search`
 - `brainlink_add_note`
@@ -601,6 +602,7 @@ MCP startup also bootstraps the configured default vault/agent automatically (`a
 If `autoBootstrapOnRead` is disabled through `brainlink_policy`, read tools return preflight-required responses.
 `brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so clients can continue tool flows automatically.
 `brainlink_policy` also accepts policy presets (`fully-auto`, `strict`) so MCP clients can switch behavior in one call.
+`brainlink_recommendations` returns the suggested execution order so an agent can follow Brainlink best practices automatically.
 
 MCP clients can pass `vault` and `agent` arguments per tool call. Set `BRAINLINK_ALLOWED_VAULTS` when exposing Brainlink to an external agent process so a tool cannot pass arbitrary vault paths:
 

@@ -21,6 +21,8 @@ import {
   orphansTool,
   policyInputSchema,
   policyTool,
+  recommendationsInputSchema,
+  recommendationsTool,
   searchInputSchema,
   searchTool,
   statsInputSchema,
@@ -69,6 +71,17 @@ export const createBrainlinkMcpServer = (): McpServer => {
       inputSchema: policyInputSchema
     },
     policyTool
+  )
+
+  server.registerTool(
+    'brainlink_recommendations',
+    {
+      title: 'Brainlink Recommended MCP Workflow',
+      description:
+        'Return a plug-and-play action plan for this vault/agent, including policy, bootstrap, context retrieval and durable write guidance.',
+      inputSchema: recommendationsInputSchema
+    },
+    recommendationsTool
   )
 
   server.registerTool(
