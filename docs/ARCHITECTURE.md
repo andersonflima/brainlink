@@ -34,6 +34,8 @@ src/
 
   cli/
     commands/
+      agent-commands.ts
+      config-commands.ts
       read-commands.ts
       write-commands.ts
     main.ts
@@ -58,6 +60,11 @@ src/
       search-reader.ts
     file-system-vault.ts
     sqlite-index.ts
+
+  mcp/
+    main.ts
+    server.ts
+    tools.ts
 ```
 
 ## Domain
@@ -290,7 +297,7 @@ SQLite gives fast local search, local vector storage and rebuildable retrieval w
 
 ### CLI First
 
-The CLI is the smallest useful integration surface for agents. HTTP is a local inspection adapter, and MCP can be implemented outside this package by wrapping the CLI.
+The CLI is the smallest useful integration surface for agents. HTTP is a local inspection adapter, and Brainlink also ships a built-in MCP server (`brainlink-mcp`) that uses the same application use cases.
 
 ### Functional Core
 
