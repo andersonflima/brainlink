@@ -9,38 +9,41 @@ export const createClientHtml = (): string => `<!doctype html>
   <body>
     <main class="shell">
       <section class="workspace" aria-label="Knowledge graph">
-        <canvas id="graph" aria-label="Brainlink knowledge graph"></canvas>
-        <div class="topbar">
-          <div>
+        <header class="graph-header" aria-label="Graph actions">
+          <div class="brand-block">
             <strong>Brainlink</strong>
+            <span class="eyebrow">Knowledge Graph</span>
+          </div>
+          <div class="floating-metrics" aria-label="Graph totals">
+            <div class="metric-chip">
+              <strong id="nodeCount">0</strong>
+              <small>Notes</small>
+            </div>
+            <div class="metric-chip">
+              <strong id="edgeCount">0</strong>
+              <small>Links</small>
+            </div>
+            <div class="metric-chip">
+              <strong id="tagCount">0</strong>
+              <small>Tags</small>
+            </div>
           </div>
           <label class="search">
             <input id="search" type="search" placeholder="Filter notes, tags or paths" autocomplete="off" />
           </label>
-          <label class="agent-filter">
-            <select id="agent"></select>
-          </label>
-        </div>
-        <div class="floating-metrics" aria-label="Graph totals">
-          <div class="metric-chip">
-            <strong id="nodeCount">0</strong>
-            <small>Notes</small>
+          <div class="header-actions">
+            <label class="agent-filter">
+              <select id="agent"></select>
+            </label>
+            <div class="toolbar" aria-label="Graph controls">
+              <button id="zoomIn" type="button" title="Zoom in">+</button>
+              <button id="zoomOut" type="button" title="Zoom out">-</button>
+              <button id="fit" type="button" title="Fit visible nodes">◎</button>
+              <button id="reset" type="button" title="Reset view">⌂</button>
+            </div>
           </div>
-          <div class="metric-chip">
-            <strong id="edgeCount">0</strong>
-            <small>Links</small>
-          </div>
-          <div class="metric-chip">
-            <strong id="tagCount">0</strong>
-            <small>Tags</small>
-          </div>
-        </div>
-        <div class="toolbar" aria-label="Graph controls">
-          <button id="zoomIn" type="button" title="Zoom in">+</button>
-          <button id="zoomOut" type="button" title="Zoom out">-</button>
-          <button id="fit" type="button" title="Fit visible nodes">◎</button>
-          <button id="reset" type="button" title="Reset view">⌂</button>
-        </div>
+        </header>
+        <canvas id="graph" aria-label="Brainlink knowledge graph"></canvas>
       </section>
     </main>
     <dialog id="contentDialog" class="content-dialog" aria-labelledby="contentTitle">
