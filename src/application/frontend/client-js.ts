@@ -38,12 +38,18 @@ const elements = {
   tagCount: byId('tagCount'),
   zoomIn: byId('zoomIn'),
   zoomOut: byId('zoomOut'),
+  fit: byId('fit'),
   reset: byId('reset'),
   contentDialog: byId('contentDialog'),
   contentTitle: byId('contentTitle'),
   contentPath: byId('contentPath'),
   contentBody: byId('contentBody'),
   contentClose: byId('contentClose')
+}
+
+const zoomRange = {
+  min: 0.05,
+  max: 4.5
 }
 
 const agentQuery = () => state.agentId ? '?agent=' + encodeURIComponent(state.agentId) : ''
@@ -106,10 +112,60 @@ const visibleEdges = () => {
 
 const edgeWeight = edge => Number.isFinite(edge.weight) ? Math.max(1, edge.weight) : 1
 
-const resetView = () => {
-  const rect = canvas.getBoundingClientRect()
-  state.transform = { x: Math.max(rect.width, 320) / 2, y: Math.max(rect.height, 320) / 2, scale: 1 }
+const clampScale = value => Math.max(zoomRange.min, Math.min(zoomRange.max, value))
+
+const graphBounds = nodes => {
+  if (nodes.length === 0) return null
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+
+  nodes.forEach(node => {
+    const radius = nodeRadius(node)
+    minX = Math.min(minX, node.x - radius)
+    maxX = Math.max(maxX, node.x + radius)
+    minY = Math.min(minY, node.y - radius)
+    maxY = Math.max(maxY, node.y + radius)
+  })
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    width: Math.max(maxX - minX, 1),
+    height: Math.max(maxY - minY, 1)
+  }
 }
+
+const fitView = (options = { useFiltered: true }) => {
+  const rect = canvas.getBoundingClientRect()
+  const width = Math.max(rect.width, 320)
+  const height = Math.max(rect.height, 320)
+  const nodes = options.useFiltered ? filteredNodes() : state.nodes
+  const bounds = graphBounds(nodes)
+
+  if (!bounds) {
+    state.transform = { x: width / 2, y: height / 2, scale: 1 }
+    return
+  }
+
+  const padding = 100
+  const scaleX = width / (bounds.width + padding * 2)
+  const scaleY = height / (bounds.height + padding * 2)
+  const scale = clampScale(Math.min(scaleX, scaleY))
+  const centerX = (bounds.minX + bounds.maxX) / 2
+  const centerY = (bounds.minY + bounds.maxY) / 2
+
+  state.transform = {
+    x: width / 2 - centerX * scale,
+    y: height / 2 - centerY * scale,
+    scale
+  }
+}
+
+const resetView = () => fitView({ useFiltered: false })
 
 const createLayout = graph => {
   const nodes = graph.nodes.map(node => ({
@@ -334,8 +390,14 @@ const selectNodeById = id => {
   if (node) selectNode(node, { openContent: true })
 }
 
-const zoom = factor => {
-  state.transform.scale = Math.max(0.25, Math.min(3.5, state.transform.scale * factor))
+const zoomAtPoint = (screenX, screenY, factor) => {
+  const nextScale = clampScale(state.transform.scale * factor)
+  if (nextScale === state.transform.scale) return
+  const worldX = (screenX - state.transform.x) / state.transform.scale
+  const worldY = (screenY - state.transform.y) / state.transform.scale
+  state.transform.scale = nextScale
+  state.transform.x = screenX - worldX * nextScale
+  state.transform.y = screenY - worldY * nextScale
 }
 
 const bindEvents = () => {
@@ -354,8 +416,17 @@ const bindEvents = () => {
       console.error(error)
     })
   })
-  elements.zoomIn.addEventListener('click', () => zoom(1.18))
-  elements.zoomOut.addEventListener('click', () => zoom(0.84))
+  elements.zoomIn.addEventListener('click', () => {
+    const rect = canvas.getBoundingClientRect()
+    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.18)
+  })
+  elements.zoomOut.addEventListener('click', () => {
+    const rect = canvas.getBoundingClientRect()
+    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.84)
+  })
+  if (elements.fit) {
+    elements.fit.addEventListener('click', () => fitView({ useFiltered: true }))
+  }
   elements.reset.addEventListener('click', resetView)
   elements.contentClose.addEventListener('click', () => elements.contentDialog.close())
   elements.contentDialog.addEventListener('click', event => {
@@ -371,7 +442,11 @@ const bindEvents = () => {
   })
   canvas.addEventListener('wheel', event => {
     event.preventDefault()
-    zoom(event.deltaY < 0 ? 1.08 : 0.92)
+    const rect = canvas.getBoundingClientRect()
+    const cursorX = event.clientX - rect.left
+    const cursorY = event.clientY - rect.top
+    const factor = event.deltaY < 0 ? 1.08 : 0.92
+    zoomAtPoint(cursorX, cursorY, factor)
   }, { passive: false })
   canvas.addEventListener('pointerdown', event => {
     const point = worldPoint(event)

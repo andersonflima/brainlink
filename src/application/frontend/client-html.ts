@@ -25,6 +25,7 @@ export const createClientHtml = (): string => `<!doctype html>
         <div class="toolbar" aria-label="Graph controls">
           <button id="zoomIn" type="button" title="Zoom in">+</button>
           <button id="zoomOut" type="button" title="Zoom out">-</button>
+          <button id="fit" type="button" title="Fit visible nodes">◎</button>
           <button id="reset" type="button" title="Reset view">⌂</button>
         </div>
       </section>
@@ -39,19 +40,19 @@ export const createClientHtml = (): string => `<!doctype html>
           <div><span id="edgeCount">0</span><small>Links</small></div>
           <div><span id="tagCount">0</span><small>Tags</small></div>
         </div>
-        <section>
+        <section class="inspector-section">
           <h2>Tags</h2>
           <div id="tags" class="tags"></div>
         </section>
-        <section>
+        <section class="inspector-section">
           <h2>Notes</h2>
           <ul id="notes"></ul>
         </section>
-        <section>
+        <section class="inspector-section">
           <h2>Outgoing</h2>
           <ul id="outgoing"></ul>
         </section>
-        <section>
+        <section class="inspector-section">
           <h2>Backlinks</h2>
           <ul id="incoming"></ul>
         </section>
