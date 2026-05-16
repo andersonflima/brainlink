@@ -58,7 +58,7 @@ Optional per-agent retrieval defaults in `brainlink.config.json`:
 ## 4) Run Bootstrap Before Work
 
 MCP clients should call `brainlink_bootstrap` first for each vault/agent session.
-Bootstrap and preflight responses include structured `nextActions` for automatic client flows.
+Read tools auto-bootstrap by default when state is missing/stale, and bootstrap/preflight responses include structured `nextActions` for automatic client flows.
 
 For CLI workflows:
 

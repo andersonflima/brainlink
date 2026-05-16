@@ -73,15 +73,10 @@ describe('brainlink mcp integration', () => {
       expect(contextResult.structuredContent).toMatchObject({
         vault,
         agent: 'coding-agent',
-        blockedTool: 'brainlink_context',
-        preflightRequired: true
-      })
-      expect(contextResult.structuredContent).toMatchObject({
-        nextActions: [
-          expect.objectContaining({
-            tool: 'brainlink_bootstrap'
-          })
-        ]
+        mode: 'hybrid',
+        bootstrap: expect.objectContaining({
+          autoBootstrapped: true
+        })
       })
       expect(contextResult.content[0]).toMatchObject({
         type: 'text'
@@ -126,11 +121,66 @@ describe('brainlink mcp integration', () => {
       expect(graphResult.structuredContent).toMatchObject({
         vault,
         agent: 'coding-agent',
+        bootstrap: expect.objectContaining({
+          autoBootstrapped: false
+        }),
         edges: [
           expect.objectContaining({
             targetTitle: 'Related Concept',
             weight: 4,
             priority: 'high'
+          })
+        ]
+      })
+    } finally {
+      await client.close()
+    }
+  }, 20000)
+
+  it('returns preflight when auto-bootstrap-on-read is disabled', async () => {
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-mcp-policy-vault-'))
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-mcp-policy-home-'))
+    tempPaths.push(vault, brainlinkHome)
+
+    const client = new Client({ name: 'brainlink-test-policy', version: '1.0.0' })
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', tsxLoader, mcpEntryPoint],
+      cwd: projectPath,
+      env: {
+        ...process.env,
+        BRAINLINK_HOME: brainlinkHome
+      },
+      stderr: 'pipe'
+    })
+
+    await client.connect(transport)
+
+    try {
+      await client.callTool({
+        name: 'brainlink_policy',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          autoBootstrapOnRead: false
+        }
+      })
+
+      const contextResult = await client.callTool({
+        name: 'brainlink_context',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          query: 'preflight check'
+        }
+      })
+
+      expect(contextResult.structuredContent).toMatchObject({
+        preflightRequired: true,
+        blockedTool: 'brainlink_context',
+        nextActions: [
+          expect.objectContaining({
+            tool: 'brainlink_bootstrap'
           })
         ]
       })

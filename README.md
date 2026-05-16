@@ -521,7 +521,8 @@ Available tools:
 - `brainlink_orphans`: list disconnected notes.
 
 For the most automatic workflow, start MCP sessions with `brainlink_bootstrap` (optionally with `query`) and then continue with `brainlink_context`/`brainlink_add_note`.
-By default, Brainlink enforces bootstrap for read tools. If bootstrap is missing or stale, read tools return a preflight instruction with suggested `brainlink_bootstrap` arguments.
+By default, Brainlink enforces bootstrap and auto-runs it for read tools when session state is missing or stale (`autoBootstrapOnRead=true`).
+If you disable `autoBootstrapOnRead` through `brainlink_policy`, read tools return a preflight instruction with suggested `brainlink_bootstrap` arguments.
 `brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so MCP clients can continue automatically without custom parsing.
 
 The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]`. `brainlink_add_note` and `brainlink_add_file` reindex by default and include the index result when enabled.

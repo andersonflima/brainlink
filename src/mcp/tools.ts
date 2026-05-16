@@ -91,6 +91,16 @@ const preflightResult = (value: Readonly<Record<string, unknown>>): CallToolResu
   ...value
 })
 
+type ReadBootstrapMeta = {
+  readonly autoBootstrapped: boolean
+  readonly policy: Readonly<Record<string, unknown>>
+  readonly statusBefore: Readonly<Record<string, unknown>>
+  readonly statusAfter?: Readonly<Record<string, unknown>>
+  readonly session?: Readonly<Record<string, unknown>>
+  readonly index?: Readonly<Record<string, unknown>>
+  readonly reason: string
+}
+
 type NextAction = {
   readonly tool: string
   readonly reason: string
@@ -109,17 +119,52 @@ const ensureBootstrapReady = async (
   context: { vault: string; agent?: string },
   input: Readonly<Record<string, unknown>>,
   toolName: string
-): Promise<CallToolResult | undefined> => {
+): Promise<{ readonly preflight?: CallToolResult; readonly bootstrap?: ReadBootstrapMeta }> => {
   const policy = await getBootstrapPolicy()
 
   if (!policy.enforceBootstrap) {
-    return undefined
+    return {
+      bootstrap: {
+        autoBootstrapped: false,
+        policy,
+        statusBefore: {
+          ready: true,
+          stale: false
+        },
+        reason: 'Bootstrap enforcement is disabled by policy.'
+      }
+    }
   }
 
   const status = await getBootstrapSessionStatus(context.vault, context.agent)
 
   if (status.ready) {
-    return undefined
+    return {
+      bootstrap: {
+        autoBootstrapped: false,
+        policy,
+        statusBefore: status,
+        reason: 'Bootstrap session is already fresh for this vault/agent.'
+      }
+    }
+  }
+
+  if (policy.autoBootstrapOnRead) {
+    const index = await indexVault(context.vault)
+    const session = await touchBootstrapSession(context.vault, context.agent)
+    const statusAfter = await getBootstrapSessionStatus(context.vault, context.agent)
+
+    return {
+      bootstrap: {
+        autoBootstrapped: true,
+        policy,
+        statusBefore: status,
+        statusAfter,
+        session,
+        index,
+        reason: 'Auto-bootstrap was applied for this read call because bootstrap was missing or stale.'
+      }
+    }
   }
 
   const mode = typeof input.mode === 'string' && ['fts', 'semantic', 'hybrid'].includes(input.mode) ? input.mode : 'hybrid'
@@ -138,7 +183,8 @@ const ensureBootstrapReady = async (
     }
   ]
 
-  return preflightResult(withNextActions({
+  return {
+    preflight: preflightResult(withNextActions({
     vault: context.vault,
     agent: context.agent,
     blockedTool: toolName,
@@ -147,7 +193,8 @@ const ensureBootstrapReady = async (
     guidance:
       'Run brainlink_bootstrap first for this vault/agent before using read tools. This keeps retrieval grounded and memory state consistent.',
     bootstrapArgs
-  }, nextActions))
+    }, nextActions))
+  }
 }
 
 export const contextInputSchema = {
@@ -245,15 +292,19 @@ export const policyInputSchema = {
   ...vaultInput,
   ...agentInput,
   enforceBootstrap: z.boolean().optional().describe('Enable or disable bootstrap enforcement for MCP read tools.'),
+  autoBootstrapOnRead: z
+    .boolean()
+    .optional()
+    .describe('When bootstrap is missing/stale, run automatic bootstrap on read tools instead of returning preflight-required responses.'),
   staleAfterMinutes: positiveInteger(120).describe('Bootstrap freshness window in minutes before read tools require a new bootstrap.')
 }
 
 export const contextTool = async (input: z.infer<z.ZodObject<typeof contextInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
-  const preflight = await ensureBootstrapReady(context, input, 'brainlink_context')
+  const readiness = await ensureBootstrapReady(context, input, 'brainlink_context')
 
-  if (preflight) {
-    return preflight
+  if (readiness.preflight) {
+    return readiness.preflight
   }
 
   const mode = sanitizeSearchMode(input.mode, context.defaults.defaultSearchMode)
@@ -274,16 +325,17 @@ export const contextTool = async (input: z.infer<z.ZodObject<typeof contextInput
     mode,
     limit,
     tokens,
+    ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
     ...contextPackage
   })
 }
 
 export const searchTool = async (input: z.infer<z.ZodObject<typeof searchInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
-  const preflight = await ensureBootstrapReady(context, input, 'brainlink_search')
+  const readiness = await ensureBootstrapReady(context, input, 'brainlink_search')
 
-  if (preflight) {
-    return preflight
+  if (readiness.preflight) {
+    return readiness.preflight
   }
 
   const mode = sanitizeSearchMode(input.mode, context.defaults.defaultSearchMode)
@@ -296,6 +348,7 @@ export const searchTool = async (input: z.infer<z.ZodObject<typeof searchInputSc
     query: input.query,
     limit,
     mode,
+    ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
     results
   })
 }
@@ -355,10 +408,10 @@ export const indexTool = async (input: z.infer<z.ZodObject<typeof indexInputSche
 
 export const validateTool = async (input: z.infer<z.ZodObject<typeof validateInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
-  const preflight = await ensureBootstrapReady(context, input, 'brainlink_validate')
+  const readiness = await ensureBootstrapReady(context, input, 'brainlink_validate')
 
-  if (preflight) {
-    return preflight
+  if (readiness.preflight) {
+    return readiness.preflight
   }
 
   const validation = await validateVault(context.vault, context.agent)
@@ -366,16 +419,17 @@ export const validateTool = async (input: z.infer<z.ZodObject<typeof validateInp
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
+    ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
     ...validation
   })
 }
 
 export const graphTool = async (input: z.infer<z.ZodObject<typeof graphInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
-  const preflight = await ensureBootstrapReady(context, input, 'brainlink_graph')
+  const readiness = await ensureBootstrapReady(context, input, 'brainlink_graph')
 
-  if (preflight) {
-    return preflight
+  if (readiness.preflight) {
+    return readiness.preflight
   }
 
   const graph = await getGraph(context.vault, context.agent)
@@ -383,16 +437,17 @@ export const graphTool = async (input: z.infer<z.ZodObject<typeof graphInputSche
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
+    ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
     ...graph
   })
 }
 
 export const brokenLinksTool = async (input: z.infer<z.ZodObject<typeof brokenLinksInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
-  const preflight = await ensureBootstrapReady(context, input, 'brainlink_broken_links')
+  const readiness = await ensureBootstrapReady(context, input, 'brainlink_broken_links')
 
-  if (preflight) {
-    return preflight
+  if (readiness.preflight) {
+    return readiness.preflight
   }
 
   const brokenLinks = await getBrokenLinksReport(context.vault, context.agent)
@@ -400,16 +455,17 @@ export const brokenLinksTool = async (input: z.infer<z.ZodObject<typeof brokenLi
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
+    ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
     brokenLinks
   })
 }
 
 export const orphansTool = async (input: z.infer<z.ZodObject<typeof orphansInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
-  const preflight = await ensureBootstrapReady(context, input, 'brainlink_orphans')
+  const readiness = await ensureBootstrapReady(context, input, 'brainlink_orphans')
 
-  if (preflight) {
-    return preflight
+  if (readiness.preflight) {
+    return readiness.preflight
   }
 
   const orphans = await getOrphansReport(context.vault, context.agent)
@@ -417,16 +473,17 @@ export const orphansTool = async (input: z.infer<z.ZodObject<typeof orphansInput
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
+    ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
     orphans
   })
 }
 
 export const statsTool = async (input: z.infer<z.ZodObject<typeof statsInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
-  const preflight = await ensureBootstrapReady(context, input, 'brainlink_stats')
+  const readiness = await ensureBootstrapReady(context, input, 'brainlink_stats')
 
-  if (preflight) {
-    return preflight
+  if (readiness.preflight) {
+    return readiness.preflight
   }
 
   const stats = await getStats(context.vault, context.agent)
@@ -434,16 +491,17 @@ export const statsTool = async (input: z.infer<z.ZodObject<typeof statsInputSche
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
+    ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
     stats
   })
 }
 
 export const syncTool = async (input: z.infer<z.ZodObject<typeof syncInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
-  const preflight = await ensureBootstrapReady(context, input, 'brainlink_sync')
+  const readiness = await ensureBootstrapReady(context, input, 'brainlink_sync')
 
-  if (preflight) {
-    return preflight
+  if (readiness.preflight) {
+    return readiness.preflight
   }
 
   const index = await indexVault(context.vault)
@@ -455,6 +513,7 @@ export const syncTool = async (input: z.infer<z.ZodObject<typeof syncInputSchema
   const response = {
     vault: context.vault,
     agent: context.agent,
+    ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
     index,
     stats,
     validation,
@@ -580,6 +639,7 @@ export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSc
     typeof input.enforceBootstrap === 'boolean' || typeof input.staleAfterMinutes === 'number'
       ? await setBootstrapPolicy({
           ...(typeof input.enforceBootstrap === 'boolean' ? { enforceBootstrap: input.enforceBootstrap } : {}),
+          ...(typeof input.autoBootstrapOnRead === 'boolean' ? { autoBootstrapOnRead: input.autoBootstrapOnRead } : {}),
           ...(typeof input.staleAfterMinutes === 'number' ? { staleAfterMinutes: input.staleAfterMinutes } : {})
         })
       : await getBootstrapPolicy()

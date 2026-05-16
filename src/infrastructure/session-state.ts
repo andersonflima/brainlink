@@ -4,6 +4,7 @@ import { getBrainlinkHomePath } from './paths.js'
 
 export type BootstrapPolicy = {
   readonly enforceBootstrap: boolean
+  readonly autoBootstrapOnRead: boolean
   readonly staleAfterMinutes: number
 }
 
@@ -27,6 +28,7 @@ type BrainlinkSessionState = {
 
 const defaultPolicy: BootstrapPolicy = {
   enforceBootstrap: true,
+  autoBootstrapOnRead: true,
   staleAfterMinutes: 120
 }
 
@@ -69,6 +71,10 @@ const sanitizeState = (value: unknown): BrainlinkSessionState => {
   return {
     policy: {
       enforceBootstrap: typeof policyRecord.enforceBootstrap === 'boolean' ? policyRecord.enforceBootstrap : defaultPolicy.enforceBootstrap,
+      autoBootstrapOnRead:
+        typeof policyRecord.autoBootstrapOnRead === 'boolean'
+          ? policyRecord.autoBootstrapOnRead
+          : defaultPolicy.autoBootstrapOnRead,
       staleAfterMinutes: safePositive(policyRecord.staleAfterMinutes, defaultPolicy.staleAfterMinutes)
     },
     bootstraps
@@ -106,6 +112,8 @@ export const setBootstrapPolicy = async (patch: Partial<BootstrapPolicy>): Promi
   const state = await readState()
   const next: BootstrapPolicy = {
     enforceBootstrap: typeof patch.enforceBootstrap === 'boolean' ? patch.enforceBootstrap : state.policy.enforceBootstrap,
+    autoBootstrapOnRead:
+      typeof patch.autoBootstrapOnRead === 'boolean' ? patch.autoBootstrapOnRead : state.policy.autoBootstrapOnRead,
     staleAfterMinutes: safePositive(patch.staleAfterMinutes, state.policy.staleAfterMinutes)
   }
 
@@ -160,4 +168,3 @@ export const getBootstrapSessionStatus = async (vault: string, agent: string | u
     ageMinutes
   }
 }
-
