@@ -32,8 +32,6 @@ select {
 }
 
 .shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
   width: 100%;
   height: 100svh;
   overflow: hidden;
@@ -73,17 +71,14 @@ select {
 
 .topbar > div {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
 }
 
 .topbar strong {
   font-size: 18px;
 }
 
-.topbar span,
-.eyebrow,
-.inspector small {
+.eyebrow {
   color: var(--muted);
   font-size: 12px;
 }
@@ -138,69 +133,35 @@ select {
   color: var(--accent);
 }
 
-.inspector {
-  display: grid;
-  grid-template-rows: auto auto minmax(120px, 0.8fr) repeat(3, minmax(140px, 1fr));
-  gap: 16px;
-  min-width: 0;
-  height: 100%;
-  padding: 24px;
-  border-left: 1px solid var(--line);
-  background: var(--panel);
-  overflow: hidden;
+.floating-metrics {
+  position: absolute;
+  top: 66px;
+  left: 18px;
+  display: flex;
+  gap: 10px;
+  pointer-events: none;
 }
 
-.inspector h1,
-.inspector h2,
-.inspector p {
-  margin: 0;
-}
-
-.inspector h1 {
-  margin-top: 6px;
-  font-size: 26px;
-  line-height: 1.12;
-  overflow-wrap: anywhere;
-}
-
-.inspector h2 {
-  margin-bottom: 10px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-#path {
-  margin-top: 10px;
-  color: var(--muted);
-  line-height: 1.45;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+.metric-chip {
+  min-width: 94px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.metrics div {
+  border-radius: 10px;
+  background: rgba(21, 25, 31, 0.88);
   display: grid;
-  gap: 4px;
-  padding: 14px;
-  background: var(--panel-strong);
+  gap: 3px;
 }
 
-.metrics div + div {
-  border-left: 1px solid var(--line);
+.metric-chip strong {
+  font-size: 26px;
+  line-height: 1;
 }
 
-.metrics span {
-  font-size: 22px;
-  font-weight: 700;
+.metric-chip small {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .tags {
@@ -218,28 +179,6 @@ select {
   font-size: 12px;
   word-break: break-word;
   overflow-wrap: anywhere;
-}
-
-.inspector-section {
-  min-height: 0;
-  padding: 12px 12px 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-strong);
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.inspector-section ul {
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.inspector-section .tags {
-  overflow: auto;
-  align-content: flex-start;
-  padding-right: 4px;
 }
 
 ul {
@@ -310,7 +249,7 @@ li small {
 
 .content-dialog article {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   max-height: calc(100svh - 34px);
 }
 
@@ -358,6 +297,41 @@ li small {
   color: var(--accent);
 }
 
+.content-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.content-meta-section {
+  min-height: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+}
+
+.content-meta-section h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.content-meta-section ul,
+.content-meta-section .tags {
+  max-height: 140px;
+  overflow: auto;
+  align-content: flex-start;
+  padding-right: 4px;
+}
+
 .content-dialog .note-content {
   max-height: none;
   min-height: 0;
@@ -367,19 +341,6 @@ li small {
 }
 
 @media (max-width: 860px) {
-  .shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) 42svh;
-  }
-
-  .inspector {
-    border-left: 0;
-    border-top: 1px solid var(--line);
-    padding: 18px;
-    overflow: auto;
-    grid-template-rows: auto auto minmax(120px, 0.8fr) repeat(3, minmax(140px, 38svh));
-  }
-
   .topbar {
     align-items: stretch;
     flex-direction: column;
@@ -396,5 +357,21 @@ li small {
   .content-dialog header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .floating-metrics {
+    top: 116px;
+    right: 18px;
+    left: 18px;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .metric-chip {
+    min-width: 82px;
+  }
+
+  .content-meta {
+    grid-template-columns: 1fr;
   }
 }`
