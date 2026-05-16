@@ -621,6 +621,7 @@ export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault"
 GET  /api/graph
 GET  /api/graph-layout
 GET  /api/graph-node?id=<node-id>
+GET  /api/graph-filter?q=<query>&limit=<n>
 GET  /api/search?q=<query>&limit=10&mode=hybrid
 GET  /api/context?q=<query>&limit=12&tokens=2000&mode=hybrid
 GET  /api/links

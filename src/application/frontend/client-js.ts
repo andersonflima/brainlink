@@ -7,6 +7,7 @@ const state = {
   selected: null,
   hovered: null,
   query: '',
+  contentFilter: { query: '', ids: null, token: 0, timer: null },
   agentId: '',
   agentsSignature: '',
   nodeDetails: new Map(),
@@ -82,14 +83,23 @@ const resize = () => {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
 }
 
-const filteredNodes = () => {
-  const query = state.query.trim().toLowerCase()
-  if (!query) return state.nodes
-  return state.nodes.filter(node =>
+const normalizeQuery = value => value.trim().toLowerCase()
+
+const localFilteredNodes = query =>
+  state.nodes.filter(node =>
     node.title.toLowerCase().includes(query) ||
     node.path.toLowerCase().includes(query) ||
     node.tags.some(tag => tag.toLowerCase().includes(query))
   )
+
+const filteredNodes = () => {
+  const query = normalizeQuery(state.query)
+  if (!query) return state.nodes
+  if (state.contentFilter.query === query && state.contentFilter.ids instanceof Set) {
+    return state.nodes.filter(node => state.contentFilter.ids.has(node.id))
+  }
+
+  return localFilteredNodes(query)
 }
 
 const visibleIds = () => new Set(filteredNodes().map(node => node.id))
@@ -184,6 +194,63 @@ const graphSignature = graph => JSON.stringify({
   nodes: graph.nodes.map(node => [node.id, node.title, node.path, node.tags]),
   edges: graph.edges.map(edge => [edge.source, edge.target, edge.targetTitle, edge.weight, edge.priority])
 })
+
+const resetContentFilter = () => {
+  if (state.contentFilter.timer) {
+    clearTimeout(state.contentFilter.timer)
+  }
+  state.contentFilter = {
+    query: '',
+    ids: null,
+    token: state.contentFilter.token + 1,
+    timer: null
+  }
+}
+
+const syncContentFilter = async (query, token) => {
+  const response = await fetch(
+    '/api/graph-filter?q=' +
+      encodeURIComponent(query) +
+      '&limit=' +
+      encodeURIComponent(String(Math.max(state.nodes.length, 1))) +
+      agentQuery()
+  )
+
+  if (!response.ok || token !== state.contentFilter.token) {
+    return
+  }
+
+  const payload = await response.json()
+  const nodeIds = Array.isArray(payload?.nodeIds) ? payload.nodeIds.filter(id => typeof id === 'string') : []
+  if (token !== state.contentFilter.token) {
+    return
+  }
+
+  state.contentFilter.query = query
+  state.contentFilter.ids = new Set(nodeIds)
+}
+
+const scheduleContentFilterSync = () => {
+  const query = normalizeQuery(state.query)
+  if (!query) {
+    resetContentFilter()
+    return
+  }
+
+  if (state.contentFilter.timer) {
+    clearTimeout(state.contentFilter.timer)
+  }
+
+  const token = state.contentFilter.token + 1
+  state.contentFilter = {
+    query: state.contentFilter.query,
+    ids: state.contentFilter.ids,
+    token,
+    timer: setTimeout(() => {
+      syncContentFilter(query, token).catch(() => {})
+    }, 180)
+  }
+}
 
 const tick = delta => {
   const nodes = filteredNodes()
@@ -416,11 +483,14 @@ const bindEvents = () => {
   window.addEventListener('resize', resize)
   elements.search.addEventListener('input', event => {
     state.query = event.target.value
+    scheduleContentFilterSync()
   })
   elements.agent.addEventListener('change', event => {
     state.agentId = event.target.value
     state.selected = null
     state.nodeDetails = new Map()
+    resetContentFilter()
+    scheduleContentFilterSync()
     loadGraph({ reset: true }).catch(error => {
       console.error(error)
     })
@@ -533,6 +603,8 @@ const loadGraph = async (options = { reset: false }) => {
   state.nodes = layout.nodes
   state.edges = layout.edges
   state.nodeDetails = new Map()
+  resetContentFilter()
+  scheduleContentFilterSync()
   const tags = new Set(graph.nodes.flatMap(node => node.tags))
   setGraphStatus(state.agentId + ' · ' + graph.nodes.length + ' notes · ' + graph.edges.length + ' links · live')
   elements.nodeCount.textContent = graph.nodes.length
