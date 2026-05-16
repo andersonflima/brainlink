@@ -18,7 +18,7 @@ The correct dependency direction is:
 agent -> Brainlink CLI -> Markdown vault + derived index
 ```
 
-Agents should never depend on the internal SQLite schema as a public API.
+Agents should never depend on internal index persistence files as a public API.
 
 The installed CLI exposes two equivalent binaries:
 
@@ -180,16 +180,16 @@ Required write behavior:
 Good linked note:
 
 ```bash
-blink add "SQLite Index Rebuild" \
+blink add "Index Rebuild" \
   --agent coding-agent \
-  --content "Legacy derived indexes without agent columns are rebuilt because SQLite is disposable. Related: [[Architecture]], [[Agent Namespaces]]. #sqlite #architecture #decision"
+  --content "Derived index artifacts are rebuildable and disposable. Related: [[Architecture]], [[Agent Namespaces]]. #index #architecture #decision"
 blink validate --agent coding-agent
 ```
 
 Poor disconnected note:
 
 ```bash
-blink add "SQLite Index Rebuild" \
+blink add "Index Rebuild" \
   --agent coding-agent \
   --content "We rebuild old indexes now."
 ```
@@ -460,11 +460,11 @@ If `--mode`/`--limit` are omitted, Brainlink resolves those values from the acti
 
 Search modes:
 
-- `hybrid`: default; combines SQLite FTS and local embedding similarity.
-- `fts`: lexical SQLite full-text search only.
-- `semantic`: local deterministic embedding similarity with SQLite bucket candidate narrowing.
+- `hybrid`: default; combines lexical matching and local embedding similarity.
+- `fts`: lexical full-text matching only.
+- `semantic`: local deterministic embedding similarity.
 
-Hybrid results are cached in-memory for a short TTL and invalidated when `.brainlink/brainlink.db` changes.
+Hybrid results are cached in-memory for a short TTL and invalidated when `.brainlink/index.json` changes.
 
 ### Build Agent Context
 
@@ -634,10 +634,8 @@ GET  /api/validate
 
 The HTTP API is read-only. Use the CLI for writes and indexing.
 
-Brainlink maintains an automatic SQLite rollback snapshot at `.brainlink/brainlink.db.backup` and rotating snapshots in `.brainlink/brainlink.db.backup.snapshots/`. When `.brainlink/brainlink.db` is corrupted, Brainlink restores the newest valid snapshot automatically or recreates a clean index if no snapshot exists yet.
-Indexing also writes private encrypted search packs at `.brainlink/search-packs/*.blpk`; when SQLite cannot be opened, Brainlink falls back to pack-based search automatically.
+Indexing writes private encrypted search packs at `.brainlink/search-packs/*.blpk` for resilient retrieval and portability.
 Pack decryption keys are resolved from `$BRAINLINK_HOME/keys` (or `BRAINLINK_SEARCH_PACK_KEY` when explicitly set).
-For legacy installations, when SQLite already exists but private packs are missing, Brainlink auto-imports index context rows from `brainlink.db` into `.blpk` on first retrieval.
 
 ## Agent Integration Contract
 
@@ -670,9 +668,9 @@ Non-goals:
 ## Operational Rules
 
 - Re-run `index` after modifying notes.
-- Treat `.brainlink/brainlink.db` as disposable.
-- Commit Markdown notes, not local database files.
-- Do not manually edit the database.
+- Treat `.brainlink/index.json` and `.brainlink/search-packs/` as disposable.
+- Commit Markdown notes, not local index files.
+- Do not manually edit generated index artifacts.
 - Keep generated context short enough for the target model.
 - Prefer specific queries over broad queries.
 - Write explicit `[[wiki links]]` when durable memory should be connected.
@@ -702,9 +700,9 @@ Weak retrieval usually means:
 
 ## Current Limits
 
-- Search supports FTS, local semantic embeddings, SQLite semantic buckets and hybrid ranking.
+- Search supports FTS, local semantic embeddings and hybrid ranking.
 - Local embeddings are deterministic and provider-free; remote embedding providers are not implemented yet.
 - MCP integration is available through the `brainlink-mcp` stdio server.
 - HTTP API is local and unauthenticated.
-- Bucket vaults support S3-compatible `s3://bucket/prefix` URIs and use a local cache for SQLite indexes.
+- Bucket vaults support S3-compatible `s3://bucket/prefix` URIs and use local cache/index artifacts.
 - Watch mode depends on platform filesystem watcher behavior and is only supported for local filesystem vaults.

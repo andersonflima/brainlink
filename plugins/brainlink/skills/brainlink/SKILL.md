@@ -10,7 +10,7 @@ Use this skill when a task may benefit from project memory, durable decisions, r
 ## Core Rules
 
 - Brainlink Markdown files are the source of truth.
-- The SQLite index is derived and disposable.
+- Local index artifacts are derived and disposable.
 - `brainlink_context` is read-only.
 - Retrieved context does not create notes, backlinks or graph edges.
 - Real relationships require explicit `[[wiki links]]` in Markdown notes.
@@ -66,9 +66,9 @@ Example:
 
 ```json
 {
-  "title": "SQLite Index Rebuild",
+  "title": "Index Rebuild",
   "agent": "codex",
-  "content": "Legacy derived SQLite indexes are rebuilt because SQLite is disposable and Markdown is source of truth. Related: [[Architecture]], [[Agent Namespaces]]. #sqlite #architecture #decision"
+  "content": "Derived index artifacts are rebuildable because Markdown is the source of truth. Related: [[Architecture]], [[Agent Namespaces]]. #index #architecture #decision"
 }
 ```
 

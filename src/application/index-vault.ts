@@ -5,7 +5,7 @@ import { createEmbeddingProvider } from '../domain/embeddings.js'
 import { loadBrainlinkConfig } from '../infrastructure/config.js'
 import { ensureVault, readMarkdownFiles } from '../infrastructure/file-system-vault.js'
 import { buildSearchPacks } from '../infrastructure/search-packs.js'
-import { openSqliteIndex } from '../infrastructure/sqlite-index.js'
+import { openFileIndex } from '../infrastructure/file-index.js'
 
 export type IndexVaultResult = {
   readonly documentCount: number
@@ -108,15 +108,15 @@ export const indexVault = async (vaultPath: string): Promise<IndexVaultResult> =
     documents.map((document) => createIndexedDocument(document, createScopedTitleResolver(document, titleMaps), config.chunkSize)),
     config.embeddingProvider
   )
-  const index = openSqliteIndex(absoluteVaultPath)
+  const index = openFileIndex(absoluteVaultPath)
 
   try {
-    index.reset()
-    index.saveDocuments(indexedDocuments)
+    await index.reset()
+    await index.saveDocuments(indexedDocuments)
     try {
       await buildSearchPacks(absoluteVaultPath, indexedDocuments)
     } catch {
-      // Pack generation is best-effort. SQLite index remains the primary path.
+      // Pack generation is best-effort. The JSON index remains the primary path.
     }
 
     return {

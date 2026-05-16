@@ -1,5 +1,5 @@
 import { ensureVault } from '../infrastructure/file-system-vault.js'
-import { openSqliteIndex } from '../infrastructure/sqlite-index.js'
+import { openFileIndex } from '../infrastructure/file-index.js'
 
 export const searchGraphNodeIds = async (
   vaultPath: string,
@@ -8,12 +8,11 @@ export const searchGraphNodeIds = async (
   agentId?: string
 ): Promise<readonly string[]> => {
   const absoluteVaultPath = await ensureVault(vaultPath)
-  const index = openSqliteIndex(absoluteVaultPath)
+  const index = openFileIndex(absoluteVaultPath)
 
   try {
-    return index.searchGraphNodeIds(query, limit, agentId)
+    return await index.searchGraphNodeIds(query, limit, agentId)
   } finally {
     index.close()
   }
 }
-

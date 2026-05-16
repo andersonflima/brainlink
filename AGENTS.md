@@ -6,19 +6,19 @@ This file tells coding agents and AI assistants how to use this repository.
 
 Brainlink is a local-first knowledge memory for agents.
 
-It reads a Markdown vault, extracts `[[wiki links]]` and `#tags`, builds a local SQLite full-text index, and returns compact context packages that agents can inject into prompts.
+It reads a Markdown vault, extracts `[[wiki links]]` and `#tags`, builds a local file index at `.brainlink/index.json`, and returns compact context packages that agents can inject into prompts.
 
 ## Source Of Truth
 
 Markdown files are the source of truth.
 
-The SQLite database at `.brainlink/brainlink.db` is a derived index. It can be deleted and rebuilt with:
+The JSON index at `.brainlink/index.json` is derived. It can be deleted and rebuilt with:
 
 ```bash
 npm run dev -- index --vault ./vault
 ```
 
-Do not store permanent knowledge only in SQLite.
+Do not store permanent knowledge only in index artifacts.
 
 By default, the installed Brainlink CLI uses `$HOME/.brainlink/vault` as its vault. Passing `--vault` or setting `vault` in `brainlink.config.json` intentionally selects a custom vault such as `./vault`.
 
@@ -107,10 +107,10 @@ npm run dev -- doctor --vault ./vault
 
 - Keep domain rules in `src/domain`.
 - Keep use cases in `src/application`.
-- Keep filesystem and SQLite details in `src/infrastructure`.
+- Keep filesystem and index details in `src/infrastructure`.
 - Keep CLI concerns in `src/cli`.
 - Prefer pure functions for parsing, ranking, formatting, and transformation.
-- Do not make SQLite the canonical storage layer.
+- Do not make index artifacts the canonical storage layer.
 - Do not add comments with emojis.
 - Keep JSON output backwards compatible where possible.
 
