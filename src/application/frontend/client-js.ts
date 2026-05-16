@@ -709,9 +709,10 @@ const loadAgents = async () => {
 
   state.agentId = selected
   if (signature !== state.agentsSignature) {
+    const formatAgentLabel = (agent) => agent.id === 'shared' ? agent.id : agent.id + ' · ' + agent.documentCount
     elements.agent.innerHTML = agents.length
-      ? agents.map(agent => '<option value="' + escapeHtml(agent.id) + '">' + escapeHtml(agent.id) + ' · ' + agent.documentCount + '</option>').join('')
-      : '<option value="shared">shared · 0</option>'
+      ? agents.map(agent => '<option value="' + escapeHtml(agent.id) + '">' + escapeHtml(formatAgentLabel(agent)) + '</option>').join('')
+      : '<option value="shared">shared</option>'
     state.agentsSignature = signature
   }
   elements.agent.value = selected
