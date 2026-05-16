@@ -7,7 +7,7 @@ Brainlink is local-first.
 - The HTTP server binds to `127.0.0.1` by default.
 - The HTTP server always refuses non-loopback hosts.
 - The HTTP server is read-only and does not expose note creation, indexing or update routes.
-- The SQLite database is a derived local index.
+- Local index artifacts (`.brainlink/index.json` and `.brainlink/search-packs/`) are derived data.
 - Markdown files are user-owned source data.
 - Brainlink-created Markdown files use `0600` permissions.
 - Brainlink-created directories and `.brainlink` use `0700` permissions.

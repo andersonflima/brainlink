@@ -1,8 +1,7 @@
 import { stat } from 'node:fs/promises'
-import { join } from 'node:path'
 import { ensureVault } from '../infrastructure/file-system-vault.js'
 import { ensurePrivatePacksFromLegacyIndex, searchInPacks } from '../infrastructure/search-packs.js'
-import { openSqliteIndex } from '../infrastructure/sqlite-index.js'
+import { indexStoragePath, openFileIndex } from '../infrastructure/file-index.js'
 import { createEmbeddingProvider } from '../domain/embeddings.js'
 import { loadBrainlinkConfig, sanitizeSearchMode } from '../infrastructure/config.js'
 import type { SearchMode, SearchResult } from '../domain/types.js'
@@ -20,7 +19,7 @@ const hybridSearchCache = new Map<string, HybridCacheEntry>()
 
 const readIndexMtimeMs = async (vaultPath: string): Promise<number> => {
   try {
-    return (await stat(join(vaultPath, '.brainlink', 'brainlink.db'))).mtimeMs
+    return (await stat(indexStoragePath(vaultPath))).mtimeMs
   } catch {
     return 0
   }
@@ -87,10 +86,10 @@ export const searchKnowledge = async (
   const shouldEmbedQuery = searchMode !== 'fts' && provider.name !== 'none'
   const queryEmbedding = shouldEmbedQuery ? (await provider.embed([query]))[0] ?? [] : []
   try {
-    const index = openSqliteIndex(absoluteVaultPath)
+    const index = openFileIndex(absoluteVaultPath)
 
     try {
-      const results = index.search(query, limit, agentId, searchMode, queryEmbedding)
+      const results = await index.search(query, limit, agentId, searchMode, queryEmbedding)
 
       if (cacheKey) {
         cacheSet({

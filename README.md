@@ -52,15 +52,14 @@ LLMs do not have infinite context. Brainlink gives agents an external memory lay
 1. Durable knowledge is written as Markdown.
 2. Notes are connected with `[[wiki links]]`.
 3. Concepts are classified with `#tags`.
-4. Brainlink builds a local SQLite index with FTS records and local embeddings.
+4. Brainlink builds a local JSON index (`.brainlink/index.json`) and private encrypted search packs.
 5. Agents query the index before responding.
 6. Brainlink returns compact, source-backed context.
 
-Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable index.
-Brainlink now keeps an automatic rollback snapshot at `.brainlink/brainlink.db.backup` plus rotating snapshots in `.brainlink/brainlink.db.backup.snapshots/`. If the main SQLite file is corrupted, Brainlink automatically restores the newest valid snapshot (or recreates a clean index when no snapshot exists).
-After each index run, Brainlink also writes private encrypted search packs at `.brainlink/search-packs/*.blpk`. If SQLite is unavailable, search falls back to these packs automatically.
+Markdown is the source of truth. `.brainlink/index.json` is a rebuildable index artifact.
+After each index run, Brainlink also writes private encrypted search packs at `.brainlink/search-packs/*.blpk` to preserve fast retrieval and portable recovery.
 Pack decryption uses a Brainlink key from `$BRAINLINK_HOME/keys` or from `BRAINLINK_SEARCH_PACK_KEY` when explicitly configured.
-On upgrade, if a legacy SQLite index exists without private packs, Brainlink imports index rows into `.blpk` automatically on first search/context access.
+Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/context access.
 
 ## Features
 
@@ -69,7 +68,7 @@ On upgrade, if a legacy SQLite index exists without private packs, Brainlink imp
 - Weighted graph edges so agents can rank relationship importance and priority.
 - Backlinks, broken-link reports, orphan detection and validation.
 - Full-text, semantic and hybrid retrieval modes.
-- SQLite-backed semantic candidate buckets for larger vaults.
+- Full-text, semantic and hybrid retrieval on a local file index.
 - Agent namespaces under `agents/<agent-id>/`.
 - S3-compatible bucket vaults through `s3://bucket/prefix` URIs.
 - CLI with machine-readable `--json` output.
@@ -286,7 +285,7 @@ export BRAINLINK_S3_FORCE_PATH_STYLE=1
 
 Bucket vaults mirror Markdown into a local cache under
 `$BRAINLINK_HOME/bucket-cache`. The bucket remains canonical; the local
-`.brainlink/brainlink.db` stays a disposable index. Run `index` after remote
+`.brainlink/index.json` stays a disposable index artifact. Run `index` after remote
 bucket changes before relying on `search`, `context`, graph or validation
 commands. Watch mode is only supported for local filesystem vaults.
 
@@ -302,7 +301,7 @@ vault/
     research-agent/
       source-review-policy.md
   .brainlink/
-    brainlink.db
+    index.json
 ```
 
 Permanent data:
@@ -312,7 +311,7 @@ Permanent data:
 
 Rebuildable data:
 
-- `.brainlink/brainlink.db`
+- `.brainlink/index.json`
 - full-text records
 - local embedding vectors
 - local embedding buckets
@@ -724,8 +723,8 @@ If `--mode` or `--limit` is omitted, Brainlink resolves values from the current 
 
 Modes:
 
-- `hybrid`: default; combines SQLite FTS with local embedding similarity.
-- `fts`: exact lexical retrieval through SQLite FTS.
+- `hybrid`: default; combines lexical matching with local embedding similarity.
+- `fts`: exact lexical retrieval from the file index.
 - `semantic`: local deterministic embedding similarity only.
 
 Hybrid results are cached in-memory for a short TTL and invalidated automatically when the local index file changes.
@@ -977,7 +976,7 @@ src/
   application/      use cases
   cli/              command-line adapter
   domain/           pure knowledge rules
-  infrastructure/   filesystem and SQLite adapters
+  infrastructure/   filesystem and index adapters
 ```
 
 Detailed notes:
@@ -989,7 +988,6 @@ Detailed notes:
 ## Current Limits
 
 - Semantic search uses deterministic local embeddings, not a remote model provider.
-- Semantic search uses SQLite embedding buckets to narrow candidates before cosine scoring.
 - `embeddingProvider` currently supports `local` and `none`.
 - Link resolution is title-based inside each agent namespace, with `shared` as fallback.
 - HTTP API is local and unauthenticated.
@@ -1000,7 +998,7 @@ Detailed notes:
 The `0.1.0-beta` line is intended to stabilize the local-first memory loop:
 
 - Markdown as durable memory.
-- SQLite FTS plus local embeddings and semantic buckets as rebuildable retrieval index.
+- Rebuildable file index plus local embeddings and encrypted pack exports.
 - CLI as the primary agent interface.
 - HTTP graph API and frontend as inspection tools.
 - Agent namespaces to avoid context mixing.
@@ -1016,7 +1014,7 @@ Brainlink is local-first by default.
 - Brainlink HTTP is localhost-only and refuses non-loopback hosts.
 - Brainlink blocks common secret patterns by default when adding notes. Use `--allow-sensitive` only for intentional, protected vaults.
 - Do not store secrets, credentials, API keys or regulated personal data unless the vault is protected by your own storage controls.
-- Treat `.brainlink/brainlink.db` as disposable derived data.
+- Treat `.brainlink/index.json` and `.brainlink/search-packs/` as disposable derived artifacts.
 
 See [SECURITY.md](SECURITY.md).
 

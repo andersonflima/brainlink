@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
-import { join } from 'node:path'
 import { createCauliflowerGraphLayout } from '../domain/graph-layout.js'
 import type { KnowledgeGraph, KnowledgeGraphLayout } from '../domain/types.js'
+import { indexStoragePath } from '../infrastructure/file-index.js'
 import { getGraphSummary } from './get-graph-summary.js'
 
 export type GraphLayoutPayload = {
@@ -20,7 +20,7 @@ const graphLayoutCache = new Map<string, CachedGraphLayout>()
 
 const readDatabaseSignature = async (vaultPath: string): Promise<string> => {
   try {
-    const info = await stat(join(vaultPath, '.brainlink', 'brainlink.db'))
+    const info = await stat(indexStoragePath(vaultPath))
 
     return `${Math.floor(info.mtimeMs)}:${info.size}`
   } catch {

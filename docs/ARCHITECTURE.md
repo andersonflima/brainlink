@@ -8,7 +8,7 @@ CLI -> application use cases -> domain functions -> infrastructure adapters
 
 The core rule is simple:
 
-Domain code must not know about the CLI, filesystem, or SQLite.
+Domain code must not know about the CLI, filesystem, or index persistence format.
 
 ## Modules
 
@@ -53,14 +53,11 @@ src/
     types.ts
 
   infrastructure/
-    sqlite/
-      document-writer.ts
-      graph-reader.ts
-      schema.ts
-      search-reader.ts
+    file-index.ts
     file-system-vault.ts
+    private-pack-codec.ts
+    search-packs.ts
     session-state.ts
-    sqlite-index.ts
 
   mcp/
     main.ts
@@ -80,7 +77,6 @@ The domain layer contains pure knowledge rules:
 - extract `#tags`
 - split documents into chunks
 - create deterministic local embeddings
-- create deterministic embedding buckets for semantic candidate retrieval
 - calculate cosine similarity
 - estimate token counts
 - select context sections
@@ -116,12 +112,11 @@ The infrastructure layer handles side effects:
 - mirroring S3-compatible bucket Markdown into a local cache
 - writing Markdown notes
 - creating `.brainlink`
-- writing and querying SQLite
-- running FTS, semantic and hybrid retrieval
-- narrowing semantic candidates through SQLite embedding buckets before cosine scoring
+- writing and querying file-based indexes
+- running lexical, semantic and hybrid retrieval
 
-SQLite is an index, not the canonical storage model. For bucket vaults, Markdown
-objects in the bucket remain canonical and SQLite is still local derived data.
+
+Index artifacts are rebuildable and are not canonical storage. For bucket vaults, Markdown objects in the bucket remain canonical and local index files are derived data.
 
 ## Indexing Flow
 
@@ -132,11 +127,9 @@ read markdown files
   -> resolve links
   -> split chunks
   -> create chunk embeddings
-  -> reset SQLite index
+  -> reset file index
   -> persist documents, chunks and links
-  -> populate FTS records
-  -> persist embedding vectors
-  -> persist embedding buckets
+  -> persist chunks, links and embeddings in file index
 ```
 
 ## Retrieval Flow
@@ -145,7 +138,7 @@ read markdown files
 question
   -> selected mode: fts | semantic | hybrid
   -> optional query embedding
-  -> FTS query and/or embedding bucket candidate lookup
+  -> lexical scoring and/or semantic cosine scoring
   -> cosine similarity over candidate chunks
   -> ranked chunks with textScore and semanticScore
   -> token-budget selection
@@ -163,7 +156,7 @@ server command
   -> browser renders graph canvas
 ```
 
-The graph UI is intentionally read-only. Markdown remains the write interface and SQLite remains a derived index.
+The graph UI is intentionally read-only. Markdown remains the write interface and index artifacts remain derived data.
 
 ## HTTP API Flow
 
@@ -171,7 +164,7 @@ The graph UI is intentionally read-only. Markdown remains the write interface an
 HTTP request
   -> route handler
   -> application use case
-  -> filesystem and SQLite adapters
+  -> filesystem and index adapters
   -> JSON response
 ```
 
@@ -282,11 +275,10 @@ vault/agents/<agent-id>/**/*.md
 
 Rebuildable:
 
-- `.brainlink/brainlink.db`
+- `.brainlink/index.json`
+- `.brainlink/search-packs/*.blpk`
 - `$BRAINLINK_HOME/bucket-cache`
-- FTS records
 - local embedding vectors
-- local embedding bucket index
 - chunks
 - resolved links
 
@@ -296,14 +288,13 @@ Rebuildable:
 
 Markdown keeps the system portable, inspectable, Git-friendly, and compatible with Obsidian-like workflows.
 
-### SQLite As Local Index
+### File Index As Local Index
 
-SQLite gives fast local search, local vector storage and rebuildable retrieval without forcing users to run external infrastructure.
+Brainlink uses a local JSON index plus encrypted pack exports for fast rebuildable retrieval without external infrastructure.
 Hybrid retrieval also uses a short-lived in-memory cache keyed by vault/query/agent and invalidated by index file mtime to reduce repeated query latency.
-Brainlink also writes a local rollback snapshot (`.brainlink/brainlink.db.backup`) plus rotating point-in-time snapshots (`.brainlink/brainlink.db.backup.snapshots/`) after successful indexing. On corruption detection (`quick_check`/SQLite malformed errors), Brainlink restores the newest valid snapshot automatically before reopening the index.
-Indexing additionally exports private encrypted pack files (`.brainlink/search-packs/*.blpk`) from indexed chunks. Search falls back to these packs when SQLite is unavailable, preserving retrieval continuity in degraded mode.
+Indexing exports private encrypted pack files (`.brainlink/search-packs/*.blpk`) from indexed chunks for fast retrieval and recovery continuity.
 Pack encryption keys are resolved from `$BRAINLINK_HOME/keys` or from `BRAINLINK_SEARCH_PACK_KEY` when configured.
-Legacy upgrades are automatic: when a vault has `brainlink.db` but no `.blpk` packs yet, Brainlink extracts indexed context rows from SQLite and writes private packs on first retrieval flow.
+Legacy `.jsonl.gz` search packs are auto-upgraded to `.blpk` on first retrieval flow.
 
 ### CLI First
 
