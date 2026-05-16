@@ -14,6 +14,8 @@
 - Added default MCP startup bootstrap behavior controlled by `brainlink_policy.autoBootstrapOnStartup`.
 - Added CLI MCP policy presets through `blink agent policy --preset fully-auto|strict`.
 - Added write-time non-orphan enforcement by auto-linking notes without wiki edges to agent hub notes.
+- Added MCP `brainlink_policy` presets (`fully-auto`, `strict`) for one-call policy switching.
+- Added MCP write connectivity metadata in `brainlink_add_note`/`brainlink_add_file` responses.
 - Improved graph/index robustness by splitting oversized paragraphs into bounded chunks and dropping self-referential links.
 - Added `agentProfiles` configuration support so CLI and MCP can resolve per-agent defaults for mode/limit/tokens.
 - Added short-lived hybrid search cache with automatic invalidation on index changes.

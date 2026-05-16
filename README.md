@@ -507,7 +507,7 @@ Restart the client after changing marketplace or MCP configuration so it reloads
 Available tools:
 
 - `brainlink_bootstrap`: plug-and-play entrypoint that runs index + health checks and can return context in one call.
-- `brainlink_policy`: read or update bootstrap enforcement policy.
+- `brainlink_policy`: read or update bootstrap enforcement policy, including presets (`preset: "fully-auto" | "strict"`).
 - `brainlink_context`: read indexed context for a task or question.
 - `brainlink_search`: search indexed notes.
 - `brainlink_add_note`: write durable Markdown memory and reindex.
@@ -526,7 +526,7 @@ By default, Brainlink enforces bootstrap and auto-runs it for read tools when se
 If you disable `autoBootstrapOnRead` through `brainlink_policy`, read tools return a preflight instruction with suggested `brainlink_bootstrap` arguments.
 `brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so MCP clients can continue automatically without custom parsing.
 
-The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]`. `brainlink_add_note` and `brainlink_add_file` reindex by default and include the index result when enabled.
+The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]`. `brainlink_add_note` and `brainlink_add_file` reindex by default and include index + `writeConnectivity` metadata. Brainlink guarantees at least one edge per new note by auto-linking when needed.
 
 Agents can raise the importance of a relationship by putting priority markers on the same line as a wiki link:
 

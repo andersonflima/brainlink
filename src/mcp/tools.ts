@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import { z } from 'zod'
 import { getBrokenLinksReport, getOrphansReport, getStats, validateVault } from '../application/analyze-vault.js'
-import { addNote } from '../application/add-note.js'
+import { addNoteWithMetadata } from '../application/add-note.js'
 import { buildContextPackage } from '../application/build-context.js'
 import { getGraph } from '../application/get-graph.js'
 import { indexVault } from '../application/index-vault.js'
@@ -291,6 +291,7 @@ export const bootstrapInputSchema = {
 export const policyInputSchema = {
   ...vaultInput,
   ...agentInput,
+  preset: z.enum(['fully-auto', 'strict']).optional().describe('Apply an opinionated policy preset before explicit overrides.'),
   enforceBootstrap: z.boolean().optional().describe('Enable or disable bootstrap enforcement for MCP read tools.'),
   autoBootstrapOnRead: z
     .boolean()
@@ -360,7 +361,7 @@ export const searchTool = async (input: z.infer<z.ZodObject<typeof searchInputSc
 export const addNoteTool = async (input: z.infer<z.ZodObject<typeof addNoteInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
   const shouldIndex = isTruthy(input.autoIndex)
-  const path = await addNote(context.vault, input.title, input.content, context.agent, {
+  const added = await addNoteWithMetadata(context.vault, input.title, input.content, context.agent, {
     allowSensitive: input.allowSensitive
   })
   const index = shouldIndex ? await indexVault(context.vault) : undefined
@@ -369,7 +370,12 @@ export const addNoteTool = async (input: z.infer<z.ZodObject<typeof addNoteInput
     vault: context.vault,
     title: input.title,
     agent: context.agent,
-    path,
+    path: added.path,
+    writeConnectivity: {
+      autoLinked: added.autoLinked,
+      linkTarget: added.linkTarget,
+      guaranteedEdge: true
+    },
     ...(index ? { index } : {})
   })
 }
@@ -385,7 +391,7 @@ export const addFileTool = async (input: z.infer<z.ZodObject<typeof addFileInput
   }
 
   const shouldIndex = isTruthy(input.autoIndex)
-  const path = await addNote(context.vault, title, content, context.agent, {
+  const added = await addNoteWithMetadata(context.vault, title, content, context.agent, {
     allowSensitive: input.allowSensitive
   })
   const index = shouldIndex ? await indexVault(context.vault) : undefined
@@ -395,7 +401,12 @@ export const addFileTool = async (input: z.infer<z.ZodObject<typeof addFileInput
     title,
     agent: context.agent,
     filePath: input.filePath,
-    path,
+    path: added.path,
+    writeConnectivity: {
+      autoLinked: added.autoLinked,
+      linkTarget: added.linkTarget,
+      guaranteedEdge: true
+    },
     ...(index ? { index } : {})
   })
 }
@@ -639,9 +650,28 @@ export const bootstrapTool = async (input: z.infer<z.ZodObject<typeof bootstrapI
 
 export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
+  const presetPatch =
+    input.preset === 'strict'
+      ? {
+          enforceBootstrap: true,
+          autoBootstrapOnRead: false,
+          autoBootstrapOnStartup: false
+        }
+      : input.preset === 'fully-auto'
+        ? {
+            enforceBootstrap: true,
+            autoBootstrapOnRead: true,
+            autoBootstrapOnStartup: true
+          }
+        : {}
   const policy =
-    typeof input.enforceBootstrap === 'boolean' || typeof input.staleAfterMinutes === 'number'
+    input.preset !== undefined ||
+    typeof input.enforceBootstrap === 'boolean' ||
+    typeof input.autoBootstrapOnRead === 'boolean' ||
+    typeof input.autoBootstrapOnStartup === 'boolean' ||
+    typeof input.staleAfterMinutes === 'number'
       ? await setBootstrapPolicy({
+          ...presetPatch,
           ...(typeof input.enforceBootstrap === 'boolean' ? { enforceBootstrap: input.enforceBootstrap } : {}),
           ...(typeof input.autoBootstrapOnRead === 'boolean' ? { autoBootstrapOnRead: input.autoBootstrapOnRead } : {}),
           ...(typeof input.autoBootstrapOnStartup === 'boolean' ? { autoBootstrapOnStartup: input.autoBootstrapOnStartup } : {}),
@@ -668,6 +698,7 @@ export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSc
     vault: context.vault,
     agent: context.agent,
     policy,
-    bootstrapStatus
+    bootstrapStatus,
+    ...(input.preset ? { presetApplied: input.preset } : {})
   }, nextActions))
 }
