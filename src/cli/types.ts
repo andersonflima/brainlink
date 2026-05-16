@@ -35,6 +35,7 @@ export type AddOptions = VaultOptions & {
 
 export type ConfigGetOptions = {
   readonly json?: boolean
+  readonly fix?: boolean
 }
 
 export type ConfigSetVaultOptions = {
@@ -52,6 +53,7 @@ export type MigrateVaultOptions = {
   readonly to?: string
   readonly dryRun?: boolean
   readonly index?: boolean
+  readonly report?: string
 }
 
 export type AgentInstallOptions = {
@@ -60,8 +62,10 @@ export type AgentInstallOptions = {
   readonly pluginPath?: string
   readonly allowedVaults?: string
   readonly brainlinkHome?: string
+  readonly selfTest?: boolean
 }
 
 export type AgentStatusOptions = {
   readonly json?: boolean
+  readonly agent?: string
 }

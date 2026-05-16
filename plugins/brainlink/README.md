@@ -13,7 +13,7 @@ npm install -g @andespindola/brainlink
 From the Brainlink repository root:
 
 ```bash
-blink agent install --plugin-path ./plugins/brainlink
+blink agent install --plugin-path ./plugins/brainlink --self-test
 blink agent status
 ```
 
@@ -103,10 +103,11 @@ should appear in the local plugin gallery as `Brainlink`.
 The plugin starts the `brainlink-mcp` stdio server and gives Codex a skill that defines the correct memory workflow:
 
 1. Bootstrap memory with `brainlink_bootstrap` before work.
-2. Write durable memory with `brainlink_add_note`.
-3. Use explicit `[[wiki links]]` and `#tags`.
-4. Add priority markers near important links, for example `priority: high`, `#important` or `#critical`.
-5. Validate graph health with `brainlink_validate`, `brainlink_broken_links` and `brainlink_orphans`.
+2. Use `brainlink_policy` only when you intentionally need to change bootstrap enforcement behavior.
+3. Write durable memory with `brainlink_add_note`.
+4. Use explicit `[[wiki links]]` and `#tags`.
+5. Add priority markers near important links, for example `priority: high`, `#important` or `#critical`.
+6. Validate graph health with `brainlink_validate`, `brainlink_broken_links` and `brainlink_orphans`.
 
 `brainlink_context` is read-only. It does not create graph links, backlinks or durable memory.
 

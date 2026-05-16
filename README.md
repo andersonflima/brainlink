@@ -106,6 +106,8 @@ npx @andespindola/brainlink@latest --help
 
 This section is written for agents. If you are an AI agent operating in a user workspace, use this workflow to install and use Brainlink without requiring the user to run commands manually.
 
+For a condensed setup path, see [docs/QUICKSTART.md](./docs/QUICKSTART.md).
+
 ### 1. Check Whether Brainlink Is Installed
 
 ```bash
@@ -385,7 +387,7 @@ Example MCP client configuration:
 If your agent runtime is Codex-compatible, run:
 
 ```bash
-blink agent install
+blink agent install --self-test
 ```
 
 This configures `~/.codex/config.toml` with Brainlink MCP (`brainlink-mcp`) so Brainlink is available by default in agent sessions.
@@ -498,6 +500,7 @@ Restart the client after changing marketplace or MCP configuration so it reloads
 Available tools:
 
 - `brainlink_bootstrap`: plug-and-play entrypoint that runs index + health checks and can return context in one call.
+- `brainlink_policy`: read or update bootstrap enforcement policy.
 - `brainlink_context`: read indexed context for a task or question.
 - `brainlink_search`: search indexed notes.
 - `brainlink_add_note`: write durable Markdown memory and reindex.
@@ -511,6 +514,7 @@ Available tools:
 - `brainlink_orphans`: list disconnected notes.
 
 For the most automatic workflow, start MCP sessions with `brainlink_bootstrap` (optionally with `query`) and then continue with `brainlink_context`/`brainlink_add_note`.
+By default, Brainlink enforces bootstrap for read tools. If bootstrap is missing or stale, read tools return a preflight instruction with suggested `brainlink_bootstrap` arguments.
 
 The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]`. `brainlink_add_note` and `brainlink_add_file` reindex by default and include the index result when enabled.
 
@@ -585,6 +589,7 @@ Every command works with either `brainlink` or `blink`.
 
 ```bash
 blink agent install
+blink agent install --self-test
 blink agent install --plugin-path ./plugins/brainlink
 blink agent install --mcp-only --allowed-vaults "/absolute/vault,/absolute/team-vault"
 blink agent status
@@ -592,6 +597,7 @@ blink agent status
 
 Installs/checks agent integration. `install` writes Brainlink MCP config into `~/.codex/config.toml`.
 When plugin files are available, it also links Brainlink plugin files into `~/plugins/brainlink` and updates `~/.agents/plugins/marketplace.json`.
+With `--self-test`, install also validates MCP block presence, command wiring and local plugin registration signals.
 
 ### `config`
 
@@ -599,6 +605,7 @@ When plugin files are available, it also links Brainlink plugin files into `~/pl
 blink config where
 blink config get vault
 blink config doctor
+blink config doctor --fix
 blink config set-vault /absolute/path/to/existing-vault
 blink config set-vault /absolute/path/to/existing-vault --migrate-from ~/.brainlink/vault
 blink config set-vault "s3://my-memory-bucket/brainlink" --global
@@ -607,6 +614,7 @@ blink config set-vault "s3://my-memory-bucket/brainlink" --global
 `config set-vault` writes configuration through CLI (no manual file edits required).  
 By default it writes local config (`./brainlink.config.json`), appends the vault to `allowedVaults`, and migrates Markdown memory from the current configured vault when the target is empty.  
 Use `--global` to write to `$BRAINLINK_HOME/brainlink.config.json`, `--no-migrate` to skip migration, and `--no-index` to skip post-migration indexing.
+`config doctor` is dry-run by default; use `--fix` to apply safe config normalization and allowlist fixes.
 
 ### `migrate-vault`
 
@@ -614,6 +622,7 @@ Use `--global` to write to `$BRAINLINK_HOME/brainlink.config.json`, `--no-migrat
 blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --dry-run
 blink migrate-vault --from ~/.brainlink/vault --to ./team-vault
 blink migrate-vault --from ~/.brainlink/vault --to "s3://my-memory-bucket/brainlink"
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --report ./migration-report.json
 ```
 
 Runs explicit markdown migration between vaults while preserving conflicts as `.conflict-<timestamp>` files.  

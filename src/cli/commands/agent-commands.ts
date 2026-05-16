@@ -1,7 +1,11 @@
 import { access, lstat, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import type { Command } from 'commander'
+import { loadBrainlinkConfig } from '../../infrastructure/config.js'
+import { getBootstrapPolicy, getBootstrapSessionStatus, getSessionStatePath } from '../../infrastructure/session-state.js'
 import { print } from '../runtime.js'
 import type { AgentInstallOptions, AgentStatusOptions } from '../types.js'
 
@@ -37,6 +41,8 @@ const getDefaultPluginSourcePath = (): string =>
 
 const getPluginSymlinkPath = (): string =>
   join(homedir(), 'plugins', 'brainlink')
+
+const execFileAsync = promisify(execFile)
 
 const toTomlValue = (value: string): string =>
   `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
@@ -190,6 +196,23 @@ const parseAllowedVaults = (value: string | undefined): string | undefined => {
   return normalized.length > 0 ? normalized.join(',') : undefined
 }
 
+const hasMcpCommandInPath = async (): Promise<boolean> => {
+  try {
+    const { stdout } = await execFileAsync('sh', ['-lc', 'command -v brainlink-mcp'], { maxBuffer: 1024 * 1024 })
+
+    return stdout.trim().length > 0
+  } catch {
+    return false
+  }
+}
+
+const isBrainlinkConfigured = (codexConfig: string): { hasMcpSection: boolean; hasCommand: boolean } => {
+  const hasMcpSection = codexConfig.includes('[mcp_servers.brainlink]')
+  const hasCommand = /(^|\n)\s*command\s*=\s*"brainlink-mcp"\s*(\n|$)/m.test(codexConfig)
+
+  return { hasMcpSection, hasCommand }
+}
+
 export const registerAgentCommands = (program: Command): void => {
   const agent = program.command('agent').description('install or inspect Brainlink agent integration')
 
@@ -199,6 +222,7 @@ export const registerAgentCommands = (program: Command): void => {
     .option('--plugin-path <path>', 'custom source path for Brainlink plugin files')
     .option('--allowed-vaults <paths>', 'comma separated vault allowlist to inject in MCP env')
     .option('--brainlink-home <path>', 'BRAINLINK_HOME value to inject in MCP env')
+    .option('--self-test', 'run post-install checks and include diagnostics in the result')
     .option('--json', 'print machine-readable JSON')
     .description('install Brainlink as default MCP memory integration for the local agent')
     .action(async (options: AgentInstallOptions) => {
@@ -226,6 +250,47 @@ export const registerAgentCommands = (program: Command): void => {
         }
       }
 
+      const selfTest = options.selfTest
+        ? (() => {
+            const run = async () => {
+              const codexConfig = await readFile(codexConfigPath, 'utf8')
+              const mcp = isBrainlinkConfigured(codexConfig)
+              const mcpCommandInPath = await hasMcpCommandInPath()
+              const pluginSymlinkExists =
+                options.mcpOnly === true
+                  ? null
+                  : await (async () => {
+                      try {
+                        return (await lstat(pluginSymlinkPath)).isSymbolicLink()
+                      } catch {
+                        return false
+                      }
+                    })()
+              const marketplaceEntryExists =
+                options.mcpOnly === true
+                  ? null
+                  : (await loadMarketplace(marketplacePath)).plugins.some((plugin) => plugin?.name === 'brainlink')
+
+              return {
+                ok:
+                  mcp.hasMcpSection &&
+                  mcp.hasCommand &&
+                  mcpCommandInPath &&
+                  (options.mcpOnly === true || (Boolean(pluginSymlinkExists) && Boolean(marketplaceEntryExists))),
+                mcpCommandInPath,
+                hasMcpSection: mcp.hasMcpSection,
+                hasCommand: mcp.hasCommand,
+                pluginSymlinkExists,
+                marketplaceEntryExists
+              }
+            }
+
+            return run()
+          })()
+        : undefined
+
+      const selfTestResult = selfTest ? await selfTest : undefined
+
       print(
         options.json,
         {
@@ -234,12 +299,14 @@ export const registerAgentCommands = (program: Command): void => {
           mcpServer: 'brainlink',
           command: 'brainlink-mcp',
           ...(options.mcpOnly !== true ? { pluginSourcePath, pluginSymlinkPath, marketplacePath } : {}),
+          ...(selfTestResult ? { selfTest: selfTestResult } : {}),
           ...(warnings.length > 0 ? { warnings } : {})
         },
         () =>
           [
             `Installed Brainlink MCP at ${codexConfigPath}`,
             ...(options.mcpOnly === true ? [] : [`Plugin symlink: ${pluginSymlinkPath}`, `Marketplace: ${marketplacePath}`]),
+            ...(selfTestResult ? [`Self-test: ${selfTestResult.ok ? 'ok' : 'failed'}`] : []),
             ...(warnings.length > 0 ? ['Warnings:', ...warnings.map((warning) => `- ${warning}`)] : [])
           ].join('\n')
       )
@@ -247,6 +314,7 @@ export const registerAgentCommands = (program: Command): void => {
 
   agent
     .command('status')
+    .option('-a, --agent <agent>', 'agent memory namespace for bootstrap session status')
     .option('--json', 'print machine-readable JSON')
     .description('check if Brainlink MCP integration is configured for the local agent')
     .action(async (options: AgentStatusOptions) => {
@@ -261,8 +329,7 @@ export const registerAgentCommands = (program: Command): void => {
         }
       }
 
-      const hasMcpSection = codexConfig.includes('[mcp_servers.brainlink]')
-      const hasCommand = /(^|\n)\s*command\s*=\s*"brainlink-mcp"\s*(\n|$)/m.test(codexConfig)
+      const { hasMcpSection, hasCommand } = isBrainlinkConfigured(codexConfig)
       const pluginSymlinkPath = getPluginSymlinkPath()
       const marketplacePath = getMarketplacePath()
       let pluginSymlinkExists = false
@@ -277,6 +344,11 @@ export const registerAgentCommands = (program: Command): void => {
         marketplaceEntryExists = marketplace.plugins.some((plugin) => plugin?.name === 'brainlink')
       } catch {}
 
+      const config = await loadBrainlinkConfig()
+      const policy = await getBootstrapPolicy()
+      const bootstrapStatus = await getBootstrapSessionStatus(config.vault, options.agent ?? config.defaultAgent)
+      const sessionStatePath = getSessionStatePath()
+
       print(
         options.json,
         {
@@ -287,16 +359,24 @@ export const registerAgentCommands = (program: Command): void => {
           pluginSymlinkPath,
           pluginSymlinkExists,
           marketplacePath,
-          marketplaceEntryExists
+          marketplaceEntryExists,
+          sessionStatePath,
+          vault: config.vault,
+          agent: options.agent ?? config.defaultAgent ?? '*',
+          bootstrapPolicy: policy,
+          bootstrapStatus
         },
         () =>
           [
             `codexConfigPath=${codexConfigPath}`,
             `configured=${hasMcpSection && hasCommand}`,
             `pluginSymlinkExists=${pluginSymlinkExists}`,
-            `marketplaceEntryExists=${marketplaceEntryExists}`
+            `marketplaceEntryExists=${marketplaceEntryExists}`,
+            `vault=${config.vault}`,
+            `agent=${options.agent ?? config.defaultAgent ?? '*'}`,
+            `bootstrapReady=${bootstrapStatus.ready}`,
+            `bootstrapStale=${bootstrapStatus.stale}`
           ].join('\n')
       )
     })
 }
-

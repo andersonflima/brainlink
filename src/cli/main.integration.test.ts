@@ -310,11 +310,12 @@ describe('brainlink cli integration', () => {
     const workspace = await mkdtemp(join(tmpdir(), 'brainlink-migration-workspace-'))
     tempPaths.push(brainlinkHome, sourceVault, targetVault, workspace)
     const env = { BRAINLINK_HOME: brainlinkHome }
+    const reportPath = join(workspace, 'migration-report.json')
 
     await cli(['add', 'Migratable Note', '--vault', sourceVault, '--content', 'Migration candidate. #migration', '--json'], projectPath, env)
 
     const preview = parseJson<{ dryRun: boolean; copied: number; conflicted: number; unchanged: number }>(
-      await cli(['migrate-vault', '--from', sourceVault, '--to', targetVault, '--dry-run', '--json'], workspace, env)
+      await cli(['migrate-vault', '--from', sourceVault, '--to', targetVault, '--dry-run', '--report', reportPath, '--json'], workspace, env)
     )
     expect(preview).toMatchObject({
       dryRun: true,
@@ -333,6 +334,18 @@ describe('brainlink cli integration', () => {
       unchanged: 0
     })
     expect(migrated.index.documentCount).toBe(1)
+    const report = parseJson<{ entries: readonly { kind: string; sourceRelativePath: string; targetRelativePath: string }[] }>(
+      await readFile(reportPath, 'utf8')
+    )
+    expect(report.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'copy',
+          sourceRelativePath: expect.stringContaining('.md'),
+          targetRelativePath: expect.stringContaining('.md')
+        })
+      ])
+    )
 
     const emptyVault = await mkdtemp(join(tmpdir(), 'brainlink-empty-vault-'))
     tempPaths.push(emptyVault)
@@ -342,10 +355,24 @@ describe('brainlink cli integration', () => {
       vault: string
       vaultSource: string
       doctor: { recommendations?: readonly string[] }
+      fix: { dryRun: boolean; applied: boolean }
     }>(await cli(['config', 'doctor', '--json'], workspace, env))
     expect(configDoctor.vault).toBe(emptyVault)
     expect(configDoctor.vaultSource).toBe('local')
     expect(configDoctor.doctor.recommendations?.length ?? 0).toBeGreaterThan(0)
+    expect(configDoctor.fix).toMatchObject({
+      dryRun: true,
+      applied: false
+    })
+
+    const fixedDoctor = parseJson<{ fix: { dryRun: boolean; applied: boolean; path: string | null } }>(
+      await cli(['config', 'doctor', '--fix', '--json'], workspace, env)
+    )
+    expect(fixedDoctor.fix).toMatchObject({
+      dryRun: false,
+      applied: true
+    })
+    expect(typeof fixedDoctor.fix.path).toBe('string')
 
     const configDoctorHuman = await cli(['config', 'doctor'], workspace, env)
     expect(configDoctorHuman).toContain('Recommended next steps:')
@@ -396,6 +423,34 @@ describe('brainlink cli integration', () => {
       pluginSymlinkExists: true,
       marketplaceEntryExists: true
     })
+  }, 20000)
+
+  it('runs self-test diagnostics after agent install', async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), 'brainlink-agent-self-test-home-'))
+    const workspace = await mkdtemp(join(tmpdir(), 'brainlink-agent-self-test-workspace-'))
+    tempPaths.push(fakeHome, workspace)
+
+    const env = {
+      HOME: fakeHome
+    }
+
+    const install = parseJson<{
+      installed: boolean
+      selfTest: {
+        ok: boolean
+        mcpCommandInPath: boolean
+        hasMcpSection: boolean
+        hasCommand: boolean
+      }
+    }>(await cli(['agent', 'install', '--mcp-only', '--self-test', '--json'], workspace, env))
+
+    expect(install.installed).toBe(true)
+    expect(install.selfTest).toMatchObject({
+      hasMcpSection: true,
+      hasCommand: true
+    })
+    expect(typeof install.selfTest.ok).toBe('boolean')
+    expect(typeof install.selfTest.mcpCommandInPath).toBe('boolean')
   }, 20000)
 
   it('prints the package version', async () => {

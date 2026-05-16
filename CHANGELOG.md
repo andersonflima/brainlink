@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-beta.4
+
+- Added bootstrap session-state persistence in `$BRAINLINK_HOME/session-state.json` for vault/agent readiness tracking.
+- Added MCP `brainlink_policy` tool and default bootstrap enforcement for read tools.
+- Added `agent install --self-test` diagnostics and bootstrap readiness details in `agent status`.
+- Added `config doctor --fix` safe autofix mode with dry-run default behavior.
+- Added detailed per-file migration reporting through `migrate-vault --report`.
+- Added `docs/QUICKSTART.md` and aligned README/agent docs with the latest CLI/MCP flows.
+
 ## 0.1.0-beta.3
 
 - Added CLI configuration commands for effective vault management, including `config where`, `config get`, `config doctor` and `config set-vault`.

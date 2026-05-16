@@ -59,6 +59,7 @@ src/
       schema.ts
       search-reader.ts
     file-system-vault.ts
+    session-state.ts
     sqlite-index.ts
 
   mcp/
@@ -188,6 +189,7 @@ MCP client
 ```
 
 The MCP adapter stays thin. It validates tool inputs, resolves the configured vault and calls the same application use cases used by the CLI.
+Session bootstrap state is persisted in `$BRAINLINK_HOME/session-state.json` so read tools can enforce a preflight bootstrap policy per vault/agent.
 
 ## Link Resolution
 
