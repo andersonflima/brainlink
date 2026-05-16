@@ -4,6 +4,7 @@ import { getBrainlinkHomePath } from './paths.js'
 
 export type BootstrapPolicy = {
   readonly enforceBootstrap: boolean
+  readonly enforceContextFirst: boolean
   readonly autoBootstrapOnRead: boolean
   readonly autoBootstrapOnStartup: boolean
   readonly staleAfterMinutes: number
@@ -22,13 +23,28 @@ export type BootstrapSessionStatus = {
   readonly ageMinutes?: number
 }
 
+export type ContextSessionEntry = {
+  readonly vault: string
+  readonly agent: string
+  readonly lastContextAt: string
+}
+
+export type ContextSessionStatus = {
+  readonly ready: boolean
+  readonly stale: boolean
+  readonly lastContextAt?: string
+  readonly ageMinutes?: number
+}
+
 type BrainlinkSessionState = {
   readonly policy: BootstrapPolicy
   readonly bootstraps: readonly BootstrapSessionEntry[]
+  readonly contexts: readonly ContextSessionEntry[]
 }
 
 const defaultPolicy: BootstrapPolicy = {
   enforceBootstrap: true,
+  enforceContextFirst: true,
   autoBootstrapOnRead: true,
   autoBootstrapOnStartup: true,
   staleAfterMinutes: 120
@@ -36,7 +52,8 @@ const defaultPolicy: BootstrapPolicy = {
 
 const defaultState: BrainlinkSessionState = {
   policy: defaultPolicy,
-  bootstraps: []
+  bootstraps: [],
+  contexts: []
 }
 
 const sessionStatePath = (): string =>
@@ -56,6 +73,7 @@ const sanitizeState = (value: unknown): BrainlinkSessionState => {
   const record = value as Readonly<Record<string, unknown>>
   const policyRecord = typeof record.policy === 'object' && record.policy !== null ? (record.policy as Readonly<Record<string, unknown>>) : {}
   const rawBootstraps = Array.isArray(record.bootstraps) ? record.bootstraps : []
+  const rawContexts = Array.isArray(record.contexts) ? record.contexts : []
   const bootstraps = rawBootstraps.flatMap((entry) => {
     if (typeof entry !== 'object' || entry === null) {
       return []
@@ -69,10 +87,27 @@ const sanitizeState = (value: unknown): BrainlinkSessionState => {
 
     return vault && agent && lastBootstrappedAt ? [{ vault, agent, lastBootstrappedAt }] : []
   })
+  const contexts = rawContexts.flatMap((entry) => {
+    if (typeof entry !== 'object' || entry === null) {
+      return []
+    }
+
+    const row = entry as Readonly<Record<string, unknown>>
+    const vault = typeof row.vault === 'string' && row.vault.trim().length > 0 ? row.vault.trim() : undefined
+    const agent = typeof row.agent === 'string' && row.agent.trim().length > 0 ? row.agent.trim() : undefined
+    const lastContextAt =
+      typeof row.lastContextAt === 'string' && row.lastContextAt.trim().length > 0 ? row.lastContextAt.trim() : undefined
+
+    return vault && agent && lastContextAt ? [{ vault, agent, lastContextAt }] : []
+  })
 
   return {
     policy: {
       enforceBootstrap: typeof policyRecord.enforceBootstrap === 'boolean' ? policyRecord.enforceBootstrap : defaultPolicy.enforceBootstrap,
+      enforceContextFirst:
+        typeof policyRecord.enforceContextFirst === 'boolean'
+          ? policyRecord.enforceContextFirst
+          : defaultPolicy.enforceContextFirst,
       autoBootstrapOnRead:
         typeof policyRecord.autoBootstrapOnRead === 'boolean'
           ? policyRecord.autoBootstrapOnRead
@@ -83,7 +118,8 @@ const sanitizeState = (value: unknown): BrainlinkSessionState => {
           : defaultPolicy.autoBootstrapOnStartup,
       staleAfterMinutes: safePositive(policyRecord.staleAfterMinutes, defaultPolicy.staleAfterMinutes)
     },
-    bootstraps
+    bootstraps,
+    contexts
   }
 }
 
@@ -118,6 +154,8 @@ export const setBootstrapPolicy = async (patch: Partial<BootstrapPolicy>): Promi
   const state = await readState()
   const next: BootstrapPolicy = {
     enforceBootstrap: typeof patch.enforceBootstrap === 'boolean' ? patch.enforceBootstrap : state.policy.enforceBootstrap,
+    enforceContextFirst:
+      typeof patch.enforceContextFirst === 'boolean' ? patch.enforceContextFirst : state.policy.enforceContextFirst,
     autoBootstrapOnRead:
       typeof patch.autoBootstrapOnRead === 'boolean' ? patch.autoBootstrapOnRead : state.policy.autoBootstrapOnRead,
     autoBootstrapOnStartup:
@@ -154,6 +192,27 @@ export const touchBootstrapSession = async (vault: string, agent: string | undef
   return entry
 }
 
+export const touchContextSession = async (vault: string, agent: string | undefined): Promise<ContextSessionEntry> => {
+  const state = await readState()
+  const normalizedAgent = normalizeAgent(agent)
+  const entry: ContextSessionEntry = {
+    vault,
+    agent: normalizedAgent,
+    lastContextAt: new Date().toISOString()
+  }
+  const contexts = [
+    entry,
+    ...state.contexts.filter((item) => !(item.vault === entry.vault && item.agent === entry.agent))
+  ].slice(0, 500)
+
+  await writeState({
+    ...state,
+    contexts
+  })
+
+  return entry
+}
+
 export const getBootstrapSessionStatus = async (vault: string, agent: string | undefined): Promise<BootstrapSessionStatus> => {
   const state = await readState()
   const normalizedAgent = normalizeAgent(agent)
@@ -173,6 +232,29 @@ export const getBootstrapSessionStatus = async (vault: string, agent: string | u
     ready: !stale,
     stale,
     lastBootstrappedAt: match.lastBootstrappedAt,
+    ageMinutes
+  }
+}
+
+export const getContextSessionStatus = async (vault: string, agent: string | undefined): Promise<ContextSessionStatus> => {
+  const state = await readState()
+  const normalizedAgent = normalizeAgent(agent)
+  const match = state.contexts.find((entry) => entry.vault === vault && entry.agent === normalizedAgent)
+
+  if (!match) {
+    return {
+      ready: false,
+      stale: true
+    }
+  }
+
+  const ageMinutes = Math.max(0, (Date.now() - new Date(match.lastContextAt).getTime()) / 60000)
+  const stale = ageMinutes > state.policy.staleAfterMinutes
+
+  return {
+    ready: !stale,
+    stale,
+    lastContextAt: match.lastContextAt,
     ageMinutes
   }
 }

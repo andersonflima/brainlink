@@ -549,6 +549,7 @@ describe('brainlink cli integration', () => {
       presetApplied: string
       policy: {
         enforceBootstrap: boolean
+        enforceContextFirst: boolean
         autoBootstrapOnRead: boolean
         autoBootstrapOnStartup: boolean
       }
@@ -558,6 +559,7 @@ describe('brainlink cli integration', () => {
       presetApplied: 'strict',
       policy: {
         enforceBootstrap: true,
+        enforceContextFirst: true,
         autoBootstrapOnRead: false,
         autoBootstrapOnStartup: false
       }
@@ -567,6 +569,7 @@ describe('brainlink cli integration', () => {
       presetApplied: string
       policy: {
         enforceBootstrap: boolean
+        enforceContextFirst: boolean
         autoBootstrapOnRead: boolean
         autoBootstrapOnStartup: boolean
         staleAfterMinutes: number
@@ -583,6 +586,7 @@ describe('brainlink cli integration', () => {
       presetApplied: 'fully-auto',
       policy: {
         enforceBootstrap: true,
+        enforceContextFirst: true,
         autoBootstrapOnRead: true,
         autoBootstrapOnStartup: true,
         staleAfterMinutes: 30
@@ -592,18 +596,26 @@ describe('brainlink cli integration', () => {
     const status = parseJson<{
       bootstrapPolicy: {
         enforceBootstrap: boolean
+        enforceContextFirst: boolean
         autoBootstrapOnRead: boolean
         autoBootstrapOnStartup: boolean
         staleAfterMinutes: number
+      },
+      contextStatus: {
+        ready: boolean
+        stale: boolean
       }
     }>(await cli(['agent', 'status', '--json'], workspace, env))
 
     expect(status.bootstrapPolicy).toMatchObject({
       enforceBootstrap: true,
+      enforceContextFirst: true,
       autoBootstrapOnRead: true,
       autoBootstrapOnStartup: true,
       staleAfterMinutes: 30
     })
+    expect(typeof status.contextStatus.ready).toBe('boolean')
+    expect(typeof status.contextStatus.stale).toBe('boolean')
   }, 20000)
 
   it('reapplies latest integration defaults for legacy installs', async () => {

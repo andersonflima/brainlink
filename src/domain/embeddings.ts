@@ -74,8 +74,11 @@ const tokenize = (input: string): readonly string[] =>
     ?.map(normalizeToken)
     .filter((token) => token.length > 1 && !stopWords.has(token)) ?? []
 
+const getAliasesForToken = (token: string): readonly string[] =>
+  Object.hasOwn(aliases, token) ? aliases[token] ?? [] : []
+
 const expandTokens = (tokens: readonly string[]): readonly string[] =>
-  tokens.flatMap((token) => [token, ...(aliases[token] ?? [])])
+  tokens.flatMap((token) => [token, ...getAliasesForToken(token)])
 
 const hash = (value: string): number =>
   Array.from(value).reduce((state, char) => Math.imul(state ^ char.charCodeAt(0), 16777619), 2166136261) >>> 0

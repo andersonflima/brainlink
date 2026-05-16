@@ -22,4 +22,8 @@ describe('local embeddings', () => {
     expect(queryBuckets.length).toBeLessThanOrEqual(24)
     expect(relatedOverlap).toBeGreaterThan(unrelatedOverlap)
   })
+
+  it('ignores inherited object keys while expanding aliases', () => {
+    expect(() => createLocalEmbedding('__proto__ constructor prototype auth token')).not.toThrow()
+  })
 })
