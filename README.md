@@ -557,6 +557,7 @@ The graph UI shows:
 - details opened on node click (tags, outgoing links, backlinks, full Markdown content)
 - neutral graph nodes with segment/group metadata
 - agent selector for isolated views
+- graph filter matches title, path, tags and note content
 - realtime refresh while `--watch` is enabled
 - graph controls for zoom in, zoom out, fit visible nodes and reset-to-fit-all
 - wheel zoom anchored to cursor position for faster navigation in large graphs

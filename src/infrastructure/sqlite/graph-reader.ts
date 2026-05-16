@@ -51,6 +51,13 @@ const normalizeAgentFilter = (agentId?: string): string | undefined =>
 const toTitleKey = (title: string): string =>
   title.toLowerCase()
 
+const toFtsQuery = (query: string): string =>
+  query
+    .toLowerCase()
+    .match(/[\p{L}\p{N}_-]+/gu)
+    ?.map((term) => `"${term.replaceAll('"', '""')}"*`)
+    .join(' OR ') ?? ''
+
 export const createGraphReader = (database: Database.Database): SqliteGraphReader =>
   (() => {
     const listLinksStatement = database.prepare(`
@@ -179,6 +186,46 @@ export const createGraphReader = (database: Database.Database): SqliteGraphReade
       WHERE id = ? AND agent_id = ?
     `)
 
+    const filterNodeIdsMetadataStatement = database.prepare(`
+      SELECT id
+      FROM documents
+      WHERE lower(title) LIKE ?
+         OR lower(path) LIKE ?
+         OR lower(tags_json) LIKE ?
+      ORDER BY title
+      LIMIT ?
+    `)
+
+    const filterNodeIdsMetadataByAgentStatement = database.prepare(`
+      SELECT id
+      FROM documents
+      WHERE agent_id = ?
+        AND (
+          lower(title) LIKE ?
+          OR lower(path) LIKE ?
+          OR lower(tags_json) LIKE ?
+        )
+      ORDER BY title
+      LIMIT ?
+    `)
+
+    const filterNodeIdsContentStatement = database.prepare(`
+      SELECT DISTINCT documents.id AS id
+      FROM chunks_fts
+      JOIN documents ON documents.id = chunks_fts.document_id
+      WHERE chunks_fts MATCH ?
+      LIMIT ?
+    `)
+
+    const filterNodeIdsContentByAgentStatement = database.prepare(`
+      SELECT DISTINCT documents.id AS id
+      FROM chunks_fts
+      JOIN documents ON documents.id = chunks_fts.document_id
+      WHERE chunks_fts MATCH ?
+        AND documents.agent_id = ?
+      LIMIT ?
+    `)
+
     const listAgentsStatement = database.prepare(`
       SELECT agent_id AS id, count(*) AS document_count
       FROM documents
@@ -253,6 +300,35 @@ export const createGraphReader = (database: Database.Database): SqliteGraphReade
         ) as GraphNodeRow | undefined
 
         return row ? toGraphNode(row) : undefined
+      },
+      searchGraphNodeIds: (query, limit, agentId) => {
+        const normalizedQuery = query.trim().toLowerCase()
+        if (!normalizedQuery || limit <= 0) {
+          return []
+        }
+        const normalizedAgentId = normalizeAgentFilter(agentId)
+        const likeQuery = `%${normalizedQuery}%`
+        const metadataRows = (
+          normalizedAgentId
+            ? filterNodeIdsMetadataByAgentStatement.all(normalizedAgentId, likeQuery, likeQuery, likeQuery, limit)
+            : filterNodeIdsMetadataStatement.all(likeQuery, likeQuery, likeQuery, limit)
+        ) as readonly { readonly id: string }[]
+        const ids = new Set(metadataRows.map((row) => row.id))
+        const remainingLimit = Math.max(limit - ids.size, 0)
+
+        if (remainingLimit > 0) {
+          const ftsQuery = toFtsQuery(normalizedQuery)
+          if (ftsQuery) {
+            const contentRows = (
+              normalizedAgentId
+                ? filterNodeIdsContentByAgentStatement.all(ftsQuery, normalizedAgentId, remainingLimit)
+                : filterNodeIdsContentStatement.all(ftsQuery, remainingLimit)
+            ) as readonly { readonly id: string }[]
+            contentRows.forEach((row) => ids.add(row.id))
+          }
+        }
+
+        return Array.from(ids).slice(0, limit)
       },
       listAgents: () =>
         (listAgentsStatement.all() as readonly AgentSummaryRow[]).map((row) => ({

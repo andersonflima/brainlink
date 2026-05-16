@@ -6,6 +6,7 @@ import { getGraphNode } from '../get-graph-node.js'
 import { getGraphLayout } from '../get-graph-layout.js'
 import { listAgents } from '../list-agents.js'
 import { listBacklinks, listLinks } from '../list-links.js'
+import { searchGraphNodeIds } from '../search-graph-node-ids.js'
 import { searchKnowledge } from '../search-knowledge.js'
 import { loadBrainlinkConfig, sanitizeSearchMode } from '../../infrastructure/config.js'
 import { createClientCss } from '../frontend/client-css.js'
@@ -130,6 +131,19 @@ export const route = async (request: IncomingMessage, url: URL, vaultPath: strin
     }
 
     return createResponse(createJsonResponse({ node }), 200, contentTypes['.json'])
+  }
+
+  if (isReadMethod(request) && url.pathname === '/api/graph-filter') {
+    const query = url.searchParams.get('q')?.trim() ?? ''
+    const limit = parsePositiveInteger(url.searchParams.get('limit'), 1200)
+
+    if (!query) {
+      return createResponse(createJsonResponse({ query, nodeIds: [] }), 200, contentTypes['.json'])
+    }
+
+    const nodeIds = await searchGraphNodeIds(vaultPath, query, limit, readAgentQuery(url))
+
+    return createResponse(createJsonResponse({ query, nodeIds }), 200, contentTypes['.json'])
   }
 
   if (isReadMethod(request) && url.pathname === '/api/agents') {
