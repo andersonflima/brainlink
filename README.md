@@ -558,6 +558,9 @@ The graph UI shows:
 - neutral graph nodes with segment/group metadata
 - agent selector for isolated views
 - realtime refresh while `--watch` is enabled
+- graph controls for zoom in, zoom out, fit visible nodes and reset-to-fit-all
+- wheel zoom anchored to cursor position for faster navigation in large graphs
+- independent scrolling on metadata panels (tags, notes, outgoing, backlinks) to avoid overlap with large datasets
 
 The server indexes before starting by default. Use `--no-index` to skip that step:
 

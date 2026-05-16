@@ -140,14 +140,14 @@ select {
 
 .inspector {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
-  gap: 22px;
+  grid-template-rows: auto auto minmax(120px, 0.8fr) repeat(3, minmax(140px, 1fr));
+  gap: 16px;
   min-width: 0;
   height: 100%;
   padding: 24px;
   border-left: 1px solid var(--line);
   background: var(--panel);
-  overflow: auto;
+  overflow: hidden;
 }
 
 .inspector h1,
@@ -175,6 +175,7 @@ select {
   margin-top: 10px;
   color: var(--muted);
   line-height: 1.45;
+  word-break: break-word;
   overflow-wrap: anywhere;
 }
 
@@ -215,7 +216,30 @@ select {
   background: var(--accent-weak);
   color: var(--accent);
   font-size: 12px;
+  word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+.inspector-section {
+  min-height: 0;
+  padding: 12px 12px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.inspector-section ul {
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.inspector-section .tags {
+  overflow: auto;
+  align-content: flex-start;
+  padding-right: 4px;
 }
 
 ul {
@@ -230,6 +254,7 @@ li {
   padding: 10px 0;
   border-bottom: 1px solid var(--line);
   color: var(--text);
+  word-break: break-word;
   overflow-wrap: anywhere;
 }
 
@@ -351,6 +376,8 @@ li small {
     border-left: 0;
     border-top: 1px solid var(--line);
     padding: 18px;
+    overflow: auto;
+    grid-template-rows: auto auto minmax(120px, 0.8fr) repeat(3, minmax(140px, 38svh));
   }
 
   .topbar {
