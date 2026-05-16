@@ -10,6 +10,12 @@ type AddNoteOptions = {
   readonly allowSensitive?: boolean
 }
 
+export type AddNoteResult = {
+  readonly path: string
+  readonly autoLinked: boolean
+  readonly linkTarget: string | null
+}
+
 const slugify = (title: string): string =>
   title
     .normalize('NFKD')
@@ -64,11 +70,15 @@ const ensureNonOrphanContent = async (
   title: string,
   content: string,
   agentId: string
-): Promise<string> => {
+): Promise<{ readonly content: string; readonly autoLinked: boolean; readonly linkTarget: string | null }> => {
   const links = extractWikiLinks(content).filter((link) => normalizeTitle(link) !== normalizeTitle(title))
 
   if (links.length > 0) {
-    return content.trim()
+    return {
+      content: content.trim(),
+      autoLinked: false,
+      linkTarget: null
+    }
   }
 
   const fallbackTitle = normalizeTitle(title) === normalizeTitle(systemHubTitle) ? systemRootTitle : systemHubTitle
@@ -91,16 +101,20 @@ const ensureNonOrphanContent = async (
     )
   }
 
-  return `${content.trim()}\n\nRelated: [[${fallbackTitle}]]`
+  return {
+    content: `${content.trim()}\n\nRelated: [[${fallbackTitle}]]`,
+    autoLinked: true,
+    linkTarget: fallbackTitle
+  }
 }
 
-export const addNote = async (
+export const addNoteWithMetadata = async (
   vaultPath: string,
   title: string,
   content: string,
   agentId = sharedAgentId,
   options: AddNoteOptions = {}
-): Promise<string> => {
+): Promise<AddNoteResult> => {
   validateNoteInput({
     title,
     content,
@@ -111,7 +125,20 @@ export const addNote = async (
   const absoluteVaultPath = await ensureVault(vaultPath)
   const filename = `agents/${sanitizedAgentId}/${slugify(title) || 'untitled'}.md`
   const linkedContent = await ensureNonOrphanContent(vaultPath, absoluteVaultPath, title, content, sanitizedAgentId)
-  const note = buildNote(title, linkedContent, sanitizedAgentId)
+  const note = buildNote(title, linkedContent.content, sanitizedAgentId)
+  const path = await writeMarkdownFile(vaultPath, filename, note)
 
-  return writeMarkdownFile(vaultPath, filename, note)
+  return {
+    path,
+    autoLinked: linkedContent.autoLinked,
+    linkTarget: linkedContent.linkTarget
+  }
 }
+
+export const addNote = async (
+  vaultPath: string,
+  title: string,
+  content: string,
+  agentId = sharedAgentId,
+  options: AddNoteOptions = {}
+): Promise<string> => (await addNoteWithMetadata(vaultPath, title, content, agentId, options)).path

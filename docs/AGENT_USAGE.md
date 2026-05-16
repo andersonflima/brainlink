@@ -600,10 +600,12 @@ Recommended start of every memory-dependent task: call `brainlink_bootstrap` fir
 MCP startup also bootstraps the configured default vault/agent automatically (`autoBootstrapOnStartup=true`), so sessions start warm without manual calls.
 If `autoBootstrapOnRead` is disabled through `brainlink_policy`, read tools return preflight-required responses.
 `brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so clients can continue tool flows automatically.
+`brainlink_policy` also accepts policy presets (`fully-auto`, `strict`) so MCP clients can switch behavior in one call.
 
 MCP clients can pass `vault` and `agent` arguments per tool call. Set `BRAINLINK_ALLOWED_VAULTS` when exposing Brainlink to an external agent process so a tool cannot pass arbitrary vault paths:
 
 `brainlink_graph` returns weighted edges. Agents should prefer higher `weight` and stronger `priority` when deciding which related notes matter most.
+`brainlink_add_note` and `brainlink_add_file` return `writeConnectivity` metadata and guarantee at least one edge for new notes.
 
 ```bash
 export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault"

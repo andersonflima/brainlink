@@ -57,7 +57,10 @@ describe('brainlink mcp integration', () => {
       expect(addResult.structuredContent).toMatchObject({
         vault,
         title: 'Architecture',
-        agent: 'coding-agent'
+        agent: 'coding-agent',
+        writeConnectivity: {
+          guaranteedEdge: true
+        }
       })
 
       const contextResult = await client.callTool({
@@ -162,7 +165,7 @@ describe('brainlink mcp integration', () => {
         arguments: {
           vault,
           agent: 'coding-agent',
-          autoBootstrapOnRead: false
+          preset: 'strict'
         }
       })
 
@@ -329,6 +332,62 @@ describe('brainlink mcp integration', () => {
           ready: true,
           stale: false
         })
+      })
+    } finally {
+      await client.close()
+    }
+  }, 20000)
+
+  it('applies policy presets through MCP tool', async () => {
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-mcp-policy-preset-vault-'))
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-mcp-policy-preset-home-'))
+    tempPaths.push(vault, brainlinkHome)
+
+    const client = new Client({ name: 'brainlink-test-policy-preset', version: '1.0.0' })
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', tsxLoader, mcpEntryPoint],
+      cwd: projectPath,
+      env: {
+        ...process.env,
+        BRAINLINK_HOME: brainlinkHome
+      },
+      stderr: 'pipe'
+    })
+
+    await client.connect(transport)
+
+    try {
+      const strictResult = await client.callTool({
+        name: 'brainlink_policy',
+        arguments: {
+          vault,
+          preset: 'strict'
+        }
+      })
+      expect(strictResult.structuredContent).toMatchObject({
+        presetApplied: 'strict',
+        policy: {
+          enforceBootstrap: true,
+          autoBootstrapOnRead: false,
+          autoBootstrapOnStartup: false
+        }
+      })
+
+      const autoResult = await client.callTool({
+        name: 'brainlink_policy',
+        arguments: {
+          vault,
+          preset: 'fully-auto'
+        }
+      })
+      expect(autoResult.structuredContent).toMatchObject({
+        presetApplied: 'fully-auto',
+        policy: {
+          enforceBootstrap: true,
+          autoBootstrapOnRead: true,
+          autoBootstrapOnStartup: true
+        }
       })
     } finally {
       await client.close()
