@@ -592,7 +592,8 @@ Available MCP tools:
 - `brainlink_broken_links`
 - `brainlink_orphans`
 
-Recommended start of every memory-dependent task: call `brainlink_bootstrap` first, then `brainlink_context` only when additional retrieval is needed. By default, Brainlink enforces bootstrap for MCP read tools and returns a preflight response when bootstrap is missing or stale.
+Recommended start of every memory-dependent task: call `brainlink_bootstrap` first, then `brainlink_context` only when additional retrieval is needed. By default, Brainlink enforces bootstrap for MCP read tools and auto-runs bootstrap on reads when state is missing or stale (`autoBootstrapOnRead=true`).
+If `autoBootstrapOnRead` is disabled through `brainlink_policy`, read tools return preflight-required responses.
 `brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so clients can continue tool flows automatically.
 
 MCP clients can pass `vault` and `agent` arguments per tool call. Set `BRAINLINK_ALLOWED_VAULTS` when exposing Brainlink to an external agent process so a tool cannot pass arbitrary vault paths:
