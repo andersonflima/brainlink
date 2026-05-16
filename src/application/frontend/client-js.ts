@@ -1,9 +1,14 @@
 export const createClientJs = (): string => `const canvas = document.getElementById('graph')
 const ctx = canvas.getContext('2d')
+const largeGraphNodeThreshold = 4000
+const largeGraphEdgeRenderLimit = 16000
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
   edges: [],
+  visibleNodes: [],
+  visibleEdges: [],
+  nodeDegrees: new Map(),
   selected: null,
   hovered: null,
   query: '',
@@ -102,11 +107,18 @@ const filteredNodes = () => {
   return localFilteredNodes(query)
 }
 
-const visibleIds = () => new Set(filteredNodes().map(node => node.id))
+const recomputeVisibility = () => {
+  const nodes = filteredNodes()
+  const ids = new Set(nodes.map(node => node.id))
+  const edges = state.edges.filter(edge => ids.has(edge.source) && edge.target && ids.has(edge.target))
+  const limitedEdges = state.nodes.length > largeGraphNodeThreshold
+    ? [...edges]
+      .sort((left, right) => edgeWeight(right) - edgeWeight(left))
+      .slice(0, largeGraphEdgeRenderLimit)
+    : edges
 
-const visibleEdges = () => {
-  const ids = visibleIds()
-  return state.edges.filter(edge => ids.has(edge.source) && edge.target && ids.has(edge.target))
+  state.visibleNodes = nodes
+  state.visibleEdges = limitedEdges
 }
 
 const edgeWeight = edge => Number.isFinite(edge.weight) ? Math.max(1, edge.weight) : 1
@@ -205,6 +217,7 @@ const resetContentFilter = () => {
     token: state.contentFilter.token + 1,
     timer: null
   }
+  recomputeVisibility()
 }
 
 const syncContentFilter = async (query, token) => {
@@ -228,6 +241,7 @@ const syncContentFilter = async (query, token) => {
 
   state.contentFilter.query = query
   state.contentFilter.ids = new Set(nodeIds)
+  recomputeVisibility()
 }
 
 const scheduleContentFilterSync = () => {
@@ -253,9 +267,11 @@ const scheduleContentFilterSync = () => {
 }
 
 const tick = delta => {
-  const nodes = filteredNodes()
-  const ids = new Set(nodes.map(node => node.id))
-  const edges = state.edges.filter(edge => ids.has(edge.source) && edge.target && ids.has(edge.target))
+  const nodes = state.visibleNodes
+  const edges = state.visibleEdges
+  if (nodes.length > 1200) {
+    return
+  }
   const strength = Math.min(delta / 16, 2)
 
   edges.forEach(edge => {
@@ -314,7 +330,11 @@ const worldPoint = event => {
 }
 
 const hitNode = point => {
-  const nodes = filteredNodes()
+  if (state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.55) {
+    return null
+  }
+
+  const nodes = state.visibleNodes
   for (let index = nodes.length - 1; index >= 0; index -= 1) {
     const node = nodes[index]
     const radius = nodeRadius(node)
@@ -324,13 +344,18 @@ const hitNode = point => {
 }
 
 const nodeRadius = node => {
-  const degree = state.edges.filter(edge => edge.source === node.id || edge.target === node.id).length
+  const degree = state.nodeDegrees.get(node.id) ?? 0
   return 9 + Math.min(degree, 8) * 1.6
 }
 
 const render = now => {
   const delta = now - state.last
   state.last = now
+  const minFrameIntervalMs = state.nodes.length > largeGraphNodeThreshold ? 180 : 16
+  if (delta < minFrameIntervalMs) {
+    requestAnimationFrame(render)
+    return
+  }
   const rect = canvas.getBoundingClientRect()
   const width = Math.max(rect.width, 320)
   const height = Math.max(rect.height, 320)
@@ -347,7 +372,10 @@ const render = now => {
   ctx.translate(state.transform.x, state.transform.y)
   ctx.scale(state.transform.scale, state.transform.scale)
 
-  visibleEdges().forEach(edge => {
+  tick(delta)
+  const drawEdges = !(state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.22)
+  if (drawEdges) {
+    state.visibleEdges.forEach(edge => {
     const selectedEdge = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
     ctx.beginPath()
     ctx.moveTo(edge.sourceNode.x, edge.sourceNode.y)
@@ -355,9 +383,10 @@ const render = now => {
     ctx.strokeStyle = selectedEdge ? graphTheme.edgeActive : graphTheme.edge
     ctx.lineWidth = (selectedEdge ? 1.8 : 1) + Math.min(edgeWeight(edge) - 1, 8) * 0.22
     ctx.stroke()
-  })
+    })
+  }
 
-  filteredNodes().forEach(node => {
+  state.visibleNodes.forEach(node => {
     const radius = nodeRadius(node)
     const isSelected = state.selected?.id === node.id
     const isHovered = state.hovered?.id === node.id
@@ -373,7 +402,11 @@ const render = now => {
     ctx.strokeStyle = isSelected ? graphTheme.nodeStrokeActive : graphTheme.nodeStroke
     ctx.stroke()
 
-    if (isSelected || isHovered || state.transform.scale > 1.18 || state.nodes.length <= 25) {
+    const shouldDrawLabels =
+      isSelected ||
+      isHovered ||
+      (state.nodes.length <= largeGraphNodeThreshold && (state.transform.scale > 1.18 || state.nodes.length <= 25))
+    if (shouldDrawLabels) {
       ctx.fillStyle = graphTheme.label
       ctx.font = '12px Inter, system-ui, sans-serif'
       ctx.textAlign = 'center'
@@ -483,6 +516,7 @@ const bindEvents = () => {
   window.addEventListener('resize', resize)
   elements.search.addEventListener('input', event => {
     state.query = event.target.value
+    recomputeVisibility()
     scheduleContentFilterSync()
   })
   elements.agent.addEventListener('change', event => {
@@ -490,6 +524,7 @@ const bindEvents = () => {
     state.selected = null
     state.nodeDetails = new Map()
     resetContentFilter()
+    recomputeVisibility()
     scheduleContentFilterSync()
     loadGraph({ reset: true }).catch(error => {
       console.error(error)
@@ -504,9 +539,13 @@ const bindEvents = () => {
     zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.84)
   })
   if (elements.fit) {
-    elements.fit.addEventListener('click', () => fitView({ useFiltered: true }))
+    elements.fit.addEventListener('click', () => {
+      fitView({ useFiltered: true })
+    })
   }
-  elements.reset.addEventListener('click', resetView)
+  elements.reset.addEventListener('click', () => {
+    resetView()
+  })
   elements.contentClose.addEventListener('click', () => elements.contentDialog.close())
   elements.contentDialog.addEventListener('click', event => {
     const target = event.target
@@ -602,8 +641,16 @@ const loadGraph = async (options = { reset: false }) => {
   state.graph = graph
   state.nodes = layout.nodes
   state.edges = layout.edges
+  state.nodeDegrees = state.edges.reduce((degrees, edge) => {
+    degrees.set(edge.source, (degrees.get(edge.source) ?? 0) + edgeWeight(edge))
+    if (edge.target) {
+      degrees.set(edge.target, (degrees.get(edge.target) ?? 0) + edgeWeight(edge))
+    }
+    return degrees
+  }, new Map())
   state.nodeDetails = new Map()
   resetContentFilter()
+  recomputeVisibility()
   scheduleContentFilterSync()
   const tags = new Set(graph.nodes.flatMap(node => node.tags))
   setGraphStatus(state.agentId + ' · ' + graph.nodes.length + ' notes · ' + graph.edges.length + ' links · live')

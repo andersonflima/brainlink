@@ -58,6 +58,7 @@ LLMs do not have infinite context. Brainlink gives agents an external memory lay
 
 Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable index.
 Brainlink now keeps an automatic rollback snapshot at `.brainlink/brainlink.db.backup`. If the main SQLite file is corrupted, Brainlink automatically restores from snapshot (or recreates a clean index when no snapshot exists).
+After each index run, Brainlink also writes compressed search packs at `.brainlink/search-packs/*.jsonl.gz`. If SQLite is unavailable, search falls back to these packs automatically.
 
 ## Features
 
@@ -563,6 +564,7 @@ The graph UI shows:
 - graph controls for zoom in, zoom out, fit visible nodes and reset-to-fit-all
 - wheel zoom anchored to cursor position for faster navigation in large graphs
 - floating graph totals (notes, links, tags) below the Brainlink title
+- large-graph rendering safeguards (edge draw caps, lower redraw rate, zoom-aware interaction)
 
 The server indexes before starting by default. Use `--no-index` to skip that step:
 

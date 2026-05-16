@@ -635,6 +635,7 @@ GET  /api/validate
 The HTTP API is read-only. Use the CLI for writes and indexing.
 
 Brainlink maintains an automatic SQLite rollback snapshot at `.brainlink/brainlink.db.backup`. When `.brainlink/brainlink.db` is corrupted, Brainlink restores from snapshot automatically or recreates a clean index if no snapshot exists yet.
+Indexing also writes compressed search packs at `.brainlink/search-packs/*.jsonl.gz`; when SQLite cannot be opened, Brainlink falls back to pack-based search automatically.
 
 ## Agent Integration Contract
 

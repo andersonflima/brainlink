@@ -301,6 +301,7 @@ Markdown keeps the system portable, inspectable, Git-friendly, and compatible wi
 SQLite gives fast local search, local vector storage and rebuildable retrieval without forcing users to run external infrastructure.
 Hybrid retrieval also uses a short-lived in-memory cache keyed by vault/query/agent and invalidated by index file mtime to reduce repeated query latency.
 Brainlink also writes a local rollback snapshot (`.brainlink/brainlink.db.backup`) after successful indexing. On corruption detection (`quick_check`/SQLite malformed errors), Brainlink restores from snapshot automatically before reopening the index.
+Indexing additionally exports compressed pack files (`.brainlink/search-packs/*.jsonl.gz`) from indexed chunks. Search falls back to these packs when SQLite is unavailable, preserving retrieval continuity in degraded mode.
 
 ### CLI First
 
