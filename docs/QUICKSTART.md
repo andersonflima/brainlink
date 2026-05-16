@@ -13,6 +13,7 @@ npm install -g @andespindola/brainlink@latest
 ```bash
 blink agent install --self-test
 blink agent upgrade
+blink agent policy --preset fully-auto
 blink agent status
 ```
 

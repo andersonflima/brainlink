@@ -601,6 +601,8 @@ Every command works with either `brainlink` or `blink`.
 blink agent install
 blink agent install --self-test
 blink agent upgrade
+blink agent policy --preset fully-auto
+blink agent policy --preset strict
 blink agent install --plugin-path ./plugins/brainlink
 blink agent install --mcp-only --allowed-vaults "/absolute/vault,/absolute/team-vault"
 blink agent status
@@ -610,6 +612,7 @@ Installs/checks agent integration. `install` writes Brainlink MCP config into `~
 When plugin files are available, it also links Brainlink plugin files into `~/plugins/brainlink` and updates `~/.agents/plugins/marketplace.json`.
 With `--self-test`, install also validates MCP block presence, command wiring and local plugin registration signals.
 Use `agent upgrade` on legacy installations to reapply current defaults and run the same self-test diagnostics.
+Use `agent policy --preset fully-auto` for plug-and-play defaults, or `agent policy --preset strict` to require explicit bootstrap calls.
 
 ### `quickstart`
 

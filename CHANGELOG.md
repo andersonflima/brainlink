@@ -12,6 +12,7 @@
 - Added structured MCP `nextActions` in bootstrap/policy/preflight responses for automatic client continuation.
 - Added default MCP read auto-bootstrap behavior controlled by `brainlink_policy.autoBootstrapOnRead`.
 - Added default MCP startup bootstrap behavior controlled by `brainlink_policy.autoBootstrapOnStartup`.
+- Added CLI MCP policy presets through `blink agent policy --preset fully-auto|strict`.
 - Improved graph/index robustness by splitting oversized paragraphs into bounded chunks and dropping self-referential links.
 - Added `agentProfiles` configuration support so CLI and MCP can resolve per-agent defaults for mode/limit/tokens.
 - Added short-lived hybrid search cache with automatic invalidation on index changes.

@@ -74,6 +74,15 @@ export type AgentStatusOptions = {
   readonly agent?: string
 }
 
+export type AgentPolicyOptions = {
+  readonly json?: boolean
+  readonly preset?: string
+  readonly enforceBootstrap?: string
+  readonly autoBootstrapOnRead?: string
+  readonly autoBootstrapOnStartup?: string
+  readonly staleAfterMinutes?: string
+}
+
 export type QuickstartOptions = VaultOptions & {
   readonly query?: string
   readonly mode?: string
