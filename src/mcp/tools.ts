@@ -304,6 +304,15 @@ export const policyInputSchema = {
   staleAfterMinutes: positiveInteger(120).describe('Bootstrap freshness window in minutes before read tools require a new bootstrap.')
 }
 
+export const recommendationsInputSchema = {
+  ...vaultInput,
+  ...agentInput,
+  ...searchModeInput,
+  query: z.string().min(1).optional().describe('Optional current task query to generate context-focused recommendations.'),
+  limit: optionalPositiveInteger().describe('Optional context limit override for generated recommendations.'),
+  tokens: optionalPositiveInteger().describe('Optional context token budget override for generated recommendations.')
+}
+
 export const contextTool = async (input: z.infer<z.ZodObject<typeof contextInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
   const readiness = await ensureBootstrapReady(context, input, 'brainlink_context')
@@ -701,4 +710,102 @@ export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSc
     bootstrapStatus,
     ...(input.preset ? { presetApplied: input.preset } : {})
   }, nextActions))
+}
+
+export const recommendationsTool = async (
+  input: z.infer<z.ZodObject<typeof recommendationsInputSchema>>
+): Promise<CallToolResult> => {
+  const context = await resolveExecutionContext(input)
+  const policy = await getBootstrapPolicy()
+  const bootstrapStatus = await getBootstrapSessionStatus(context.vault, context.agent)
+  const stats = await getStats(context.vault, context.agent)
+  const mode = sanitizeSearchMode(input.mode, context.defaults.defaultSearchMode)
+  const limit = input.limit ?? context.defaults.defaultSearchLimit
+  const tokens = input.tokens ?? context.defaults.defaultContextTokens
+  const query = input.query?.trim()
+
+  const recommendations: readonly NextAction[] = [
+    ...(policy.enforceBootstrap && (!policy.autoBootstrapOnRead || !policy.autoBootstrapOnStartup)
+      ? [
+          {
+            tool: 'brainlink_policy',
+            reason: 'Enable fully automatic bootstrap for plug-and-play agent usage.',
+            args: {
+              preset: 'fully-auto'
+            }
+          }
+        ]
+      : []),
+    ...(!bootstrapStatus.ready && !policy.autoBootstrapOnRead
+      ? [
+          {
+            tool: 'brainlink_bootstrap',
+            reason: 'Bootstrap is required before read tools when auto-bootstrap-on-read is disabled.',
+            args: {
+              vault: context.vault,
+              ...(context.agent ? { agent: context.agent } : {}),
+              mode,
+              ...(query ? { query } : {})
+            }
+          }
+        ]
+      : []),
+    ...(stats.documentCount === 0
+      ? [
+          {
+            tool: 'brainlink_add_note',
+            reason: 'Seed the vault with a first durable note so retrieval can return useful context.',
+            args: {
+              vault: context.vault,
+              ...(context.agent ? { agent: context.agent } : {}),
+              title: 'Architecture',
+              content: 'Seed durable memory with explicit [[links]] and #tags.'
+            }
+          },
+          {
+            tool: 'brainlink_index',
+            reason: 'Rebuild index after writing the first notes.',
+            args: {
+              vault: context.vault
+            }
+          }
+        ]
+      : []),
+    {
+      tool: 'brainlink_context',
+      reason: 'Retrieve grounded memory context before responding.',
+      args: {
+        vault: context.vault,
+        ...(context.agent ? { agent: context.agent } : {}),
+        query: query ?? '<task>',
+        mode,
+        limit,
+        tokens
+      }
+    },
+    {
+      tool: 'brainlink_add_note',
+      reason: 'Persist durable outcomes after task completion (write responses include connectivity metadata).',
+      args: {
+        vault: context.vault,
+        ...(context.agent ? { agent: context.agent } : {}),
+        title: 'Task Update',
+        content: 'Durable findings connected to [[existing notes]].'
+      }
+    }
+  ]
+
+  return jsonResult({
+    vault: context.vault,
+    agent: context.agent,
+    defaults: {
+      mode,
+      limit,
+      tokens
+    },
+    policy,
+    bootstrapStatus,
+    stats,
+    recommendations
+  })
 }

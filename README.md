@@ -508,6 +508,7 @@ Available tools:
 
 - `brainlink_bootstrap`: plug-and-play entrypoint that runs index + health checks and can return context in one call.
 - `brainlink_policy`: read or update bootstrap enforcement policy, including presets (`preset: "fully-auto" | "strict"`).
+- `brainlink_recommendations`: return an automatic action plan so agents can run Brainlink in the recommended order.
 - `brainlink_context`: read indexed context for a task or question.
 - `brainlink_search`: search indexed notes.
 - `brainlink_add_note`: write durable Markdown memory and reindex.
@@ -525,6 +526,7 @@ By default, MCP startup already runs bootstrap on the configured default vault/a
 By default, Brainlink enforces bootstrap and auto-runs it for read tools when session state is missing or stale (`autoBootstrapOnRead=true`).
 If you disable `autoBootstrapOnRead` through `brainlink_policy`, read tools return a preflight instruction with suggested `brainlink_bootstrap` arguments.
 `brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so MCP clients can continue automatically without custom parsing.
+For one-call planning, use `brainlink_recommendations` to get the recommended tool sequence for the current vault/agent/query.
 
 The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]`. `brainlink_add_note` and `brainlink_add_file` reindex by default and include index + `writeConnectivity` metadata. Brainlink guarantees at least one edge per new note by auto-linking when needed.
 
