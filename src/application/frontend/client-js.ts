@@ -24,15 +24,8 @@ const escapeHtml = value => String(value)
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;')
 const elements = {
-  stats: byId('stats'),
   search: byId('search'),
   agent: byId('agent'),
-  title: byId('title'),
-  path: byId('path'),
-  tags: byId('tags'),
-  notes: byId('notes'),
-  outgoing: byId('outgoing'),
-  incoming: byId('incoming'),
   nodeCount: byId('nodeCount'),
   edgeCount: byId('edgeCount'),
   tagCount: byId('tagCount'),
@@ -43,6 +36,9 @@ const elements = {
   contentDialog: byId('contentDialog'),
   contentTitle: byId('contentTitle'),
   contentPath: byId('contentPath'),
+  contentTags: byId('contentTags'),
+  contentOutgoing: byId('contentOutgoing'),
+  contentIncoming: byId('contentIncoming'),
   contentBody: byId('contentBody'),
   contentClose: byId('contentClose')
 }
@@ -56,17 +52,9 @@ const agentQuery = () => state.agentId ? '?agent=' + encodeURIComponent(state.ag
 
 const setGraphStatus = text => {
   state.graphStatus = text
-  elements.stats.textContent = text
 }
 
 const handleGraphRefreshError = error => {
-  if (state.graphSignature) {
-    elements.stats.textContent = state.graphStatus
-    console.error(error)
-    return
-  }
-
-  elements.stats.textContent = 'Failed to load graph'
   console.error(error)
 }
 
@@ -334,31 +322,7 @@ const list = items => items.length
   ? items.map(item => '<li>' + (item.id ? '<button type="button" data-node-id="' + escapeHtml(item.id) + '">' + escapeHtml(item.title) + '</button>' : escapeHtml(item.title)) + '<small>' + escapeHtml(item.path) + (item.weight ? ' · weight ' + escapeHtml(item.weight) + ' · ' + escapeHtml(item.priority || 'normal') : '') + '</small></li>').join('')
   : '<li><small>No links found.</small></li>'
 
-const allNotesList = () => state.nodes.length
-  ? state.nodes.map(node => '<li><button type="button" data-node-id="' + escapeHtml(node.id) + '">' + escapeHtml(node.title) + '</button><small>' + escapeHtml(node.path) + '</small></li>').join('')
-  : '<li><small>No notes indexed.</small></li>'
-
-const openContentDialog = node => {
-  if (!node) return
-  elements.contentTitle.textContent = node.title
-  elements.contentPath.textContent = node.path
-  elements.contentBody.textContent = node.content
-  if (!elements.contentDialog.open) {
-    elements.contentDialog.showModal()
-  }
-}
-
-const selectNode = (node, options = { openContent: false }) => {
-  state.selected = node
-  if (!node) {
-    elements.title.textContent = 'Graph Overview'
-    elements.path.textContent = state.nodes.length + ' notes and ' + state.graph.edges.length + ' links indexed.'
-    elements.tags.innerHTML = ''
-    elements.notes.innerHTML = allNotesList()
-    elements.outgoing.innerHTML = '<li><small>Select a note to inspect outgoing links.</small></li>'
-    elements.incoming.innerHTML = '<li><small>Select a note to inspect backlinks.</small></li>'
-    return
-  }
+const linkedNodes = node => {
   const nodeById = new Map(state.nodes.map(item => [item.id, item]))
   const withEdgeMeta = (linkedNode, edge) => linkedNode ? {
     ...linkedNode,
@@ -374,15 +338,28 @@ const selectNode = (node, options = { openContent: false }) => {
     .map(edge => withEdgeMeta(nodeById.get(edge.source), edge))
     .filter(Boolean)
 
-  elements.title.textContent = node.title
-  elements.path.textContent = node.path
-  elements.tags.innerHTML = node.tags.length
+  return { outgoing, incoming }
+}
+
+const openContentDialog = node => {
+  if (!node) return
+  const { outgoing, incoming } = linkedNodes(node)
+  elements.contentTitle.textContent = node.title
+  elements.contentPath.textContent = node.path
+  elements.contentTags.innerHTML = node.tags.length
     ? node.tags.map(tag => '<span>#' + escapeHtml(tag) + '</span>').join('')
     : '<span>No tags</span>'
-  elements.notes.innerHTML = allNotesList()
-  elements.outgoing.innerHTML = list(outgoing)
-  elements.incoming.innerHTML = list(incoming)
-  if (options.openContent) openContentDialog(node)
+  elements.contentOutgoing.innerHTML = list(outgoing)
+  elements.contentIncoming.innerHTML = list(incoming)
+  elements.contentBody.textContent = node.content
+  if (!elements.contentDialog.open) {
+    elements.contentDialog.showModal()
+  }
+}
+
+const selectNode = (node, options = { openContent: false }) => {
+  state.selected = node
+  if (node && options.openContent) openContentDialog(node)
 }
 
 const selectNodeById = id => {
@@ -404,15 +381,11 @@ const bindEvents = () => {
   window.addEventListener('resize', resize)
   elements.search.addEventListener('input', event => {
     state.query = event.target.value
-    elements.stats.textContent = state.query
-      ? filteredNodes().length + ' filtered notes'
-      : state.nodes.length + ' notes · ' + state.edges.length + ' links'
   })
   elements.agent.addEventListener('change', event => {
     state.agentId = event.target.value
     state.selected = null
     loadGraph({ reset: true }).catch(error => {
-      elements.stats.textContent = 'Failed to load agent graph'
       console.error(error)
     })
   })
@@ -430,15 +403,12 @@ const bindEvents = () => {
   elements.reset.addEventListener('click', resetView)
   elements.contentClose.addEventListener('click', () => elements.contentDialog.close())
   elements.contentDialog.addEventListener('click', event => {
+    const target = event.target
+    if (target instanceof HTMLElement && target.dataset.nodeId) {
+      selectNodeById(target.dataset.nodeId)
+      return
+    }
     if (event.target === elements.contentDialog) elements.contentDialog.close()
-  })
-  ;[elements.notes, elements.outgoing, elements.incoming].forEach(element => {
-    element.addEventListener('click', event => {
-      const target = event.target
-      if (!(target instanceof HTMLElement)) return
-      const nodeId = target.dataset.nodeId
-      if (nodeId) selectNodeById(nodeId)
-    })
   })
   canvas.addEventListener('wheel', event => {
     event.preventDefault()
@@ -533,7 +503,11 @@ const loadGraph = async (options = { reset: false }) => {
   elements.tagCount.textContent = tags.size
   resize()
   if (options.reset) resetView()
-  selectNode(state.nodes.find(node => node.id === selectedId) ?? null)
+  const selectedNode = state.nodes.find(node => node.id === selectedId) ?? null
+  selectNode(selectedNode, { openContent: Boolean(selectedNode && elements.contentDialog.open) })
+  if (!selectedNode && elements.contentDialog.open) {
+    elements.contentDialog.close()
+  }
 }
 
 bindEvents()
@@ -567,7 +541,6 @@ loadAgents()
     setInterval(refreshGraphLoop, pollIntervalMs)
   })
   .catch(error => {
-    elements.stats.textContent = 'Failed to load graph'
     console.error(error)
   })
 

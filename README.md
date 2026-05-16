@@ -553,14 +553,13 @@ The graph UI shows:
 
 - notes as nodes
 - `[[wiki links]]` as weighted edges
-- backlinks and outgoing links
-- full Markdown content for the selected note
+- details opened on node click (tags, outgoing links, backlinks, full Markdown content)
 - neutral graph nodes with segment/group metadata
 - agent selector for isolated views
 - realtime refresh while `--watch` is enabled
 - graph controls for zoom in, zoom out, fit visible nodes and reset-to-fit-all
 - wheel zoom anchored to cursor position for faster navigation in large graphs
-- independent scrolling on metadata panels (tags, notes, outgoing, backlinks) to avoid overlap with large datasets
+- floating graph totals (notes, links, tags) below the Brainlink title
 
 The server indexes before starting by default. Use `--no-index` to skip that step:
 
