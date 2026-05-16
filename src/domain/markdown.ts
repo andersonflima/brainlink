@@ -148,11 +148,15 @@ export const extractWikiLinkReferences = (content: string): readonly WikiLinkRef
 const priorityFromWeight = (weight: number): LinkPriority =>
   weight >= 8 ? 'critical' : weight >= 4 ? 'high' : 'normal'
 
+const normalizeAccumulatedWeight = (weight: number): number =>
+  Math.max(1, Math.min(12, weight))
+
 export const extractWikiLinkWeights = (content: string): readonly WikiLinkWeight[] => {
   const weights = extractWikiLinkReferences(content).reduce<Map<string, WikiLinkWeight>>((state, reference) => {
     const titleKey = reference.title.toLowerCase()
     const current = state.get(titleKey)
-    const weight = (current?.weight ?? 0) + reference.weight
+    const rawWeight = (current?.weight ?? 0) + reference.weight
+    const weight = normalizeAccumulatedWeight(rawWeight)
     const explicitPriority = reference.priority
       ? maxPriority(current?.priority ?? reference.priority, reference.priority)
       : current?.priority
@@ -202,10 +206,51 @@ const normalizeChunkContent = (content: string): string =>
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
+const splitLongParagraph = (paragraph: string, maxCharacters: number): readonly string[] => {
+  if (paragraph.length <= maxCharacters) {
+    return [paragraph]
+  }
+
+  const sentences = paragraph
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+
+  if (sentences.length <= 1) {
+    const chunks: string[] = []
+
+    for (let index = 0; index < paragraph.length; index += maxCharacters) {
+      chunks.push(paragraph.slice(index, index + maxCharacters).trim())
+    }
+
+    return chunks.filter(Boolean)
+  }
+
+  return sentences.reduce<readonly string[]>(
+    (state, sentence) => {
+      const last = state.at(-1)
+
+      if (!last) {
+        return [sentence]
+      }
+
+      const merged = `${last} ${sentence}`
+
+      if (merged.length <= maxCharacters) {
+        return [...state.slice(0, -1), merged]
+      }
+
+      return [...state, sentence]
+    },
+    []
+  )
+}
+
 export const splitIntoChunks = (documentId: string, content: string, maxCharacters = 1200): readonly KnowledgeChunk[] => {
   const paragraphs = normalizeChunkContent(stripFrontmatter(content))
     .split(/\n{2,}/)
     .filter(Boolean)
+    .flatMap((paragraph) => splitLongParagraph(paragraph, maxCharacters))
 
   const chunks = paragraphs.reduce<readonly string[]>(
     (state, paragraph) => {
@@ -264,13 +309,15 @@ export const createIndexedDocument = (
 ): IndexedDocument => {
   const chunks = splitIntoChunks(document.id, document.content, maxChunkCharacters)
   const linkWeights = new Map(extractWikiLinkWeights(document.content).map((link) => [link.title.toLowerCase(), link]))
-  const links = document.links.map<KnowledgeLink>((toTitle) => ({
-    fromDocumentId: document.id,
-    toTitle,
-    toDocumentId: titleToDocumentId.get(toTitle.toLowerCase()) ?? null,
-    weight: linkWeights.get(toTitle.toLowerCase())?.weight ?? 1,
-    priority: linkWeights.get(toTitle.toLowerCase())?.priority ?? 'normal'
-  }))
+  const links = document.links
+    .map<KnowledgeLink>((toTitle) => ({
+      fromDocumentId: document.id,
+      toTitle,
+      toDocumentId: titleToDocumentId.get(toTitle.toLowerCase()) ?? null,
+      weight: linkWeights.get(toTitle.toLowerCase())?.weight ?? 1,
+      priority: linkWeights.get(toTitle.toLowerCase())?.priority ?? 'normal'
+    }))
+    .filter((link) => link.toDocumentId !== document.id)
 
   return {
     document,

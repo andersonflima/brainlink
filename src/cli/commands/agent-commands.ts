@@ -196,6 +196,104 @@ const parseAllowedVaults = (value: string | undefined): string | undefined => {
   return normalized.length > 0 ? normalized.join(',') : undefined
 }
 
+export type InstallAgentIntegrationInput = {
+  readonly mcpOnly?: boolean
+  readonly pluginPath?: string
+  readonly allowedVaults?: string
+  readonly brainlinkHome?: string
+  readonly selfTest?: boolean
+}
+
+type InstallAgentIntegrationResult = {
+  readonly installed: true
+  readonly codexConfigPath: string
+  readonly mcpServer: 'brainlink'
+  readonly command: 'brainlink-mcp'
+  readonly pluginSourcePath?: string
+  readonly pluginSymlinkPath?: string
+  readonly marketplacePath?: string
+  readonly warnings?: readonly string[]
+  readonly selfTest?: {
+    readonly ok: boolean
+    readonly mcpCommandInPath: boolean
+    readonly hasMcpSection: boolean
+    readonly hasCommand: boolean
+    readonly pluginSymlinkExists: boolean | null
+    readonly marketplaceEntryExists: boolean | null
+  }
+}
+
+export const installAgentIntegration = async (input: InstallAgentIntegrationInput): Promise<InstallAgentIntegrationResult> => {
+  const codexConfigPath = getCodexConfigPath()
+  const allowedVaults = parseAllowedVaults(input.allowedVaults)
+  await upsertCodexMcpConfig(codexConfigPath, {
+    allowedVaults,
+    brainlinkHome: input.brainlinkHome
+  })
+
+  const warnings: string[] = []
+  const pluginSourcePath = input.pluginPath ? resolve(input.pluginPath) : getDefaultPluginSourcePath()
+  const pluginSymlinkPath = getPluginSymlinkPath()
+  const marketplacePath = getMarketplacePath()
+
+  if (input.mcpOnly !== true) {
+    try {
+      await ensurePluginSymlink(pluginSourcePath, pluginSymlinkPath)
+      await upsertMarketplacePlugin(marketplacePath)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      warnings.push(
+        `Plugin marketplace setup skipped: ${message}. MCP is configured, but install repository plugin files to enable local gallery auto-discovery.`
+      )
+    }
+  }
+
+  const selfTestResult = input.selfTest
+    ? await (async () => {
+        const codexConfig = await readFile(codexConfigPath, 'utf8')
+        const mcp = isBrainlinkConfigured(codexConfig)
+        const mcpCommandInPath = await hasMcpCommandInPath()
+        const pluginSymlinkExists =
+          input.mcpOnly === true
+            ? null
+            : await (async () => {
+                try {
+                  return (await lstat(pluginSymlinkPath)).isSymbolicLink()
+                } catch {
+                  return false
+                }
+              })()
+        const marketplaceEntryExists =
+          input.mcpOnly === true
+            ? null
+            : (await loadMarketplace(marketplacePath)).plugins.some((plugin) => plugin?.name === 'brainlink')
+
+        return {
+          ok:
+            mcp.hasMcpSection &&
+            mcp.hasCommand &&
+            mcpCommandInPath &&
+            (input.mcpOnly === true || (Boolean(pluginSymlinkExists) && Boolean(marketplaceEntryExists))),
+          mcpCommandInPath,
+          hasMcpSection: mcp.hasMcpSection,
+          hasCommand: mcp.hasCommand,
+          pluginSymlinkExists,
+          marketplaceEntryExists
+        }
+      })()
+    : undefined
+
+  return {
+    installed: true,
+    codexConfigPath,
+    mcpServer: 'brainlink',
+    command: 'brainlink-mcp',
+    ...(input.mcpOnly !== true ? { pluginSourcePath, pluginSymlinkPath, marketplacePath } : {}),
+    ...(selfTestResult ? { selfTest: selfTestResult } : {}),
+    ...(warnings.length > 0 ? { warnings } : {})
+  }
+}
+
 const hasMcpCommandInPath = async (): Promise<boolean> => {
   try {
     const { stdout } = await execFileAsync('sh', ['-lc', 'command -v brainlink-mcp'], { maxBuffer: 1024 * 1024 })
@@ -226,89 +324,51 @@ export const registerAgentCommands = (program: Command): void => {
     .option('--json', 'print machine-readable JSON')
     .description('install Brainlink as default MCP memory integration for the local agent')
     .action(async (options: AgentInstallOptions) => {
-      const codexConfigPath = getCodexConfigPath()
-      const allowedVaults = parseAllowedVaults(options.allowedVaults)
-      await upsertCodexMcpConfig(codexConfigPath, {
-        allowedVaults,
-        brainlinkHome: options.brainlinkHome
+      const result = await installAgentIntegration({
+        mcpOnly: options.mcpOnly,
+        pluginPath: options.pluginPath,
+        allowedVaults: options.allowedVaults,
+        brainlinkHome: options.brainlinkHome,
+        selfTest: options.selfTest
       })
 
-      const warnings: string[] = []
-      const pluginSourcePath = options.pluginPath ? resolve(options.pluginPath) : getDefaultPluginSourcePath()
-      const pluginSymlinkPath = getPluginSymlinkPath()
-      const marketplacePath = getMarketplacePath()
+      print(
+        options.json,
+        result,
+        () =>
+          [
+            `Installed Brainlink MCP at ${result.codexConfigPath}`,
+            ...(options.mcpOnly === true ? [] : [`Plugin symlink: ${result.pluginSymlinkPath}`, `Marketplace: ${result.marketplacePath}`]),
+            ...(result.selfTest ? [`Self-test: ${result.selfTest.ok ? 'ok' : 'failed'}`] : []),
+            ...(result.warnings && result.warnings.length > 0 ? ['Warnings:', ...result.warnings.map((warning) => `- ${warning}`)] : [])
+          ].join('\n')
+      )
+    })
 
-      if (options.mcpOnly !== true) {
-        try {
-          await ensurePluginSymlink(pluginSourcePath, pluginSymlinkPath)
-          await upsertMarketplacePlugin(marketplacePath)
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          warnings.push(
-            `Plugin marketplace setup skipped: ${message}. MCP is configured, but install repository plugin files to enable local gallery auto-discovery.`
-          )
-        }
-      }
-
-      const selfTest = options.selfTest
-        ? (() => {
-            const run = async () => {
-              const codexConfig = await readFile(codexConfigPath, 'utf8')
-              const mcp = isBrainlinkConfigured(codexConfig)
-              const mcpCommandInPath = await hasMcpCommandInPath()
-              const pluginSymlinkExists =
-                options.mcpOnly === true
-                  ? null
-                  : await (async () => {
-                      try {
-                        return (await lstat(pluginSymlinkPath)).isSymbolicLink()
-                      } catch {
-                        return false
-                      }
-                    })()
-              const marketplaceEntryExists =
-                options.mcpOnly === true
-                  ? null
-                  : (await loadMarketplace(marketplacePath)).plugins.some((plugin) => plugin?.name === 'brainlink')
-
-              return {
-                ok:
-                  mcp.hasMcpSection &&
-                  mcp.hasCommand &&
-                  mcpCommandInPath &&
-                  (options.mcpOnly === true || (Boolean(pluginSymlinkExists) && Boolean(marketplaceEntryExists))),
-                mcpCommandInPath,
-                hasMcpSection: mcp.hasMcpSection,
-                hasCommand: mcp.hasCommand,
-                pluginSymlinkExists,
-                marketplaceEntryExists
-              }
-            }
-
-            return run()
-          })()
-        : undefined
-
-      const selfTestResult = selfTest ? await selfTest : undefined
+  agent
+    .command('upgrade')
+    .option('--mcp-only', 'only configure MCP server in Codex config')
+    .option('--plugin-path <path>', 'custom source path for Brainlink plugin files')
+    .option('--allowed-vaults <paths>', 'comma separated vault allowlist to inject in MCP env')
+    .option('--brainlink-home <path>', 'BRAINLINK_HOME value to inject in MCP env')
+    .option('--json', 'print machine-readable JSON')
+    .description('reapply latest Brainlink agent integration defaults for legacy installs')
+    .action(async (options: AgentInstallOptions) => {
+      const result = await installAgentIntegration({
+        mcpOnly: options.mcpOnly,
+        pluginPath: options.pluginPath,
+        allowedVaults: options.allowedVaults,
+        brainlinkHome: options.brainlinkHome,
+        selfTest: true
+      })
 
       print(
         options.json,
         {
-          installed: true,
-          codexConfigPath,
-          mcpServer: 'brainlink',
-          command: 'brainlink-mcp',
-          ...(options.mcpOnly !== true ? { pluginSourcePath, pluginSymlinkPath, marketplacePath } : {}),
-          ...(selfTestResult ? { selfTest: selfTestResult } : {}),
-          ...(warnings.length > 0 ? { warnings } : {})
+          upgraded: true,
+          ...result
         },
-        () =>
-          [
-            `Installed Brainlink MCP at ${codexConfigPath}`,
-            ...(options.mcpOnly === true ? [] : [`Plugin symlink: ${pluginSymlinkPath}`, `Marketplace: ${marketplacePath}`]),
-            ...(selfTestResult ? [`Self-test: ${selfTestResult.ok ? 'ok' : 'failed'}`] : []),
-            ...(warnings.length > 0 ? ['Warnings:', ...warnings.map((warning) => `- ${warning}`)] : [])
-          ].join('\n')
+        () => `Upgraded Brainlink agent integration at ${result.codexConfigPath}. Self-test: ${result.selfTest?.ok ? 'ok' : 'failed'}`
       )
     })
 

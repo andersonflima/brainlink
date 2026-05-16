@@ -388,6 +388,7 @@ If your agent runtime is Codex-compatible, run:
 
 ```bash
 blink agent install --self-test
+blink agent upgrade
 ```
 
 This configures `~/.codex/config.toml` with Brainlink MCP (`brainlink-mcp`) so Brainlink is available by default in agent sessions.
@@ -402,6 +403,12 @@ To verify:
 
 ```bash
 blink agent status
+```
+
+For fully automated first run (vault index + health + bootstrap readiness + agent integration):
+
+```bash
+blink quickstart --query "what should I know before this task?" --json
 ```
 
 For a locked-down setup, allowlist the vaults that MCP clients may access:
@@ -515,6 +522,7 @@ Available tools:
 
 For the most automatic workflow, start MCP sessions with `brainlink_bootstrap` (optionally with `query`) and then continue with `brainlink_context`/`brainlink_add_note`.
 By default, Brainlink enforces bootstrap for read tools. If bootstrap is missing or stale, read tools return a preflight instruction with suggested `brainlink_bootstrap` arguments.
+`brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so MCP clients can continue automatically without custom parsing.
 
 The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]`. `brainlink_add_note` and `brainlink_add_file` reindex by default and include the index result when enabled.
 
@@ -590,6 +598,7 @@ Every command works with either `brainlink` or `blink`.
 ```bash
 blink agent install
 blink agent install --self-test
+blink agent upgrade
 blink agent install --plugin-path ./plugins/brainlink
 blink agent install --mcp-only --allowed-vaults "/absolute/vault,/absolute/team-vault"
 blink agent status
@@ -598,6 +607,17 @@ blink agent status
 Installs/checks agent integration. `install` writes Brainlink MCP config into `~/.codex/config.toml`.
 When plugin files are available, it also links Brainlink plugin files into `~/plugins/brainlink` and updates `~/.agents/plugins/marketplace.json`.
 With `--self-test`, install also validates MCP block presence, command wiring and local plugin registration signals.
+Use `agent upgrade` on legacy installations to reapply current defaults and run the same self-test diagnostics.
+
+### `quickstart`
+
+```bash
+blink quickstart --json
+blink quickstart --vault ./team-vault --agent coding-agent --query "architecture decisions" --json
+blink quickstart --vault ./team-vault --mcp-only --json
+```
+
+Runs index + doctor + stats + validation, refreshes bootstrap session readiness, optionally returns context for a query, and (by default) upgrades local agent integration for plug-and-play MCP usage.
 
 ### `config`
 

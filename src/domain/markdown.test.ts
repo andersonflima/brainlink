@@ -82,4 +82,33 @@ describe('markdown domain', () => {
     ])
     expect(indexed.chunks).toHaveLength(1)
   })
+
+  it('drops self-referential wiki links from indexed edges', () => {
+    const architecture = parseMarkdownDocument({
+      absolutePath: '/vault/architecture.md',
+      vaultPath: '/vault',
+      content: '# Architecture\n\nSee [[Architecture]] priority: high',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z')
+    })
+
+    const indexed = createIndexedDocument(architecture, new Map([[architecture.title.toLowerCase(), architecture.id]]))
+
+    expect(indexed.links).toEqual([])
+  })
+
+  it('splits oversized paragraphs into bounded chunks', () => {
+    const document = parseMarkdownDocument({
+      absolutePath: '/vault/chunking.md',
+      vaultPath: '/vault',
+      content: `# Chunking\n\n${'Sentence. '.repeat(180)}`,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z')
+    })
+
+    const indexed = createIndexedDocument(document, new Map(), 160)
+
+    expect(indexed.chunks.length).toBeGreaterThan(1)
+    expect(indexed.chunks.every((chunk) => chunk.content.length <= 160)).toBe(true)
+  })
 })

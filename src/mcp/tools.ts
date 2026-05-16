@@ -82,6 +82,20 @@ const preflightResult = (value: Readonly<Record<string, unknown>>): CallToolResu
   ...value
 })
 
+type NextAction = {
+  readonly tool: string
+  readonly reason: string
+  readonly args: Readonly<Record<string, unknown>>
+}
+
+const withNextActions = <T extends Readonly<Record<string, unknown>>>(
+  value: T,
+  nextActions: readonly NextAction[]
+): T & { readonly nextActions: readonly NextAction[] } => ({
+  ...value,
+  nextActions
+})
+
 const ensureBootstrapReady = async (
   context: { vault: string; agent?: string },
   input: Readonly<Record<string, unknown>>,
@@ -101,8 +115,21 @@ const ensureBootstrapReady = async (
 
   const mode = typeof input.mode === 'string' && ['fts', 'semantic', 'hybrid'].includes(input.mode) ? input.mode : 'hybrid'
   const query = typeof input.query === 'string' && input.query.trim().length > 0 ? input.query : undefined
+  const bootstrapArgs = {
+    vault: context.vault,
+    ...(context.agent ? { agent: context.agent } : {}),
+    ...(query ? { query } : {}),
+    mode
+  }
+  const nextActions: readonly NextAction[] = [
+    {
+      tool: 'brainlink_bootstrap',
+      reason: 'Bootstrap is required before read tools so retrieval stays grounded in current vault state.',
+      args: bootstrapArgs
+    }
+  ]
 
-  return preflightResult({
+  return preflightResult(withNextActions({
     vault: context.vault,
     agent: context.agent,
     blockedTool: toolName,
@@ -110,13 +137,8 @@ const ensureBootstrapReady = async (
     bootstrapStatus: status,
     guidance:
       'Run brainlink_bootstrap first for this vault/agent before using read tools. This keeps retrieval grounded and memory state consistent.',
-    bootstrapArgs: {
-      vault: context.vault,
-      ...(context.agent ? { agent: context.agent } : {}),
-      ...(query ? { query } : {}),
-      mode
-    }
-  })
+    bootstrapArgs
+  }, nextActions))
 }
 
 export const contextInputSchema = {
@@ -467,8 +489,58 @@ export const bootstrapTool = async (input: z.infer<z.ZodObject<typeof bootstrapI
         : 'Run brainlink_context with the current task query to retrieve grounded context before answering.'
   const session = await touchBootstrapSession(context.vault, context.agent)
   const policy = await getBootstrapPolicy()
+  const nextActions: readonly NextAction[] =
+    stats.documentCount === 0
+      ? [
+          {
+            tool: 'brainlink_add_note',
+            reason: 'No indexed documents were found. Add durable Markdown memory first.',
+            args: {
+              vault: context.vault,
+              ...(context.agent ? { agent: context.agent } : {}),
+              title: 'Architecture',
+              content: 'Durable memory with explicit [[links]] and #tags.'
+            }
+          },
+          {
+            tool: 'brainlink_bootstrap',
+            reason: 'Re-run bootstrap after writing notes so context tools can work on fresh index state.',
+            args: {
+              vault: context.vault,
+              ...(context.agent ? { agent: context.agent } : {}),
+              mode
+            }
+          }
+        ]
+      : input.query
+        ? [
+            {
+              tool: 'brainlink_add_note',
+              reason: 'Persist relevant outcomes from this task as durable memory.',
+              args: {
+                vault: context.vault,
+                ...(context.agent ? { agent: context.agent } : {}),
+                title: 'Task Update',
+                content: 'Summarize durable findings and connect with [[existing notes]].'
+              }
+            }
+          ]
+        : [
+            {
+              tool: 'brainlink_context',
+              reason: 'Fetch grounded context for the current task.',
+              args: {
+                vault: context.vault,
+                ...(context.agent ? { agent: context.agent } : {}),
+                query: '<task>',
+                mode,
+                limit: input.limit,
+                tokens: input.tokens
+              }
+            }
+          ]
 
-  return jsonResult({
+  return jsonResult(withNextActions({
     vault: context.vault,
     agent: context.agent,
     mode,
@@ -479,7 +551,7 @@ export const bootstrapTool = async (input: z.infer<z.ZodObject<typeof bootstrapI
     session,
     guidance,
     ...(contextPackage ? { context: contextPackage } : {})
-  })
+  }, nextActions))
 }
 
 export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSchema>>): Promise<CallToolResult> => {
@@ -493,10 +565,24 @@ export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSc
       : await getBootstrapPolicy()
   const bootstrapStatus = await getBootstrapSessionStatus(context.vault, context.agent)
 
-  return jsonResult({
+  const nextActions: readonly NextAction[] = bootstrapStatus.ready
+    ? []
+    : [
+        {
+          tool: 'brainlink_bootstrap',
+          reason: 'Bootstrap status is not ready. Run bootstrap before using read tools.',
+          args: {
+            vault: context.vault,
+            ...(context.agent ? { agent: context.agent } : {}),
+            mode: context.config.defaultSearchMode
+          }
+        }
+      ]
+
+  return jsonResult(withNextActions({
     vault: context.vault,
     agent: context.agent,
     policy,
     bootstrapStatus
-  })
+  }, nextActions))
 }
