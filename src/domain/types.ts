@@ -43,6 +43,7 @@ export type SearchResult = {
   readonly title: string
   readonly path: string
   readonly chunkId: string
+  readonly chunkOrdinal?: number
   readonly content: string
   readonly score: number
   readonly textScore: number

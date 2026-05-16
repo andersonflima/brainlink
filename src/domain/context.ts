@@ -1,25 +1,77 @@
 import type { ContextSection, SearchResult } from './types.js'
+import { middleOutIndices } from './middle-out.js'
+
+const maxSectionsPerDocument = 3
+
+const byScore = (left: SearchResult, right: SearchResult): number =>
+  right.score - left.score || left.title.localeCompare(right.title)
+
+const byOrdinal = (left: SearchResult, right: SearchResult): number =>
+  (left.chunkOrdinal ?? Number.MAX_SAFE_INTEGER) - (right.chunkOrdinal ?? Number.MAX_SAFE_INTEGER)
+
+const middleOutDocumentResults = (results: readonly SearchResult[]): readonly SearchResult[] => {
+  if (results.length <= 1) {
+    return results
+  }
+
+  const sortedByOrdinal = [...results].sort(byOrdinal)
+  const pivotChunkId = [...results].sort(byScore)[0]?.chunkId
+  const pivotIndex = sortedByOrdinal.findIndex((result) => result.chunkId === pivotChunkId)
+
+  if (pivotIndex < 0) {
+    return [...results].sort(byScore)
+  }
+
+  return middleOutIndices(sortedByOrdinal.length, pivotIndex).map((index) => sortedByOrdinal[index])
+}
 
 export const selectContextSections = (
   results: readonly SearchResult[],
   maxTokens: number
 ): readonly ContextSection[] => {
-  const selected = results.reduce<{
+  const grouped = results.reduce<Map<string, readonly SearchResult[]>>((state, result) => {
+    const current = state.get(result.documentId) ?? []
+    state.set(result.documentId, [...current, result])
+    return state
+  }, new Map())
+
+  const documentOrder = Array.from(
+    results.reduce<Map<string, number>>((state, result) => {
+      if (!state.has(result.documentId)) {
+        state.set(result.documentId, result.score)
+      }
+      return state
+    }, new Map()).entries()
+  )
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([documentId]) => documentId)
+
+  const selected = documentOrder.reduce<{
     readonly usedTokens: number
     readonly sections: readonly ContextSection[]
-    readonly seenDocuments: ReadonlySet<string>
+    readonly seenChunks: ReadonlySet<string>
   }>(
-    (state, result) => {
+    (state, documentId) => {
+      const ordered = middleOutDocumentResults(grouped.get(documentId) ?? [])
+      let usedTokens = state.usedTokens
+      let sections = state.sections
+      let seenChunks = state.seenChunks
+
+      for (let index = 0; index < ordered.length && index < maxSectionsPerDocument; index += 1) {
+        const result = ordered[index]
+        if (seenChunks.has(result.chunkId)) {
+          continue
+        }
+
       const tokenCost = Math.ceil(result.content.length / 4)
 
-      if (state.usedTokens + tokenCost > maxTokens || state.seenDocuments.has(result.documentId)) {
-        return state
-      }
+        if (usedTokens + tokenCost > maxTokens) {
+          break
+        }
 
-      return {
-        usedTokens: state.usedTokens + tokenCost,
-        sections: [
-          ...state.sections,
+        usedTokens += tokenCost
+        sections = [
+          ...sections,
           {
             title: result.title,
             path: result.path,
@@ -28,14 +80,20 @@ export const selectContextSections = (
             searchMode: result.searchMode,
             tags: result.tags
           }
-        ],
-        seenDocuments: new Set([...state.seenDocuments, result.documentId])
+        ]
+        seenChunks = new Set([...seenChunks, result.chunkId])
+      }
+
+      return {
+        usedTokens,
+        sections,
+        seenChunks
       }
     },
     {
       usedTokens: 0,
       sections: [],
-      seenDocuments: new Set()
+      seenChunks: new Set()
     }
   )
 
