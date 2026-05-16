@@ -42,6 +42,7 @@ describe('sqlite recovery', () => {
 
     const files = await readdir(workspace)
     expect(files.some((name) => name.startsWith('brainlink.db.corrupt-'))).toBe(true)
+    expect(files).toContain('recovery-last-restore.json')
   })
 
   it('recreates a clean database when no backup exists', async () => {
@@ -60,5 +61,33 @@ describe('sqlite recovery', () => {
       database.close()
     }
   })
-})
 
+  it('restores from an older snapshot when latest backup is invalid', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'brainlink-sqlite-recovery-older-snapshot-'))
+    tempPaths.push(workspace)
+    const databasePath = join(workspace, 'brainlink.db')
+    const backupPath = join(workspace, 'brainlink.db.backup')
+    const setupDatabase = new Database(databasePath)
+
+    try {
+      setupDatabase.exec(`
+        CREATE TABLE notes (id TEXT PRIMARY KEY, title TEXT NOT NULL);
+        INSERT INTO notes (id, title) VALUES ('1', 'Architecture');
+      `)
+      createRecoverySnapshot(setupDatabase, backupPath)
+    } finally {
+      setupDatabase.close()
+    }
+
+    await writeFile(backupPath, Buffer.from('broken latest backup'))
+    await writeFile(databasePath, Buffer.from('broken primary db'))
+
+    const restored = openDatabaseWithRecovery(databasePath, backupPath)
+    try {
+      const row = restored.prepare('SELECT title FROM notes WHERE id = ?').get('1') as { readonly title: string } | undefined
+      expect(row?.title).toBe('Architecture')
+    } finally {
+      restored.close()
+    }
+  })
+})
