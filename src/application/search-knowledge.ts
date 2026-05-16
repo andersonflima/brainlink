@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ensureVault } from '../infrastructure/file-system-vault.js'
+import { searchInPacks } from '../infrastructure/search-packs.js'
 import { openSqliteIndex } from '../infrastructure/sqlite-index.js'
 import { createEmbeddingProvider } from '../domain/embeddings.js'
 import { loadBrainlinkConfig, sanitizeSearchMode } from '../infrastructure/config.js'
@@ -84,22 +85,37 @@ export const searchKnowledge = async (
   const provider = createEmbeddingProvider(config.embeddingProvider)
   const shouldEmbedQuery = searchMode !== 'fts' && provider.name !== 'none'
   const queryEmbedding = shouldEmbedQuery ? (await provider.embed([query]))[0] ?? [] : []
-  const index = openSqliteIndex(absoluteVaultPath)
-
   try {
-    const results = index.search(query, limit, agentId, searchMode, queryEmbedding)
+    const index = openSqliteIndex(absoluteVaultPath)
+
+    try {
+      const results = index.search(query, limit, agentId, searchMode, queryEmbedding)
+
+      if (cacheKey) {
+        cacheSet({
+          key: cacheKey,
+          createdAt: Date.now(),
+          indexMtimeMs,
+          results
+        })
+      }
+
+      return results
+    } finally {
+      index.close()
+    }
+  } catch {
+    const fallbackResults = await searchInPacks(absoluteVaultPath, query, limit, agentId)
 
     if (cacheKey) {
       cacheSet({
         key: cacheKey,
         createdAt: Date.now(),
         indexMtimeMs,
-        results
+        results: fallbackResults
       })
     }
 
-    return results
-  } finally {
-    index.close()
+    return fallbackResults
   }
 }
