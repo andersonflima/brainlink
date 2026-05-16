@@ -11,7 +11,14 @@ import { searchKnowledge } from '../application/search-knowledge.js'
 import { resolveAgentRuntimeDefaults, sanitizeSearchMode } from '../infrastructure/config.js'
 import { loadBrainlinkConfig } from '../infrastructure/config.js'
 import { assertVaultAllowed } from '../infrastructure/file-system-vault.js'
-import { getBootstrapPolicy, getBootstrapSessionStatus, setBootstrapPolicy, touchBootstrapSession } from '../infrastructure/session-state.js'
+import {
+  getBootstrapPolicy,
+  getBootstrapSessionStatus,
+  getContextSessionStatus,
+  setBootstrapPolicy,
+  touchBootstrapSession,
+  touchContextSession
+} from '../infrastructure/session-state.js'
 
 const positiveInteger = (fallback: number) =>
   z
@@ -197,6 +204,90 @@ const ensureBootstrapReady = async (
   }
 }
 
+const ensureContextReady = async (
+  context: { vault: string; agent?: string; defaults: { defaultSearchMode: 'fts' | 'semantic' | 'hybrid'; defaultSearchLimit: number; defaultContextTokens: number } },
+  input: Readonly<Record<string, unknown>>,
+  toolName: string
+): Promise<{ readonly preflight?: CallToolResult; readonly context?: Readonly<Record<string, unknown>> }> => {
+  const policy = await getBootstrapPolicy()
+
+  if (!policy.enforceContextFirst) {
+    return {
+      context: {
+        policy,
+        statusBefore: {
+          ready: true,
+          stale: false
+        },
+        reason: 'Context-first enforcement is disabled by policy.'
+      }
+    }
+  }
+
+  const status = await getContextSessionStatus(context.vault, context.agent)
+
+  if (status.ready) {
+    return {
+      context: {
+        policy,
+        statusBefore: status,
+        reason: 'Context session is already fresh for this vault/agent.'
+      }
+    }
+  }
+
+  const queryFromInput =
+    typeof input.query === 'string' && input.query.trim().length > 0
+      ? input.query
+      : typeof input.contextQuery === 'string' && input.contextQuery.trim().length > 0
+        ? input.contextQuery
+        : '<task>'
+  const mode = sanitizeSearchMode(
+    typeof input.mode === 'string' ? input.mode : undefined,
+    context.defaults.defaultSearchMode
+  )
+  const limit =
+    typeof input.limit === 'number' && Number.isFinite(input.limit) && input.limit > 0
+      ? input.limit
+      : typeof input.contextLimit === 'number' && Number.isFinite(input.contextLimit) && input.contextLimit > 0
+        ? input.contextLimit
+        : context.defaults.defaultSearchLimit
+  const tokens =
+    typeof input.tokens === 'number' && Number.isFinite(input.tokens) && input.tokens > 0
+      ? input.tokens
+      : typeof input.contextTokens === 'number' && Number.isFinite(input.contextTokens) && input.contextTokens > 0
+        ? input.contextTokens
+        : context.defaults.defaultContextTokens
+  const contextArgs = {
+    vault: context.vault,
+    ...(context.agent ? { agent: context.agent } : {}),
+    query: queryFromInput,
+    mode,
+    limit,
+    tokens
+  }
+  const nextActions: readonly NextAction[] = [
+    {
+      tool: 'brainlink_context',
+      reason: 'Context must be loaded first so Brainlink is the primary retrieval source before other read tools.',
+      args: contextArgs
+    }
+  ]
+
+  return {
+    preflight: preflightResult(withNextActions({
+      vault: context.vault,
+      agent: context.agent,
+      blockedTool: toolName,
+      policy,
+      contextStatus: status,
+      guidance:
+        'Run brainlink_context first for this vault/agent before other read tools so answers are grounded on Brainlink context.',
+      contextArgs
+    }, nextActions))
+  }
+}
+
 export const contextInputSchema = {
   ...vaultInput,
   ...agentInput,
@@ -293,6 +384,7 @@ export const policyInputSchema = {
   ...agentInput,
   preset: z.enum(['fully-auto', 'strict']).optional().describe('Apply an opinionated policy preset before explicit overrides.'),
   enforceBootstrap: z.boolean().optional().describe('Enable or disable bootstrap enforcement for MCP read tools.'),
+  enforceContextFirst: z.boolean().optional().describe('Require brainlink_context before other MCP read tools.'),
   autoBootstrapOnRead: z
     .boolean()
     .optional()
@@ -332,6 +424,7 @@ export const contextTool = async (input: z.infer<z.ZodObject<typeof contextInput
     context.agent,
     mode
   )
+  const contextSession = await touchContextSession(context.vault, context.agent)
 
   return jsonResult({
     vault: context.vault,
@@ -339,6 +432,7 @@ export const contextTool = async (input: z.infer<z.ZodObject<typeof contextInput
     mode,
     limit,
     tokens,
+    contextSession,
     ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
     ...contextPackage
   })
@@ -352,6 +446,12 @@ export const searchTool = async (input: z.infer<z.ZodObject<typeof searchInputSc
     return readiness.preflight
   }
 
+  const contextReadiness = await ensureContextReady(context, input, 'brainlink_search')
+
+  if (contextReadiness.preflight) {
+    return contextReadiness.preflight
+  }
+
   const mode = sanitizeSearchMode(input.mode, context.defaults.defaultSearchMode)
   const limit = input.limit ?? context.defaults.defaultSearchLimit
   const results = await searchKnowledge(context.vault, input.query, limit, context.agent, mode)
@@ -363,6 +463,7 @@ export const searchTool = async (input: z.infer<z.ZodObject<typeof searchInputSc
     limit,
     mode,
     ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
+    ...(contextReadiness.context ? { contextReadiness: contextReadiness.context } : {}),
     results
   })
 }
@@ -438,12 +539,19 @@ export const validateTool = async (input: z.infer<z.ZodObject<typeof validateInp
     return readiness.preflight
   }
 
+  const contextReadiness = await ensureContextReady(context, input, 'brainlink_validate')
+
+  if (contextReadiness.preflight) {
+    return contextReadiness.preflight
+  }
+
   const validation = await validateVault(context.vault, context.agent)
 
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
     ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
+    ...(contextReadiness.context ? { contextReadiness: contextReadiness.context } : {}),
     ...validation
   })
 }
@@ -456,12 +564,19 @@ export const graphTool = async (input: z.infer<z.ZodObject<typeof graphInputSche
     return readiness.preflight
   }
 
+  const contextReadiness = await ensureContextReady(context, input, 'brainlink_graph')
+
+  if (contextReadiness.preflight) {
+    return contextReadiness.preflight
+  }
+
   const graph = await getGraph(context.vault, context.agent)
 
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
     ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
+    ...(contextReadiness.context ? { contextReadiness: contextReadiness.context } : {}),
     ...graph
   })
 }
@@ -474,12 +589,19 @@ export const brokenLinksTool = async (input: z.infer<z.ZodObject<typeof brokenLi
     return readiness.preflight
   }
 
+  const contextReadiness = await ensureContextReady(context, input, 'brainlink_broken_links')
+
+  if (contextReadiness.preflight) {
+    return contextReadiness.preflight
+  }
+
   const brokenLinks = await getBrokenLinksReport(context.vault, context.agent)
 
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
     ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
+    ...(contextReadiness.context ? { contextReadiness: contextReadiness.context } : {}),
     brokenLinks
   })
 }
@@ -492,12 +614,19 @@ export const orphansTool = async (input: z.infer<z.ZodObject<typeof orphansInput
     return readiness.preflight
   }
 
+  const contextReadiness = await ensureContextReady(context, input, 'brainlink_orphans')
+
+  if (contextReadiness.preflight) {
+    return contextReadiness.preflight
+  }
+
   const orphans = await getOrphansReport(context.vault, context.agent)
 
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
     ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
+    ...(contextReadiness.context ? { contextReadiness: contextReadiness.context } : {}),
     orphans
   })
 }
@@ -510,12 +639,19 @@ export const statsTool = async (input: z.infer<z.ZodObject<typeof statsInputSche
     return readiness.preflight
   }
 
+  const contextReadiness = await ensureContextReady(context, input, 'brainlink_stats')
+
+  if (contextReadiness.preflight) {
+    return contextReadiness.preflight
+  }
+
   const stats = await getStats(context.vault, context.agent)
 
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
     ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
+    ...(contextReadiness.context ? { contextReadiness: contextReadiness.context } : {}),
     stats
   })
 }
@@ -528,6 +664,12 @@ export const syncTool = async (input: z.infer<z.ZodObject<typeof syncInputSchema
     return readiness.preflight
   }
 
+  const contextReadiness = await ensureContextReady(context, input, 'brainlink_sync')
+
+  if (contextReadiness.preflight) {
+    return contextReadiness.preflight
+  }
+
   const index = await indexVault(context.vault)
   const stats = await getStats(context.vault, context.agent)
   const validation = await validateVault(context.vault, context.agent)
@@ -538,6 +680,7 @@ export const syncTool = async (input: z.infer<z.ZodObject<typeof syncInputSchema
     vault: context.vault,
     agent: context.agent,
     ...(readiness.bootstrap ? { bootstrap: readiness.bootstrap } : {}),
+    ...(contextReadiness.context ? { contextReadiness: contextReadiness.context } : {}),
     index,
     stats,
     validation,
@@ -560,11 +703,13 @@ export const syncTool = async (input: z.infer<z.ZodObject<typeof syncInputSchema
     context.agent,
     mode
   )
+  const contextSession = await touchContextSession(context.vault, context.agent)
 
   return jsonResult({
     ...response,
     context: {
       mode,
+      contextSession,
       ...contextPackage
     }
   })
@@ -581,6 +726,7 @@ export const bootstrapTool = async (input: z.infer<z.ZodObject<typeof bootstrapI
   const contextPackage = input.query
     ? await buildContextPackage(context.vault, input.query, limit, tokens, context.agent, mode)
     : undefined
+  const contextSession = input.query ? await touchContextSession(context.vault, context.agent) : undefined
 
   const guidance =
     stats.documentCount === 0
@@ -653,7 +799,8 @@ export const bootstrapTool = async (input: z.infer<z.ZodObject<typeof bootstrapI
     policy,
     session,
     guidance,
-    ...(contextPackage ? { context: contextPackage } : {})
+    ...(contextPackage ? { context: contextPackage } : {}),
+    ...(contextSession ? { contextSession } : {})
   }, nextActions))
 }
 
@@ -663,12 +810,14 @@ export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSc
     input.preset === 'strict'
       ? {
           enforceBootstrap: true,
+          enforceContextFirst: true,
           autoBootstrapOnRead: false,
           autoBootstrapOnStartup: false
         }
       : input.preset === 'fully-auto'
         ? {
             enforceBootstrap: true,
+            enforceContextFirst: true,
             autoBootstrapOnRead: true,
             autoBootstrapOnStartup: true
           }
@@ -676,18 +825,21 @@ export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSc
   const policy =
     input.preset !== undefined ||
     typeof input.enforceBootstrap === 'boolean' ||
+    typeof input.enforceContextFirst === 'boolean' ||
     typeof input.autoBootstrapOnRead === 'boolean' ||
     typeof input.autoBootstrapOnStartup === 'boolean' ||
     typeof input.staleAfterMinutes === 'number'
       ? await setBootstrapPolicy({
           ...presetPatch,
           ...(typeof input.enforceBootstrap === 'boolean' ? { enforceBootstrap: input.enforceBootstrap } : {}),
+          ...(typeof input.enforceContextFirst === 'boolean' ? { enforceContextFirst: input.enforceContextFirst } : {}),
           ...(typeof input.autoBootstrapOnRead === 'boolean' ? { autoBootstrapOnRead: input.autoBootstrapOnRead } : {}),
           ...(typeof input.autoBootstrapOnStartup === 'boolean' ? { autoBootstrapOnStartup: input.autoBootstrapOnStartup } : {}),
           ...(typeof input.staleAfterMinutes === 'number' ? { staleAfterMinutes: input.staleAfterMinutes } : {})
         })
       : await getBootstrapPolicy()
   const bootstrapStatus = await getBootstrapSessionStatus(context.vault, context.agent)
+  const contextStatus = await getContextSessionStatus(context.vault, context.agent)
 
   const nextActions: readonly NextAction[] = bootstrapStatus.ready
     ? []
@@ -702,14 +854,33 @@ export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSc
           }
         }
       ]
+  const withContextAction =
+    policy.enforceContextFirst && !contextStatus.ready
+      ? [
+          ...nextActions,
+          {
+            tool: 'brainlink_context',
+            reason: 'Context-first policy is enabled. Load context before other read tools.',
+            args: {
+              vault: context.vault,
+              ...(context.agent ? { agent: context.agent } : {}),
+              query: '<task>',
+              mode: context.defaults.defaultSearchMode,
+              limit: context.defaults.defaultSearchLimit,
+              tokens: context.defaults.defaultContextTokens
+            }
+          }
+        ]
+      : nextActions
 
   return jsonResult(withNextActions({
     vault: context.vault,
     agent: context.agent,
     policy,
     bootstrapStatus,
+    contextStatus,
     ...(input.preset ? { presetApplied: input.preset } : {})
-  }, nextActions))
+  }, withContextAction))
 }
 
 export const recommendationsTool = async (
@@ -718,6 +889,7 @@ export const recommendationsTool = async (
   const context = await resolveExecutionContext(input)
   const policy = await getBootstrapPolicy()
   const bootstrapStatus = await getBootstrapSessionStatus(context.vault, context.agent)
+  const contextStatus = await getContextSessionStatus(context.vault, context.agent)
   const stats = await getStats(context.vault, context.agent)
   const mode = sanitizeSearchMode(input.mode, context.defaults.defaultSearchMode)
   const limit = input.limit ?? context.defaults.defaultSearchLimit
@@ -746,6 +918,22 @@ export const recommendationsTool = async (
               ...(context.agent ? { agent: context.agent } : {}),
               mode,
               ...(query ? { query } : {})
+            }
+          }
+        ]
+      : []),
+    ...(policy.enforceContextFirst && !contextStatus.ready
+      ? [
+          {
+            tool: 'brainlink_context',
+            reason: 'Context-first policy is enabled. Load context before other read operations.',
+            args: {
+              vault: context.vault,
+              ...(context.agent ? { agent: context.agent } : {}),
+              query: query ?? '<task>',
+              mode,
+              limit,
+              tokens
             }
           }
         ]
@@ -805,6 +993,7 @@ export const recommendationsTool = async (
     },
     policy,
     bootstrapStatus,
+    contextStatus,
     stats,
     recommendations
   })

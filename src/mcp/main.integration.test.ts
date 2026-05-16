@@ -225,6 +225,78 @@ describe('brainlink mcp integration', () => {
     }
   }, 20000)
 
+  it('enforces context-first before non-context read tools', async () => {
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-mcp-context-first-vault-'))
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-mcp-context-first-home-'))
+    tempPaths.push(vault, brainlinkHome)
+
+    const client = new Client({ name: 'brainlink-test-context-first', version: '1.0.0' })
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', tsxLoader, mcpEntryPoint],
+      cwd: projectPath,
+      env: {
+        ...process.env,
+        BRAINLINK_HOME: brainlinkHome
+      },
+      stderr: 'pipe'
+    })
+
+    await client.connect(transport)
+
+    try {
+      await client.callTool({
+        name: 'brainlink_add_note',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          title: 'Context First',
+          content: 'Brainlink context-first check with [[Root Topic]]. #memory'
+        }
+      })
+
+      const graphPreflight = await client.callTool({
+        name: 'brainlink_graph',
+        arguments: {
+          vault,
+          agent: 'coding-agent'
+        }
+      })
+
+      expect(graphPreflight.structuredContent).toMatchObject({
+        preflightRequired: true,
+        blockedTool: 'brainlink_graph',
+        nextActions: [expect.objectContaining({ tool: 'brainlink_context' })]
+      })
+
+      await client.callTool({
+        name: 'brainlink_context',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          query: 'context first check'
+        }
+      })
+
+      const graph = await client.callTool({
+        name: 'brainlink_graph',
+        arguments: {
+          vault,
+          agent: 'coding-agent'
+        }
+      })
+
+      expect(graph.structuredContent).toMatchObject({
+        vault,
+        agent: 'coding-agent',
+        nodes: expect.any(Array),
+        edges: expect.any(Array)
+      })
+    } finally {
+      await client.close()
+    }
+  }, 20000)
+
   it('uses agent profile defaults for MCP mode and limits', async () => {
     const vault = await mkdtemp(join(tmpdir(), 'brainlink-mcp-profile-vault-'))
     const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-mcp-profile-home-'))
@@ -402,6 +474,7 @@ describe('brainlink mcp integration', () => {
         presetApplied: 'strict',
         policy: {
           enforceBootstrap: true,
+          enforceContextFirst: true,
           autoBootstrapOnRead: false,
           autoBootstrapOnStartup: false
         }
@@ -418,6 +491,7 @@ describe('brainlink mcp integration', () => {
         presetApplied: 'fully-auto',
         policy: {
           enforceBootstrap: true,
+          enforceContextFirst: true,
           autoBootstrapOnRead: true,
           autoBootstrapOnStartup: true
         }

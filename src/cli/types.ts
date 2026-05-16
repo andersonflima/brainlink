@@ -78,6 +78,7 @@ export type AgentPolicyOptions = {
   readonly json?: boolean
   readonly preset?: string
   readonly enforceBootstrap?: string
+  readonly enforceContextFirst?: string
   readonly autoBootstrapOnRead?: string
   readonly autoBootstrapOnStartup?: string
   readonly staleAfterMinutes?: string

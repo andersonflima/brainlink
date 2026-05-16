@@ -508,7 +508,7 @@ Restart the client after changing marketplace or MCP configuration so it reloads
 Available tools:
 
 - `brainlink_bootstrap`: plug-and-play entrypoint that runs index + health checks and can return context in one call.
-- `brainlink_policy`: read or update bootstrap enforcement policy, including presets (`preset: "fully-auto" | "strict"`).
+- `brainlink_policy`: read or update bootstrap/context-first policy, including presets (`preset: "fully-auto" | "strict"`).
 - `brainlink_recommendations`: return an automatic action plan so agents can run Brainlink in the recommended order.
 - `brainlink_context`: read indexed context for a task or question.
 - `brainlink_search`: search indexed notes.
@@ -523,6 +523,7 @@ Available tools:
 - `brainlink_orphans`: list disconnected notes.
 
 For the most automatic workflow, start MCP sessions with `brainlink_bootstrap` (optionally with `query`) and then continue with `brainlink_context`/`brainlink_add_note`.
+By default, Brainlink enforces context-first for MCP reads (`enforceContextFirst=true`): non-context read tools return preflight until `brainlink_context` is called for the vault/agent session.
 By default, MCP startup already runs bootstrap on the configured default vault/agent (`autoBootstrapOnStartup=true`), so sessions begin warm.
 By default, Brainlink enforces bootstrap and auto-runs it for read tools when session state is missing or stale (`autoBootstrapOnRead=true`).
 If you disable `autoBootstrapOnRead` through `brainlink_policy`, read tools return a preflight instruction with suggested `brainlink_bootstrap` arguments.
@@ -610,6 +611,7 @@ blink agent install --self-test
 blink agent upgrade
 blink agent policy --preset fully-auto
 blink agent policy --preset strict
+blink agent policy --enforce-context-first false
 blink agent install --plugin-path ./plugins/brainlink
 blink agent install --mcp-only --allowed-vaults "/absolute/vault,/absolute/team-vault"
 blink agent status
@@ -620,6 +622,7 @@ When plugin files are available, it also links Brainlink plugin files into `~/pl
 With `--self-test`, install also validates MCP block presence, command wiring and local plugin registration signals.
 Use `agent upgrade` on legacy installations to reapply current defaults and run the same self-test diagnostics.
 Use `agent policy --preset fully-auto` for plug-and-play defaults, or `agent policy --preset strict` to require explicit bootstrap calls.
+Both presets keep `enforceContextFirst=true` so Brainlink stays the primary context source for MCP sessions.
 
 ### `quickstart`
 
