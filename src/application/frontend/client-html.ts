@@ -42,6 +42,7 @@ export const createClientHtml = (): string => `<!doctype html>
               <button id="reset" type="button" title="Reset view">⌂</button>
             </div>
           </div>
+          <small class="license-badge" aria-label="License notice">MIT License · Copyright © 2026 Anderson Espindola</small>
         </header>
         <canvas id="graph" aria-label="Brainlink knowledge graph"></canvas>
       </section>
