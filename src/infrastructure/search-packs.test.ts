@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
@@ -116,4 +116,52 @@ describe('search packs', () => {
     expect(sharedOnly.every((row) => row.agentId === 'shared')).toBe(true)
     expect(researchOnly.every((row) => row.agentId === 'research-agent')).toBe(true)
   })
+
+  it('keeps search lossless when compressed index metadata is partially invalid', async () => {
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-search-packs-lossless-'))
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-search-packs-lossless-home-'))
+    process.env.BRAINLINK_HOME = brainlinkHome
+    tempPaths.push(vault, brainlinkHome)
+
+    const alphaDocuments = Array.from({ length: 5_000 }, (_, index) =>
+      createIndexedDocument(`alpha-${index}`, 'shared', `Alpha ${index}`, 'alpha payload', ['alpha'])
+    )
+    const betaDocuments = Array.from({ length: 8 }, (_, index) =>
+      createIndexedDocument(`beta-${index}`, 'shared', `Beta ${index}`, 'beta payload', ['beta'])
+    )
+
+    await buildSearchPacks(vault, [...alphaDocuments, ...betaDocuments])
+
+    const manifestPath = join(vault, '.brainlink', 'search-packs', 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+      readonly version: number
+      readonly createdAt: string
+      readonly packCount: number
+      readonly recordCount: number
+      readonly format: string
+      readonly packIndex: readonly {
+        readonly fileName: string
+        readonly recordCount: number
+        readonly agents: readonly string[]
+        readonly tokenBloomB64: string
+      }[]
+    }
+
+    expect(manifest.packIndex.length).toBeGreaterThan(1)
+    const allOnesBloom = Buffer.alloc(256, 0xff).toString('base64url')
+    const corruptedManifest = {
+      ...manifest,
+      packIndex: manifest.packIndex.map((entry, index) =>
+        index === 0
+          ? { ...entry, tokenBloomB64: 'invalid-bloom-data' }
+          : { ...entry, tokenBloomB64: allOnesBloom }
+      )
+    }
+    await writeFile(manifestPath, `${JSON.stringify(corruptedManifest, null, 2)}\n`, 'utf8')
+
+    const results = await searchInPacks(vault, 'alpha', 5)
+
+    expect(results.length).toBeGreaterThan(0)
+    expect(results.some((row) => row.title.startsWith('Alpha '))).toBe(true)
+  }, 20000)
 })

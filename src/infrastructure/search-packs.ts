@@ -240,18 +240,24 @@ const bloomFromRows = (rows: readonly SearchPackRow[]): Uint8Array => {
 
 const bloomToBase64 = (bloom: Uint8Array): string => Buffer.from(bloom).toString('base64url')
 
-const bloomFromBase64 = (value: string): Uint8Array => {
+const bloomFromBase64 = (value: string): { readonly bloom: Uint8Array; readonly valid: boolean } => {
   try {
     const decoded = Buffer.from(value, 'base64url')
 
     if (decoded.byteLength === bloomBytes) {
-      return new Uint8Array(decoded)
+      return {
+        bloom: new Uint8Array(decoded),
+        valid: true
+      }
     }
   } catch {
     // fallback below
   }
 
-  return createBloom()
+  return {
+    bloom: createBloom(),
+    valid: false
+  }
 }
 
 const computeTextScore = (row: SearchPackRow, tokens: readonly string[]): number => {
@@ -323,23 +329,23 @@ const writeRowsAsPrivatePacks = async (
   }
 
   const chunks = chunkRows(rows, rowChunkSize)
-  const packIndex = await Promise.all(
-    chunks.map(async (chunk, index) => {
-      const fileName = `pack-${String(index + 1).padStart(4, '0')}.blpk`
-      const serialized = `${chunk.map((row) => JSON.stringify(row)).join('\n')}\n`
-      const compressed = await encodePrivatePack(vaultPath, Buffer.from(serialized, 'utf8'))
-      const tokenBloomB64 = bloomToBase64(bloomFromRows(chunk))
+  const packIndex: SearchPackIndexEntry[] = []
 
-      await writeFile(join(directory, fileName), compressed)
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index]
+    const fileName = `pack-${String(index + 1).padStart(4, '0')}.blpk`
+    const serialized = `${chunk.map((row) => JSON.stringify(row)).join('\n')}\n`
+    const compressed = await encodePrivatePack(vaultPath, Buffer.from(serialized, 'utf8'))
+    const tokenBloomB64 = bloomToBase64(bloomFromRows(chunk))
 
-      return {
-        fileName,
-        recordCount: chunk.length,
-        agents: Array.from(new Set(chunk.map((row) => row.agentId))).sort((left, right) => left.localeCompare(right)),
-        tokenBloomB64
-      } satisfies SearchPackIndexEntry
+    await writeFile(join(directory, fileName), compressed)
+    packIndex.push({
+      fileName,
+      recordCount: chunk.length,
+      agents: Array.from(new Set(chunk.map((row) => row.agentId))).sort((left, right) => left.localeCompare(right)),
+      tokenBloomB64
     })
-  )
+  }
 
   await writeManifest(vaultPath, {
     version: 3,
@@ -380,11 +386,21 @@ const selectCandidatePackFiles = async (
     return byAgent.map((entry) => entry.fileName)
   }
 
+  let hasInvalidBloomIndex = false
   const byToken = byAgent.filter((entry) => {
-    const bloom = bloomFromBase64(entry.tokenBloomB64)
+    const decoded = bloomFromBase64(entry.tokenBloomB64)
+    if (!decoded.valid) {
+      hasInvalidBloomIndex = true
+      return true
+    }
 
-    return tokens.some((token) => bloomMayContain(bloom, token))
+    return tokens.some((token) => bloomMayContain(decoded.bloom, token))
   })
+
+  // Lossless guarantee: if compressed metadata is partially invalid, do not prune packs.
+  if (hasInvalidBloomIndex) {
+    return byAgent.map((entry) => entry.fileName)
+  }
 
   if (byToken.length > 0) {
     return byToken.map((entry) => entry.fileName)
