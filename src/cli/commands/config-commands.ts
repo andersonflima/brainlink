@@ -1,7 +1,8 @@
 import type { Command } from 'commander'
+import { doctorVault } from '../../application/analyze-vault.js'
 import { indexVault } from '../../application/index-vault.js'
 import { migrateVaultContent, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
-import { defaultBrainlinkConfig, loadBrainlinkConfig, loadRawConfig, resolveConfigPath, writeRawConfig } from '../../infrastructure/config.js'
+import { defaultBrainlinkConfig, detectVaultConfigSource, loadBrainlinkConfig, loadRawConfig, resolveConfigPath, writeRawConfig } from '../../infrastructure/config.js'
 import { assertVaultAllowed } from '../../infrastructure/file-system-vault.js'
 import { print } from '../runtime.js'
 import type { ConfigGetOptions, ConfigSetVaultOptions } from '../types.js'
@@ -128,5 +129,41 @@ export const registerConfigCommands = (program: Command): void => {
           ].join('\n')
       )
     })
-}
 
+  configCommand
+    .command('doctor')
+    .option('--json', 'print machine-readable JSON')
+    .description('inspect effective config sources and run vault readiness checks')
+    .action(async (options: ConfigGetOptions) => {
+      const config = await loadBrainlinkConfig()
+      const source = await detectVaultConfigSource()
+      const globalConfigPath = resolveConfigPath('global')
+      const localConfigPath = resolveConfigPath('local')
+      const allowedVaultCheck = assertVaultAllowed(config.vault, config.allowedVaults)
+      const vaultDoctor = await doctorVault(config.vault)
+      const response = {
+        vault: config.vault,
+        vaultSource: source,
+        allowedVaultCheck,
+        localConfigPath,
+        globalConfigPath,
+        doctor: vaultDoctor
+      }
+
+      print(
+        options.json,
+        response,
+        () =>
+          [
+            `vault=${response.vault}`,
+            `vaultSource=${response.vaultSource}`,
+            `localConfigPath=${response.localConfigPath}`,
+            `globalConfigPath=${response.globalConfigPath}`,
+            ...response.doctor.checks.map((check) => `${check.ok ? 'OK' : 'FAIL'} ${check.name}: ${check.message}`),
+            ...(response.doctor.recommendations && response.doctor.recommendations.length > 0
+              ? ['Recommended next steps:', ...response.doctor.recommendations.map((recommendation) => `- ${recommendation}`)]
+              : [])
+          ].join('\n')
+      )
+    })
+}

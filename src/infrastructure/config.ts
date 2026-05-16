@@ -26,6 +26,7 @@ const globalConfigDirectoryMode = 0o700
 const globalConfigFileMode = 0o600
 
 export type ConfigScope = 'local' | 'global'
+export type VaultConfigSource = 'local-legacy' | 'local' | 'global' | 'default'
 
 const safeCwd = (): string => {
   try {
@@ -82,6 +83,31 @@ export const resolveConfigPath = (scope: ConfigScope, cwd = safeCwd()): string =
 
 export const loadRawConfig = async (scope: ConfigScope, cwd = safeCwd()): Promise<Partial<BrainlinkConfig>> =>
   readJsonConfig(resolveConfigPath(scope, cwd))
+
+export const loadLegacyLocalRawConfig = async (cwd = safeCwd()): Promise<Partial<BrainlinkConfig>> =>
+  readJsonConfig(resolve(cwd, '.brainlink.json'))
+
+export const detectVaultConfigSource = async (cwd = safeCwd()): Promise<VaultConfigSource> => {
+  const [globalConfig, localConfig, legacyLocalConfig] = await Promise.all([
+    loadRawConfig('global', cwd),
+    loadRawConfig('local', cwd),
+    loadLegacyLocalRawConfig(cwd)
+  ])
+
+  if (typeof legacyLocalConfig.vault === 'string' && legacyLocalConfig.vault.trim().length > 0) {
+    return 'local-legacy'
+  }
+
+  if (typeof localConfig.vault === 'string' && localConfig.vault.trim().length > 0) {
+    return 'local'
+  }
+
+  if (typeof globalConfig.vault === 'string' && globalConfig.vault.trim().length > 0) {
+    return 'global'
+  }
+
+  return 'default'
+}
 
 export const writeRawConfig = async (scope: ConfigScope, value: Partial<BrainlinkConfig>, cwd = safeCwd()): Promise<string> => {
   const path = resolveConfigPath(scope, cwd)

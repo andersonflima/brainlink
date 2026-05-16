@@ -564,6 +564,7 @@ Every command works with either `brainlink` or `blink`.
 ```bash
 blink config where
 blink config get vault
+blink config doctor
 blink config set-vault /absolute/path/to/existing-vault
 blink config set-vault /absolute/path/to/existing-vault --migrate-from ~/.brainlink/vault
 blink config set-vault "s3://my-memory-bucket/brainlink" --global
@@ -572,6 +573,17 @@ blink config set-vault "s3://my-memory-bucket/brainlink" --global
 `config set-vault` writes configuration through CLI (no manual file edits required).  
 By default it writes local config (`./brainlink.config.json`), appends the vault to `allowedVaults`, and migrates Markdown memory from the current configured vault when the target is empty.  
 Use `--global` to write to `$BRAINLINK_HOME/brainlink.config.json`, `--no-migrate` to skip migration, and `--no-index` to skip post-migration indexing.
+
+### `migrate-vault`
+
+```bash
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --dry-run
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault
+blink migrate-vault --from ~/.brainlink/vault --to "s3://my-memory-bucket/brainlink"
+```
+
+Runs explicit markdown migration between vaults while preserving conflicts as `.conflict-<timestamp>` files.  
+Use `--dry-run` to preview `copied`, `conflicted` and `unchanged` counts before writing.
 
 ### `init`
 
@@ -707,7 +719,7 @@ Validates graph health. The command exits non-zero when required checks fail.
 blink doctor --vault ./vault
 ```
 
-Runs environment and vault checks.
+Runs environment and vault checks. When vault has zero markdown and zero indexed documents, `doctor` prints recommended next steps (add note, inspect config source, migrate memory).
 
 ### `watch`
 

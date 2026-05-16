@@ -32,9 +32,18 @@ export const doctorVault = async (vaultPath: string): Promise<DoctorReport> => {
     createCheck('index', graph.nodes.length > 0, `${graph.nodes.length} indexed documents found`),
     createCheck('broken-links', validation.brokenLinks.length === 0, `${validation.brokenLinks.length} broken links found`)
   ]
+  const recommendations =
+    files.length === 0 && graph.nodes.length === 0
+      ? [
+          `Vault is empty. Add your first note: blink add "Architecture" --vault "${absoluteVaultPath}" --content "Markdown source of truth. #architecture"`,
+          `If this path is not the expected vault, inspect active config: blink config where`,
+          `If you changed vault recently, migrate existing memory: blink migrate-vault --from ~/.brainlink/vault --to "${absoluteVaultPath}"`
+        ]
+      : []
 
   return {
     ok: checks.every((check) => check.ok),
-    checks
+    checks,
+    ...(recommendations.length > 0 ? { recommendations } : {})
   }
 }

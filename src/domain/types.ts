@@ -175,4 +175,5 @@ export type DoctorCheck = {
 export type DoctorReport = {
   readonly ok: boolean
   readonly checks: readonly DoctorCheck[]
+  readonly recommendations?: readonly string[]
 }

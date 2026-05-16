@@ -45,3 +45,11 @@ export type ConfigSetVaultOptions = {
   readonly migrateFrom?: string
   readonly index?: boolean
 }
+
+export type MigrateVaultOptions = {
+  readonly json?: boolean
+  readonly from?: string
+  readonly to?: string
+  readonly dryRun?: boolean
+  readonly index?: boolean
+}
