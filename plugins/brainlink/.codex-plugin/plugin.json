@@ -24,7 +24,7 @@
     "privacyPolicyURL": "https://github.com/andersonflima/brainlink/blob/main/SECURITY.md",
     "termsOfServiceURL": "https://github.com/andersonflima/brainlink/blob/main/LICENSE",
     "defaultPrompt": [
-      "Use Brainlink memory before this task.",
+      "Bootstrap Brainlink memory before this task.",
       "Save this durable decision in Brainlink.",
       "Validate my Brainlink memory graph."
     ],

@@ -475,6 +475,7 @@ Restart the client after changing marketplace or MCP configuration so it reloads
 
 Available tools:
 
+- `brainlink_bootstrap`: plug-and-play entrypoint that runs index + health checks and can return context in one call.
 - `brainlink_context`: read indexed context for a task or question.
 - `brainlink_search`: search indexed notes.
 - `brainlink_add_note`: write durable Markdown memory and reindex.
@@ -486,6 +487,8 @@ Available tools:
 - `brainlink_graph`: read indexed graph nodes and weighted links.
 - `brainlink_broken_links`: list unresolved wiki links.
 - `brainlink_orphans`: list disconnected notes.
+
+For the most automatic workflow, start MCP sessions with `brainlink_bootstrap` (optionally with `query`) and then continue with `brainlink_context`/`brainlink_add_note`.
 
 The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]`. `brainlink_add_note` and `brainlink_add_file` reindex by default and include the index result when enabled.
 
@@ -555,6 +558,20 @@ Read routes accept `agent=<agent-id>`:
 ## CLI Reference
 
 Every command works with either `brainlink` or `blink`.
+
+### `config`
+
+```bash
+blink config where
+blink config get vault
+blink config set-vault /absolute/path/to/existing-vault
+blink config set-vault /absolute/path/to/existing-vault --migrate-from ~/.brainlink/vault
+blink config set-vault "s3://my-memory-bucket/brainlink" --global
+```
+
+`config set-vault` writes configuration through CLI (no manual file edits required).  
+By default it writes local config (`./brainlink.config.json`), appends the vault to `allowedVaults`, and migrates Markdown memory from the current configured vault when the target is empty.  
+Use `--global` to write to `$BRAINLINK_HOME/brainlink.config.json`, `--no-migrate` to skip migration, and `--no-index` to skip post-migration indexing.
 
 ### `init`
 
@@ -727,7 +744,13 @@ npm run --silent dev -- context "question" --vault ./vault --json
 
 ## Configuration
 
-Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current working directory. If no `vault` is configured and no `--vault` flag is passed, Brainlink uses `$HOME/.brainlink/vault`.
+Brainlink merges configuration in this order:
+
+1. Global: `$BRAINLINK_HOME/brainlink.config.json` (or `$HOME/.brainlink/brainlink.config.json` by default)
+2. Local: `brainlink.config.json` in the current working directory
+3. Local legacy compatibility: `.brainlink.json` in the current working directory
+
+If no `vault` is configured and no `--vault` flag is passed, Brainlink uses `$HOME/.brainlink/vault`.
 
 ```json
 {

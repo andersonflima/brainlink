@@ -32,3 +32,16 @@ export type AddOptions = VaultOptions & {
   readonly contentFile?: string
   readonly autoIndex?: boolean
 }
+
+export type ConfigGetOptions = {
+  readonly json?: boolean
+}
+
+export type ConfigSetVaultOptions = {
+  readonly json?: boolean
+  readonly global?: boolean
+  readonly allowlist?: boolean
+  readonly migrate?: boolean
+  readonly migrateFrom?: string
+  readonly index?: boolean
+}

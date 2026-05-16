@@ -4,10 +4,18 @@ import { isAbsolute, join, resolve } from 'node:path'
 const defaultHomeDirectoryName = '.brainlink'
 const defaultVaultDirectoryName = 'vault'
 
+const resolveSafeCwd = (): string => {
+  try {
+    return process.cwd()
+  } catch {
+    return homedir()
+  }
+}
+
 export const expandHomePath = (path: string): string =>
   path === '~' || path.startsWith('~/') ? join(homedir(), path.slice(2)) : path
 
-export const resolvePath = (path: string, cwd = process.cwd()): string => {
+export const resolvePath = (path: string, cwd = resolveSafeCwd()): string => {
   const expandedPath = expandHomePath(path)
 
   return isAbsolute(expandedPath) ? expandedPath : resolve(cwd, expandedPath)

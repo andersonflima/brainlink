@@ -154,6 +154,19 @@ export const syncInputSchema = {
   contextTokens: positiveInteger(2000).describe('Context smoke token target when contextQuery is provided.')
 }
 
+export const bootstrapInputSchema = {
+  ...vaultInput,
+  ...agentInput,
+  ...searchModeInput,
+  query: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('Optional task query. When provided, Brainlink also returns a context package in the same call.'),
+  limit: positiveInteger(12).describe('Context limit used when query is provided.'),
+  tokens: positiveInteger(2000).describe('Context token target used when query is provided.')
+}
+
 export const contextTool = async (input: z.infer<z.ZodObject<typeof contextInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
   const mode = sanitizeSearchMode(input.mode, context.config.defaultSearchMode)
@@ -335,5 +348,34 @@ export const syncTool = async (input: z.infer<z.ZodObject<typeof syncInputSchema
       mode,
       ...contextPackage
     }
+  })
+}
+
+export const bootstrapTool = async (input: z.infer<z.ZodObject<typeof bootstrapInputSchema>>): Promise<CallToolResult> => {
+  const context = await resolveExecutionContext(input)
+  const index = await indexVault(context.vault)
+  const stats = await getStats(context.vault, context.agent)
+  const validation = await validateVault(context.vault, context.agent)
+  const mode = sanitizeSearchMode(input.mode, context.config.defaultSearchMode)
+  const contextPackage = input.query
+    ? await buildContextPackage(context.vault, input.query, input.limit, input.tokens, context.agent, mode)
+    : undefined
+
+  const guidance =
+    stats.documentCount === 0
+      ? 'Vault indexed with zero documents. Add durable notes with brainlink_add_note, then run brainlink_bootstrap again.'
+      : input.query
+        ? 'Use returned context as grounding baseline, then write durable updates with brainlink_add_note when needed.'
+        : 'Run brainlink_context with the current task query to retrieve grounded context before answering.'
+
+  return jsonResult({
+    vault: context.vault,
+    agent: context.agent,
+    mode,
+    index,
+    stats,
+    validation,
+    guidance,
+    ...(contextPackage ? { context: contextPackage } : {})
   })
 }

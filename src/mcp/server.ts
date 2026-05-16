@@ -9,6 +9,8 @@ import {
   addNoteTool,
   brokenLinksInputSchema,
   brokenLinksTool,
+  bootstrapInputSchema,
+  bootstrapTool,
   contextInputSchema,
   contextTool,
   graphInputSchema,
@@ -47,10 +49,21 @@ export const createBrainlinkMcpServer = (): McpServer => {
   })
 
   server.registerTool(
+    'brainlink_bootstrap',
+    {
+      title: 'Bootstrap Brainlink For A Task',
+      description:
+        'Plug-and-play entrypoint for agents. Runs index and health checks, then optionally returns context for the current task query.',
+      inputSchema: bootstrapInputSchema
+    },
+    bootstrapTool
+  )
+
+  server.registerTool(
     'brainlink_context',
     {
       title: 'Build Brainlink Context',
-      description: 'Read indexed Brainlink memory for a task or question. This is read-only and does not create graph links.',
+      description: 'Read indexed Brainlink memory for a task or question. Call this before answering or editing code. This is read-only and does not create graph links.',
       inputSchema: contextInputSchema
     },
     contextTool
