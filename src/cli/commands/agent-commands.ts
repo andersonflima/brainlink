@@ -1,0 +1,302 @@
+import { access, lstat, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import type { Command } from 'commander'
+import { print } from '../runtime.js'
+import type { AgentInstallOptions, AgentStatusOptions } from '../types.js'
+
+type MarketplacePluginEntry = {
+  readonly name: string
+  readonly source: {
+    readonly source: 'local'
+    readonly path: string
+  }
+  readonly policy: {
+    readonly installation: 'AVAILABLE'
+    readonly authentication: 'ON_INSTALL'
+  }
+  readonly category: 'Productivity'
+}
+
+type MarketplaceDocument = {
+  readonly name: string
+  readonly interface: {
+    readonly displayName: string
+  }
+  readonly plugins: readonly MarketplacePluginEntry[]
+}
+
+const getCodexConfigPath = (): string =>
+  join(homedir(), '.codex', 'config.toml')
+
+const getMarketplacePath = (): string =>
+  join(homedir(), '.agents', 'plugins', 'marketplace.json')
+
+const getDefaultPluginSourcePath = (): string =>
+  resolve(process.cwd(), 'plugins', 'brainlink')
+
+const getPluginSymlinkPath = (): string =>
+  join(homedir(), 'plugins', 'brainlink')
+
+const toTomlValue = (value: string): string =>
+  `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+
+const removeBrainlinkMcpSection = (content: string): string => {
+  const lines = content.split('\n')
+  const output: string[] = []
+  let skip = false
+
+  for (const line of lines) {
+    const sectionMatch = line.match(/^\[(.+)\]\s*$/)
+
+    if (!skip && sectionMatch?.[1] === 'mcp_servers.brainlink') {
+      skip = true
+      continue
+    }
+
+    if (skip && sectionMatch) {
+      skip = false
+    }
+
+    if (!skip) {
+      output.push(line)
+    }
+  }
+
+  return output.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()
+}
+
+const buildBrainlinkMcpSection = (options: { allowedVaults?: string; brainlinkHome?: string }): string => {
+  const envEntries: string[] = []
+
+  if (options.allowedVaults) {
+    envEntries.push(`BRAINLINK_ALLOWED_VAULTS = ${toTomlValue(options.allowedVaults)}`)
+  }
+
+  if (options.brainlinkHome) {
+    envEntries.push(`BRAINLINK_HOME = ${toTomlValue(options.brainlinkHome)}`)
+  }
+
+  return [
+    '[mcp_servers.brainlink]',
+    `command = ${toTomlValue('brainlink-mcp')}`,
+    ...(envEntries.length > 0 ? [`env = { ${envEntries.join(', ')} }`] : [])
+  ].join('\n')
+}
+
+const upsertCodexMcpConfig = async (configPath: string, options: { allowedVaults?: string; brainlinkHome?: string }): Promise<void> => {
+  let existing = ''
+
+  try {
+    existing = await readFile(configPath, 'utf8')
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+      throw error
+    }
+  }
+
+  const withoutSection = removeBrainlinkMcpSection(existing)
+  const section = buildBrainlinkMcpSection(options)
+  const merged = `${withoutSection}\n\n${section}\n`.replace(/^\n+/, '')
+
+  await mkdir(dirname(configPath), { recursive: true, mode: 0o700 })
+  await writeFile(configPath, merged, { encoding: 'utf8', mode: 0o600 })
+}
+
+const ensurePluginSymlink = async (sourcePath: string, symlinkPath: string): Promise<void> => {
+  await access(sourcePath)
+  await mkdir(dirname(symlinkPath), { recursive: true, mode: 0o700 })
+
+  try {
+    const info = await lstat(symlinkPath)
+
+    if (info.isSymbolicLink()) {
+      await rm(symlinkPath, { force: true })
+    } else {
+      await rm(symlinkPath, { recursive: true, force: true })
+    }
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+      throw error
+    }
+  }
+
+  await symlink(sourcePath, symlinkPath)
+}
+
+const loadMarketplace = async (path: string): Promise<MarketplaceDocument> => {
+  try {
+    const content = await readFile(path, 'utf8')
+    const parsed = JSON.parse(content) as Partial<MarketplaceDocument>
+    const plugins = Array.isArray(parsed.plugins) ? parsed.plugins : []
+
+    return {
+      name: typeof parsed.name === 'string' ? parsed.name : 'local',
+      interface: {
+        displayName: typeof parsed.interface?.displayName === 'string' ? parsed.interface.displayName : 'Local'
+      },
+      plugins: plugins as readonly MarketplacePluginEntry[]
+    }
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+      throw error
+    }
+
+    return {
+      name: 'local',
+      interface: {
+        displayName: 'Local'
+      },
+      plugins: []
+    }
+  }
+}
+
+const upsertMarketplacePlugin = async (marketplacePath: string): Promise<void> => {
+  const marketplace = await loadMarketplace(marketplacePath)
+  const pluginEntry: MarketplacePluginEntry = {
+    name: 'brainlink',
+    source: {
+      source: 'local',
+      path: './plugins/brainlink'
+    },
+    policy: {
+      installation: 'AVAILABLE',
+      authentication: 'ON_INSTALL'
+    },
+    category: 'Productivity'
+  }
+
+  const plugins = marketplace.plugins.filter((plugin) => plugin?.name !== 'brainlink')
+  const next = {
+    ...marketplace,
+    plugins: [...plugins, pluginEntry]
+  }
+
+  await mkdir(dirname(marketplacePath), { recursive: true, mode: 0o700 })
+  await writeFile(marketplacePath, `${JSON.stringify(next, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+}
+
+const parseAllowedVaults = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  const normalized = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  return normalized.length > 0 ? normalized.join(',') : undefined
+}
+
+export const registerAgentCommands = (program: Command): void => {
+  const agent = program.command('agent').description('install or inspect Brainlink agent integration')
+
+  agent
+    .command('install')
+    .option('--mcp-only', 'only configure MCP server in Codex config')
+    .option('--plugin-path <path>', 'custom source path for Brainlink plugin files')
+    .option('--allowed-vaults <paths>', 'comma separated vault allowlist to inject in MCP env')
+    .option('--brainlink-home <path>', 'BRAINLINK_HOME value to inject in MCP env')
+    .option('--json', 'print machine-readable JSON')
+    .description('install Brainlink as default MCP memory integration for the local agent')
+    .action(async (options: AgentInstallOptions) => {
+      const codexConfigPath = getCodexConfigPath()
+      const allowedVaults = parseAllowedVaults(options.allowedVaults)
+      await upsertCodexMcpConfig(codexConfigPath, {
+        allowedVaults,
+        brainlinkHome: options.brainlinkHome
+      })
+
+      const warnings: string[] = []
+      const pluginSourcePath = options.pluginPath ? resolve(options.pluginPath) : getDefaultPluginSourcePath()
+      const pluginSymlinkPath = getPluginSymlinkPath()
+      const marketplacePath = getMarketplacePath()
+
+      if (options.mcpOnly !== true) {
+        try {
+          await ensurePluginSymlink(pluginSourcePath, pluginSymlinkPath)
+          await upsertMarketplacePlugin(marketplacePath)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          warnings.push(
+            `Plugin marketplace setup skipped: ${message}. MCP is configured, but install repository plugin files to enable local gallery auto-discovery.`
+          )
+        }
+      }
+
+      print(
+        options.json,
+        {
+          installed: true,
+          codexConfigPath,
+          mcpServer: 'brainlink',
+          command: 'brainlink-mcp',
+          ...(options.mcpOnly !== true ? { pluginSourcePath, pluginSymlinkPath, marketplacePath } : {}),
+          ...(warnings.length > 0 ? { warnings } : {})
+        },
+        () =>
+          [
+            `Installed Brainlink MCP at ${codexConfigPath}`,
+            ...(options.mcpOnly === true ? [] : [`Plugin symlink: ${pluginSymlinkPath}`, `Marketplace: ${marketplacePath}`]),
+            ...(warnings.length > 0 ? ['Warnings:', ...warnings.map((warning) => `- ${warning}`)] : [])
+          ].join('\n')
+      )
+    })
+
+  agent
+    .command('status')
+    .option('--json', 'print machine-readable JSON')
+    .description('check if Brainlink MCP integration is configured for the local agent')
+    .action(async (options: AgentStatusOptions) => {
+      const codexConfigPath = getCodexConfigPath()
+      let codexConfig = ''
+
+      try {
+        codexConfig = await readFile(codexConfigPath, 'utf8')
+      } catch (error) {
+        if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+          throw error
+        }
+      }
+
+      const hasMcpSection = codexConfig.includes('[mcp_servers.brainlink]')
+      const hasCommand = /(^|\n)\s*command\s*=\s*"brainlink-mcp"\s*(\n|$)/m.test(codexConfig)
+      const pluginSymlinkPath = getPluginSymlinkPath()
+      const marketplacePath = getMarketplacePath()
+      let pluginSymlinkExists = false
+      let marketplaceEntryExists = false
+
+      try {
+        pluginSymlinkExists = (await lstat(pluginSymlinkPath)).isSymbolicLink()
+      } catch {}
+
+      try {
+        const marketplace = await loadMarketplace(marketplacePath)
+        marketplaceEntryExists = marketplace.plugins.some((plugin) => plugin?.name === 'brainlink')
+      } catch {}
+
+      print(
+        options.json,
+        {
+          configured: hasMcpSection && hasCommand,
+          codexConfigPath,
+          hasMcpSection,
+          hasCommand,
+          pluginSymlinkPath,
+          pluginSymlinkExists,
+          marketplacePath,
+          marketplaceEntryExists
+        },
+        () =>
+          [
+            `codexConfigPath=${codexConfigPath}`,
+            `configured=${hasMcpSection && hasCommand}`,
+            `pluginSymlinkExists=${pluginSymlinkExists}`,
+            `marketplaceEntryExists=${marketplaceEntryExists}`
+          ].join('\n')
+      )
+    })
+}
+
