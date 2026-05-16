@@ -1,7 +1,8 @@
-import { gunzipSync, gzipSync } from 'node:zlib'
+import { gunzipSync } from 'node:zlib'
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { IndexedDocument, SearchResult } from '../domain/types.js'
+import { decodePrivatePack, encodePrivatePack, isPrivatePackPayload } from './private-pack-codec.js'
 
 type SearchPackRow = {
   readonly documentId: string
@@ -14,10 +15,11 @@ type SearchPackRow = {
 }
 
 type SearchPackManifest = {
-  readonly version: 1
+  readonly version: 2
   readonly createdAt: string
   readonly packCount: number
   readonly recordCount: number
+  readonly format: 'private-v2'
 }
 
 const packsDirectoryName = 'search-packs'
@@ -31,13 +33,16 @@ const toPackDirectory = (vaultPath: string): string =>
 const toManifestPath = (vaultPath: string): string =>
   join(toPackDirectory(vaultPath), manifestFileName)
 
-const parseRowsFromPack = (content: Buffer): readonly SearchPackRow[] =>
-  gunzipSync(content)
+const parseRowsFromPack = async (vaultPath: string, content: Buffer): Promise<readonly SearchPackRow[]> => {
+  const raw = isPrivatePackPayload(content) ? await decodePrivatePack(vaultPath, content) : gunzipSync(content)
+
+  return raw
     .toString('utf8')
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .map((line) => JSON.parse(line) as SearchPackRow)
+}
 
 const toRows = (documents: readonly IndexedDocument[]): readonly SearchPackRow[] =>
   documents.flatMap((document) =>
@@ -135,7 +140,7 @@ const sortedPackFiles = async (vaultPath: string): Promise<readonly string[]> =>
     const files = await readdir(toPackDirectory(vaultPath))
 
     return files
-      .filter((file) => file.endsWith('.jsonl.gz'))
+      .filter((file) => file.endsWith('.blpk') || file.endsWith('.jsonl.gz'))
       .sort((left, right) => left.localeCompare(right))
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
@@ -157,26 +162,27 @@ export const buildSearchPacks = async (
   const current = await readdir(directory)
   await Promise.all(
     current
-      .filter((name) => name.endsWith('.jsonl.gz') || name === manifestFileName)
+      .filter((name) => name.endsWith('.blpk') || name.endsWith('.jsonl.gz') || name === manifestFileName)
       .map((name) => rm(join(directory, name), { force: true }))
   )
 
   const chunks = chunkRows(rows, rowChunkSize)
   await Promise.all(
     chunks.map(async (chunk, index) => {
-      const fileName = `pack-${String(index + 1).padStart(4, '0')}.jsonl.gz`
+      const fileName = `pack-${String(index + 1).padStart(4, '0')}.blpk`
       const serialized = `${chunk.map((row) => JSON.stringify(row)).join('\n')}\n`
-      const compressed = gzipSync(Buffer.from(serialized, 'utf8'), { level: 6 })
+      const compressed = await encodePrivatePack(vaultPath, Buffer.from(serialized, 'utf8'))
 
       await writeFile(join(directory, fileName), compressed)
     })
   )
 
   await writeManifest(vaultPath, {
-    version: 1,
+    version: 2,
     createdAt: new Date().toISOString(),
     packCount: chunks.length,
-    recordCount: rows.length
+    recordCount: rows.length,
+    format: 'private-v2'
   })
 
   return {
@@ -206,7 +212,7 @@ export const searchInPacks = async (
   const scored: SearchResult[] = []
 
   for (const file of files) {
-    const rows = parseRowsFromPack(await readFile(join(toPackDirectory(vaultPath), file)))
+    const rows = await parseRowsFromPack(vaultPath, await readFile(join(toPackDirectory(vaultPath), file)))
 
     rows.forEach((row) => {
       if (normalizedAgent && row.agentId !== normalizedAgent) {
@@ -225,4 +231,3 @@ export const searchInPacks = async (
     .sort((left, right) => right.score - left.score || left.title.localeCompare(right.title))
     .slice(0, limit)
 }
-
