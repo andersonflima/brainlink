@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 
-const schemaVersion = 5
+const schemaVersion = 6
 const requiredTableColumns: Readonly<Record<string, readonly string[]>> = {
   documents: ['id', 'agent_id', 'title', 'path', 'content', 'tags_json', 'frontmatter_json', 'created_at', 'updated_at'],
   chunks: ['id', 'document_id', 'ordinal', 'content', 'token_count', 'embedding_provider', 'embedding_json'],
@@ -84,7 +84,9 @@ export const createSchema = (database: Database.Database): void => {
     );
 
     CREATE INDEX IF NOT EXISTS idx_documents_agent_title ON documents(agent_id, title);
+    CREATE INDEX IF NOT EXISTS idx_documents_agent_id ON documents(agent_id, id);
     CREATE INDEX IF NOT EXISTS idx_chunks_document_ordinal ON chunks(document_id, ordinal);
+    CREATE INDEX IF NOT EXISTS idx_chunks_token_count ON chunks(token_count);
 
     CREATE TABLE IF NOT EXISTS embedding_buckets (
       bucket TEXT NOT NULL,
@@ -109,6 +111,7 @@ export const createSchema = (database: Database.Database): void => {
 
     CREATE INDEX IF NOT EXISTS idx_links_to_document_id ON links(to_document_id);
     CREATE INDEX IF NOT EXISTS idx_links_to_title_key ON links(to_title_key);
+    CREATE INDEX IF NOT EXISTS idx_links_source_weight ON links(from_document_id, weight DESC, to_title);
 
     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
       chunk_id UNINDEXED,

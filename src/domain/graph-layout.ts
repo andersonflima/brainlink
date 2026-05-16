@@ -70,24 +70,20 @@ const countDegrees = (edges: readonly GraphEdge[]): ReadonlyMap<string, number> 
     new Map()
   )
 
-const uniqueIds = (ids: readonly string[]): readonly string[] =>
-  Array.from(new Set(ids))
-
 const createAdjacency = (nodes: readonly GraphNode[], edges: readonly GraphEdge[]): ReadonlyMap<string, readonly string[]> => {
   const nodeIds = new Set(nodes.map((node) => node.id))
-  const emptyAdjacency = new Map(nodes.map((node) => [node.id, [] as readonly string[]]))
+  const adjacency = new Map<string, Set<string>>(nodes.map((node) => [node.id, new Set<string>()]))
 
-  return edges.reduce<ReadonlyMap<string, readonly string[]>>((adjacency, edge) => {
+  edges.forEach((edge) => {
     if (!edge.target || !nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
-      return adjacency
+      return
     }
 
-    return new Map([
-      ...adjacency,
-      [edge.source, uniqueIds([...(adjacency.get(edge.source) ?? []), edge.target])],
-      [edge.target, uniqueIds([...(adjacency.get(edge.target) ?? []), edge.source])]
-    ])
-  }, emptyAdjacency)
+    adjacency.get(edge.source)?.add(edge.target)
+    adjacency.get(edge.target)?.add(edge.source)
+  })
+
+  return new Map(Array.from(adjacency.entries(), ([id, neighbors]) => [id, Array.from(neighbors)]))
 }
 
 const byTitle = (left: GraphNode, right: GraphNode): number =>
@@ -189,12 +185,21 @@ const assignSegments = (
 const groupNodesBySegment = (
   nodes: readonly GraphNode[],
   segments: ReadonlyMap<string, string>
-): ReadonlyMap<string, readonly GraphNode[]> =>
-  nodes.reduce<ReadonlyMap<string, readonly GraphNode[]>>((groups, node) => {
-    const segment = segments.get(node.id) ?? groupLabel(groupKey(node))
+): ReadonlyMap<string, readonly GraphNode[]> => {
+  const groups = new Map<string, GraphNode[]>()
 
-    return new Map([...groups, [segment, [...(groups.get(segment) ?? []), node]]])
-  }, new Map())
+  nodes.forEach((node) => {
+    const segment = segments.get(node.id) ?? groupLabel(groupKey(node))
+    const bucket = groups.get(segment)
+    if (bucket) {
+      bucket.push(node)
+      return
+    }
+    groups.set(segment, [node])
+  })
+
+  return new Map(groups)
+}
 
 const segmentAngle = (segment: string, index: number, count: number): number =>
   segmentAngles[segment] ?? (Math.PI * 2 * index) / Math.max(count, 1) - Math.PI / 2

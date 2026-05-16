@@ -9,6 +9,7 @@ const state = {
   query: '',
   agentId: '',
   agentsSignature: '',
+  nodeDetails: new Map(),
   transform: { x: 0, y: 0, scale: 1 },
   pointer: { x: 0, y: 0, down: false, dragNode: null, moved: false },
   graphSignature: '',
@@ -180,7 +181,7 @@ const encodeEntityTag = (value) => {
 }
 
 const graphSignature = graph => JSON.stringify({
-  nodes: graph.nodes.map(node => [node.id, node.title, node.path, node.content, node.tags]),
+  nodes: graph.nodes.map(node => [node.id, node.title, node.path, node.tags]),
   edges: graph.edges.map(edge => [edge.source, edge.target, edge.targetTitle, edge.weight, edge.priority])
 })
 
@@ -341,7 +342,27 @@ const linkedNodes = node => {
   return { outgoing, incoming }
 }
 
-const openContentDialog = node => {
+const fetchNodeDetails = async node => {
+  const cached = state.nodeDetails.get(node.id)
+  if (cached) {
+    return cached
+  }
+
+  const response = await fetch('/api/graph-node?id=' + encodeURIComponent(node.id) + agentQuery())
+  if (!response.ok) {
+    throw new Error('Failed to load graph node details')
+  }
+
+  const payload = await response.json()
+  const detail = payload?.node
+  if (!detail || !detail.id) {
+    throw new Error('Invalid graph node payload')
+  }
+  state.nodeDetails.set(detail.id, detail)
+  return detail
+}
+
+const openContentDialog = async node => {
   if (!node) return
   const { outgoing, incoming } = linkedNodes(node)
   elements.contentTitle.textContent = node.title
@@ -351,15 +372,29 @@ const openContentDialog = node => {
     : '<span>No tags</span>'
   elements.contentOutgoing.innerHTML = list(outgoing)
   elements.contentIncoming.innerHTML = list(incoming)
-  elements.contentBody.textContent = node.content
+  elements.contentBody.textContent = 'Loading note content...'
   if (!elements.contentDialog.open) {
     elements.contentDialog.showModal()
+  }
+
+  try {
+    const detailedNode = await fetchNodeDetails(node)
+    if (state.selected?.id !== node.id) {
+      return
+    }
+    elements.contentBody.textContent = detailedNode.content
+  } catch {
+    elements.contentBody.textContent = 'Unable to load note content.'
   }
 }
 
 const selectNode = (node, options = { openContent: false }) => {
   state.selected = node
-  if (node && options.openContent) openContentDialog(node)
+  if (node && options.openContent) {
+    openContentDialog(node).catch(() => {
+      elements.contentBody.textContent = 'Unable to load note content.'
+    })
+  }
 }
 
 const selectNodeById = id => {
@@ -385,6 +420,7 @@ const bindEvents = () => {
   elements.agent.addEventListener('change', event => {
     state.agentId = event.target.value
     state.selected = null
+    state.nodeDetails = new Map()
     loadGraph({ reset: true }).catch(error => {
       console.error(error)
     })
@@ -496,6 +532,7 @@ const loadGraph = async (options = { reset: false }) => {
   state.graph = graph
   state.nodes = layout.nodes
   state.edges = layout.edges
+  state.nodeDetails = new Map()
   const tags = new Set(graph.nodes.flatMap(node => node.tags))
   setGraphStatus(state.agentId + ' · ' + graph.nodes.length + ' notes · ' + graph.edges.length + ' links · live')
   elements.nodeCount.textContent = graph.nodes.length
