@@ -1,33 +1,35 @@
 import { stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { performance } from 'node:perf_hooks'
+import { join } from 'node:path'
 import { validateGraph, getBrokenLinks, getOrphanNodes, getVaultStats } from '../domain/graph-analysis.js'
 import type { BrokenLink, DoctorReport, LinkPriority, OrphanNode, VaultExtendedStats, VaultStats, VaultValidation } from '../domain/types.js'
 import { ensureVault, listVaultFiles, readMarkdownFiles } from '../infrastructure/file-system-vault.js'
 import { resolveAgentRuntimeDefaults } from '../infrastructure/config.js'
-import { getGraph } from './get-graph.js'
+import { getGraphSummary } from './get-graph-summary.js'
 import { buildContextPackage } from './build-context.js'
 import { indexVault } from './index-vault.js'
 import { searchKnowledge } from './search-knowledge.js'
 import { loadBrainlinkConfig } from '../infrastructure/config.js'
 
 export const getStats = async (vaultPath: string, agentId?: string): Promise<VaultStats> =>
-  getVaultStats(await getGraph(vaultPath, agentId))
+  getVaultStats(await getGraphSummary(vaultPath, agentId))
 
 export const getBrokenLinksReport = async (vaultPath: string, agentId?: string): Promise<readonly BrokenLink[]> =>
-  getBrokenLinks(await getGraph(vaultPath, agentId))
+  getBrokenLinks(await getGraphSummary(vaultPath, agentId))
 
 export const getOrphansReport = async (vaultPath: string, agentId?: string): Promise<readonly OrphanNode[]> =>
-  getOrphanNodes(await getGraph(vaultPath, agentId))
+  getOrphanNodes(await getGraphSummary(vaultPath, agentId))
 
 export const validateVault = async (vaultPath: string, agentId?: string): Promise<VaultValidation> =>
-  validateGraph(await getGraph(vaultPath, agentId))
+  validateGraph(await getGraphSummary(vaultPath, agentId))
 
 const toRatio = (part: number, total: number): number =>
   total === 0 ? 0 : Number((part / total).toFixed(4))
 
 export const getExtendedStats = async (vaultPath: string, agentId?: string): Promise<VaultExtendedStats> => {
   const absoluteVaultPath = await ensureVault(vaultPath)
-  const graph = await getGraph(absoluteVaultPath, agentId)
+  const graph = await getGraphSummary(absoluteVaultPath, agentId)
   const stats = getVaultStats(graph)
   const markdownFiles = await readMarkdownFiles(absoluteVaultPath)
   const allFiles = await listVaultFiles(absoluteVaultPath)
@@ -121,13 +123,23 @@ const createCheck = (name: string, ok: boolean, message: string) => ({
 export const doctorVault = async (vaultPath: string): Promise<DoctorReport> => {
   const absoluteVaultPath = await ensureVault(vaultPath)
   const files = await readMarkdownFiles(absoluteVaultPath)
-  const graph = await getGraph(absoluteVaultPath)
+  const graph = await getGraphSummary(absoluteVaultPath)
   const validation = validateGraph(graph)
+  const backupPath = join(absoluteVaultPath, '.brainlink', 'brainlink.db.backup')
+  const hasBackup = existsSync(backupPath)
+  const backupReady = graph.nodes.length === 0 || hasBackup
   const checks = [
     createCheck('vault', true, `Vault ready at ${absoluteVaultPath}`),
     createCheck('markdown-files', files.length > 0, `${files.length} markdown files found`),
     createCheck('index', graph.nodes.length > 0, `${graph.nodes.length} indexed documents found`),
-    createCheck('broken-links', validation.brokenLinks.length === 0, `${validation.brokenLinks.length} broken links found`)
+    createCheck('broken-links', validation.brokenLinks.length === 0, `${validation.brokenLinks.length} broken links found`),
+    createCheck(
+      'index-backup',
+      backupReady,
+      backupReady
+        ? (hasBackup ? 'SQLite recovery snapshot is available' : 'No index yet. Snapshot will be created after first indexing run')
+        : 'Recovery snapshot missing. Run blink index to create a rollback snapshot'
+    )
   ]
   const recommendations =
     files.length === 0 && graph.nodes.length === 0

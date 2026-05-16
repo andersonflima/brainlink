@@ -57,6 +57,7 @@ LLMs do not have infinite context. Brainlink gives agents an external memory lay
 6. Brainlink returns compact, source-backed context.
 
 Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable index.
+Brainlink now keeps an automatic rollback snapshot at `.brainlink/brainlink.db.backup`. If the main SQLite file is corrupted, Brainlink automatically restores from snapshot (or recreates a clean index when no snapshot exists).
 
 ## Features
 
@@ -578,6 +579,7 @@ Routes:
 - `GET /api/agents`
 - `GET /api/graph`
 - `GET /api/graph-layout`
+- `GET /api/graph-node?id=<node-id>`
 - `GET /api/search?q=<query>&limit=10&mode=hybrid`
 - `GET /api/context?q=<query>&limit=12&tokens=2000&mode=hybrid`
 - `GET /api/links`

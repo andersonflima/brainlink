@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { createCauliflowerGraphLayout } from '../domain/graph-layout.js'
 import type { KnowledgeGraph, KnowledgeGraphLayout } from '../domain/types.js'
-import { getGraph } from './get-graph.js'
+import { getGraphSummary } from './get-graph-summary.js'
 
 export type GraphLayoutPayload = {
   readonly signature: string
@@ -27,7 +27,7 @@ const createGraphSignature = (graph: KnowledgeGraph): string => {
 }
 
 export const getGraphLayout = async (vaultPath: string, agentId?: string): Promise<GraphLayoutPayload> => {
-  const graph = await getGraph(vaultPath, agentId)
+  const graph = await getGraphSummary(vaultPath, agentId)
   const signature = createGraphSignature(graph)
   const cacheKey = `${vaultPath}:${agentId ?? ''}`
   const cached = graphLayoutCache.get(cacheKey)
