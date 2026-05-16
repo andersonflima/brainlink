@@ -155,6 +155,17 @@ const graphBounds = nodes => {
   }
 }
 
+const fitScaleBiasByNodeCount = nodeCount => {
+  if (nodeCount <= 6) return 2.4
+  if (nodeCount <= 20) return 1.9
+  if (nodeCount <= 60) return 1.5
+  if (nodeCount <= 180) return 1.25
+  if (nodeCount <= 600) return 1.05
+  if (nodeCount <= 2000) return 0.9
+  if (nodeCount <= 6000) return 0.72
+  return 0.62
+}
+
 const fitView = (options = { useFiltered: true }) => {
   const rect = canvas.getBoundingClientRect()
   const width = Math.max(rect.width, 320)
@@ -171,8 +182,9 @@ const fitView = (options = { useFiltered: true }) => {
   const scaleX = width / (bounds.width + padding * 2)
   const scaleY = height / (bounds.height + padding * 2)
   const fitScale = clampScale(Math.min(scaleX, scaleY))
+  const biasedScale = clampScale(fitScale * fitScaleBiasByNodeCount(nodes.length))
   const minimumLargeGraphScale = nodes.length > largeGraphNodeThreshold ? 0.13 : zoomRange.min
-  const scale = Math.max(fitScale, minimumLargeGraphScale)
+  const scale = Math.max(biasedScale, minimumLargeGraphScale)
   const centerX = (bounds.minX + bounds.maxX) / 2
   const centerY = (bounds.minY + bounds.maxY) / 2
 
