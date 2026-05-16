@@ -38,11 +38,35 @@ select {
 }
 
 .workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   position: relative;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
+}
+
+.graph-header {
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(17, 21, 27, 0.96) 0%, rgba(17, 21, 27, 0.86) 100%);
+  backdrop-filter: blur(8px);
+}
+
+.brand-block {
+  display: grid;
+  gap: 2px;
+  min-width: max-content;
+}
+
+.brand-block strong {
+  font-size: 18px;
 }
 
 #graph {
@@ -59,40 +83,25 @@ select {
   cursor: grabbing;
 }
 
-.topbar {
-  position: absolute;
-  top: 18px;
-  left: 18px;
-  right: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  pointer-events: none;
-}
-
-.topbar > div {
-  display: flex;
-  align-items: center;
-}
-
-.topbar strong {
-  font-size: 18px;
-}
-
 .eyebrow {
   color: var(--muted);
   font-size: 12px;
 }
 
 .search {
-  width: min(420px, 42vw);
-  pointer-events: auto;
+  flex: 1 1 320px;
+  min-width: 220px;
 }
 
 .agent-filter {
   width: min(220px, 28vw);
-  pointer-events: auto;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
 }
 
 .search input,
@@ -113,9 +122,6 @@ select {
 }
 
 .toolbar {
-  position: absolute;
-  left: 18px;
-  bottom: 18px;
   display: flex;
   gap: 8px;
 }
@@ -136,12 +142,9 @@ select {
 }
 
 .floating-metrics {
-  position: absolute;
-  top: 66px;
-  left: 18px;
   display: flex;
   gap: 10px;
-  pointer-events: none;
+  flex-wrap: wrap;
 }
 
 .metric-chip {
@@ -343,30 +346,33 @@ li small {
 }
 
 @media (max-width: 860px) {
-  .topbar {
+  .graph-header {
     align-items: stretch;
-    flex-direction: column;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    min-height: 0;
   }
 
   .search {
     width: 100%;
+    flex-basis: 100%;
+    order: 3;
   }
 
   .agent-filter {
     width: 100%;
   }
 
+  .header-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+    order: 4;
+  }
+
   .content-dialog header {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .floating-metrics {
-    top: 116px;
-    right: 18px;
-    left: 18px;
-    justify-content: flex-start;
-    flex-wrap: wrap;
   }
 
   .metric-chip {
