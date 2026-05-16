@@ -39,7 +39,16 @@ $HOME/.brainlink/vault
 
 `blink server` follows the same rule, so it serves the default Brainlink vault instead of the current working directory.
 
-Use `--vault <path>` for a one-off custom vault, or set `vault` in `brainlink.config.json` / `.brainlink.json` for a workspace-level custom default. Set `BRAINLINK_HOME` when the whole Brainlink home directory should live somewhere else.
+Use `--vault <path>` for a one-off custom vault, or set `vault` in config for a persistent default.
+Configuration precedence is:
+
+1. global: `$BRAINLINK_HOME/brainlink.config.json` (or `$HOME/.brainlink/brainlink.config.json`)
+2. local: `./brainlink.config.json`
+3. local legacy: `./.brainlink.json`
+
+Set `BRAINLINK_HOME` when the whole Brainlink home directory should live somewhere else.
+
+Use `blink config where` and `blink config doctor` to inspect active paths and effective source.
 
 You can also set `defaultAgent` in `brainlink.config.json` / `.brainlink.json` (for example `"defaultAgent": "coding-agent"`). When set, CLI commands and MCP calls reuse it when `--agent`/`agent` is not passed.
 
@@ -246,7 +255,7 @@ cp docs/templates/agent-note-template.md /tmp/agent-note.md
 When using MCP, use this compact sequence for the same memory discipline:
 
 1. Bootstrap context:
-   - `brainlink_context` with `agent`, `query`, `mode: hybrid`, `limit`.
+   - `brainlink_bootstrap` with `agent`, optional `query`, `mode: hybrid`, `limit`.
 2. Capture durable decisions:
    - `brainlink_add_note` or `brainlink_add_file` with explicit `[[wiki links]]` and `#tags`.
 3. Run maintenance before handoff or before the next step:
@@ -342,6 +351,38 @@ $HOME/.brainlink/vault/
 ```
 
 `blink init ./vault` creates a custom vault instead. If the custom vault is empty and the default `$HOME/.brainlink/vault` already has Markdown memory, Brainlink copies that content into the custom vault and reindexes it. Use `blink init ./vault --no-migrate-existing` to intentionally start empty, or `blink init ./vault --migrate-from <old-vault>` to migrate from a specific previous vault. Existing target files are not overwritten; conflicting source files are preserved with a `.conflict-<timestamp>` suffix.
+
+### Configure Defaults
+
+```bash
+blink config where
+blink config get vault
+blink config doctor
+blink config set-vault /absolute/path/to/vault
+blink config set-vault /absolute/path/to/vault --global
+```
+
+`config set-vault` updates Brainlink config through CLI. By default it writes local `brainlink.config.json`, appends the vault to `allowedVaults`, and migrates markdown when the target is empty.
+
+### Migrate Vaults Explicitly
+
+```bash
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --dry-run
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault
+blink migrate-vault --from ~/.brainlink/vault --to "s3://my-memory-bucket/brainlink"
+```
+
+Use `--dry-run` to preview `copied`, `conflicted`, `unchanged` before writing files.
+
+### Install Agent Integration
+
+```bash
+blink agent install
+blink agent install --plugin-path ./plugins/brainlink
+blink agent status
+```
+
+`agent install` configures Brainlink MCP in `~/.codex/config.toml` so compatible agents can use Brainlink by default.
 
 ### Add A Note
 
@@ -518,6 +559,7 @@ Example MCP client configuration:
 
 Available MCP tools:
 
+- `brainlink_bootstrap`
 - `brainlink_context`
 - `brainlink_search`
 - `brainlink_add_note`
@@ -529,6 +571,8 @@ Available MCP tools:
 - `brainlink_graph`
 - `brainlink_broken_links`
 - `brainlink_orphans`
+
+Recommended start of every memory-dependent task: call `brainlink_bootstrap` first, then `brainlink_context` only when additional retrieval is needed.
 
 MCP clients can pass `vault` and `agent` arguments per tool call. Set `BRAINLINK_ALLOWED_VAULTS` when exposing Brainlink to an external agent process so a tool cannot pass arbitrary vault paths:
 

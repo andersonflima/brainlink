@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-beta.3
+
+- Added CLI configuration commands for effective vault management, including `config where`, `config get`, `config doctor` and `config set-vault`.
+- Added explicit `migrate-vault` command with `--dry-run` preview and conflict-preserving copy behavior.
+- Added one-command agent setup through `agent install` plus `agent status` diagnostics.
+- Added MCP `brainlink_bootstrap` default entrypoint guidance for plug-and-play agent memory flows.
+- Added migration coverage for S3 bucket vault targets.
+- Updated architecture and agent-usage documentation to reflect current CLI/MCP behavior and configuration precedence.
+
 ## 0.1.0-beta.2
 
 - Added MCP installation guidance for direct server configuration and local client stores.
