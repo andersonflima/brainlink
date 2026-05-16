@@ -1,6 +1,6 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative } from 'node:path'
-import { ensureVault, listVaultFiles, resolveVaultPath } from '../infrastructure/file-system-vault.js'
+import { ensureVault, isBucketVaultPath, listVaultFiles, resolveVaultPath, writeMarkdownFile } from '../infrastructure/file-system-vault.js'
 
 export type VaultMigrationResult = {
   readonly source: string
@@ -12,6 +12,7 @@ export type VaultMigrationResult = {
 
 const directoryMode = 0o700
 const fileMode = 0o600
+const isMarkdownPath = (path: string): boolean => extname(path).toLowerCase() === '.md'
 
 const timestamp = (): string => new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, 'Z')
 
@@ -34,6 +35,15 @@ const writePreservedFile = async (absolutePath: string, content: Buffer): Promis
   await chmod(absolutePath, fileMode)
 }
 
+const writeMigratedFile = async (targetVault: string, targetRoot: string, absolutePath: string, content: Buffer): Promise<void> => {
+  if (isBucketVaultPath(targetVault)) {
+    await writeMarkdownFile(targetVault, relative(targetRoot, absolutePath), content.toString('utf8'))
+    return
+  }
+
+  await writePreservedFile(absolutePath, content)
+}
+
 export const migrateVaultContent = async (sourceVault: string, targetVault: string): Promise<VaultMigrationResult> => {
   const source = await ensureVault(sourceVault)
   const target = await ensureVault(targetVault)
@@ -42,7 +52,7 @@ export const migrateVaultContent = async (sourceVault: string, targetVault: stri
     return { source, target, copied: 0, unchanged: 0, conflicted: 0 }
   }
 
-  const sourceFiles = await listVaultFiles(source)
+  const sourceFiles = (await listVaultFiles(source)).filter(isMarkdownPath)
 
   const migrated = await sourceFiles.reduce<Promise<VaultMigrationResult>>(async (statePromise, sourceFile) => {
     const state = await statePromise
@@ -61,7 +71,7 @@ export const migrateVaultContent = async (sourceVault: string, targetVault: stri
         return { ...state, unchanged: state.unchanged + 1 }
       }
 
-      await writePreservedFile(conflictPath(targetFile), sourceContent)
+      await writeMigratedFile(targetVault, target, conflictPath(targetFile), sourceContent)
 
       return { ...state, conflicted: state.conflicted + 1 }
     } catch (error) {
@@ -69,7 +79,7 @@ export const migrateVaultContent = async (sourceVault: string, targetVault: stri
         throw error
       }
 
-      await writePreservedFile(targetFile, sourceContent)
+      await writeMigratedFile(targetVault, target, targetFile, sourceContent)
 
       return { ...state, copied: state.copied + 1 }
     }
@@ -88,5 +98,5 @@ export const shouldMigrateDefaultVault = async (sourceVault: string, targetVault
 
   const [sourceFiles, targetFiles] = await Promise.all([listVaultFiles(source), listVaultFiles(target)])
 
-  return sourceFiles.length > 0 && targetFiles.length === 0
+  return sourceFiles.filter(isMarkdownPath).length > 0 && targetFiles.filter(isMarkdownPath).length === 0
 }

@@ -20,9 +20,21 @@ Use this skill when a task may benefit from project memory, durable decisions, r
 
 ## Before Work
 
-Call `brainlink_context` before answering or changing code when memory may matter.
+Call `brainlink_bootstrap` before answering or changing code when memory may matter.
 
 Recommended arguments:
+
+```json
+{
+  "query": "task or question",
+  "agent": "codex",
+  "mode": "hybrid",
+  "limit": 12,
+  "tokens": 2000
+}
+```
+
+If you only need retrieval without index/health checks, call `brainlink_context`:
 
 ```json
 {

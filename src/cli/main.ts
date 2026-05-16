@@ -3,6 +3,7 @@ import { Command } from 'commander'
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { registerConfigCommands } from './commands/config-commands.js'
 import { registerReadCommands } from './commands/read-commands.js'
 import { registerWriteCommands } from './commands/write-commands.js'
 
@@ -30,6 +31,7 @@ program
 
 registerWriteCommands(program)
 registerReadCommands(program)
+registerConfigCommands(program)
 
 program.parseAsync().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error)

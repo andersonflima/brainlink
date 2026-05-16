@@ -91,7 +91,7 @@ should appear in the local plugin gallery as `Brainlink`.
 
 The plugin starts the `brainlink-mcp` stdio server and gives Codex a skill that defines the correct memory workflow:
 
-1. Read memory with `brainlink_context` before work.
+1. Bootstrap memory with `brainlink_bootstrap` before work.
 2. Write durable memory with `brainlink_add_note`.
 3. Use explicit `[[wiki links]]` and `#tags`.
 4. Add priority markers near important links, for example `priority: high`, `#important` or `#critical`.

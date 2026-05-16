@@ -9,12 +9,14 @@ const execFileAsync = promisify(execFile)
 const projectPath = process.cwd()
 const cliEntryPoint = join(projectPath, 'src/cli/main.ts')
 const tsxLoader = join(projectPath, 'node_modules/tsx/dist/loader.mjs')
+const defaultTestHome = join(tmpdir(), `brainlink-cli-home-${process.pid}`)
 
 const cli = async (args: readonly string[], cwd: string, env: Readonly<Record<string, string>> = {}): Promise<string> => {
   const { stdout } = await execFileAsync(process.execPath, ['--import', tsxLoader, cliEntryPoint, ...args], {
     cwd,
     env: {
       ...process.env,
+      BRAINLINK_HOME: env.BRAINLINK_HOME ?? process.env.BRAINLINK_HOME ?? defaultTestHome,
       ...env
     },
     maxBuffer: 1024 * 1024
@@ -254,6 +256,51 @@ describe('brainlink cli integration', () => {
       await cli(['add', 'Configured Memory', '--content', 'Configured workspace vault memory. #configured', '--json'], configuredWorkspace, env)
     )
     expect(configuredNote.path).toContain(join(configuredVault, 'agents/shared/configured-memory.md'))
+  }, 20000)
+
+  it('updates vault config through CLI commands and migrates memory', async () => {
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-config-home-'))
+    const workspace = await mkdtemp(join(tmpdir(), 'brainlink-config-workspace-'))
+    const sourceVault = await mkdtemp(join(tmpdir(), 'brainlink-config-source-'))
+    const targetVault = await mkdtemp(join(tmpdir(), 'brainlink-config-target-'))
+    const globalVault = await mkdtemp(join(tmpdir(), 'brainlink-config-global-'))
+    const secondaryWorkspace = await mkdtemp(join(tmpdir(), 'brainlink-config-secondary-'))
+    tempPaths.push(brainlinkHome, workspace, sourceVault, targetVault, globalVault, secondaryWorkspace)
+
+    const env = { BRAINLINK_HOME: brainlinkHome }
+
+    await cli(['add', 'Source Memory', '--vault', sourceVault, '--content', 'Migrated from source vault. #migrate', '--json'], projectPath, env)
+
+    const setLocalVault = parseJson<{
+      scope: string
+      vault: string
+      migration: { copied: number; conflicted: number; unchanged: number } | null
+      index: { documentCount: number } | null
+    }>(await cli(['config', 'set-vault', targetVault, '--migrate-from', sourceVault, '--json'], workspace, env))
+
+    expect(setLocalVault.scope).toBe('local')
+    expect(setLocalVault.vault).toBe(targetVault)
+    expect(setLocalVault.migration).toMatchObject({ copied: 1, conflicted: 0, unchanged: 0 })
+    expect(setLocalVault.index?.documentCount).toBe(1)
+
+    const configuredLocalVault = parseJson<{ key: string; value: string }>(await cli(['config', 'get', 'vault', '--json'], workspace, env))
+    expect(configuredLocalVault).toEqual({ key: 'vault', value: targetVault })
+    await expect(readFile(join(targetVault, 'agents/shared/source-memory.md'), 'utf8')).resolves.toContain('Migrated from source vault')
+
+    const localNote = parseJson<{ path: string }>(
+      await cli(['add', 'Target Memory', '--content', 'Written through configured local vault. #local', '--json'], workspace, env)
+    )
+    expect(localNote.path).toContain(join(targetVault, 'agents/shared/target-memory.md'))
+
+    const setGlobalVault = parseJson<{ scope: string; vault: string }>(
+      await cli(['config', 'set-vault', globalVault, '--global', '--no-migrate', '--json'], projectPath, env)
+    )
+    expect(setGlobalVault).toMatchObject({ scope: 'global', vault: globalVault })
+
+    const configuredGlobalVault = parseJson<{ key: string; value: string }>(
+      await cli(['config', 'get', 'vault', '--json'], secondaryWorkspace, env)
+    )
+    expect(configuredGlobalVault).toEqual({ key: 'vault', value: globalVault })
   }, 20000)
 
   it('prints the package version', async () => {

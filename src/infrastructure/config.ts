@@ -1,8 +1,9 @@
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
+import { homedir } from 'node:os'
 import type { BrainlinkConfig, EmbeddingProviderName, SearchMode } from '../domain/types.js'
 import { sanitizeAgentId } from '../domain/agents.js'
-import { getDefaultVaultPath } from './paths.js'
+import { getBrainlinkHomePath, getDefaultVaultPath } from './paths.js'
 
 export const defaultBrainlinkConfig: BrainlinkConfig = {
   vault: getDefaultVaultPath(),
@@ -19,6 +20,20 @@ export const defaultBrainlinkConfig: BrainlinkConfig = {
 }
 
 const configFilenames = ['brainlink.config.json', '.brainlink.json']
+const localConfigFilename = 'brainlink.config.json'
+const globalConfigFilename = 'brainlink.config.json'
+const globalConfigDirectoryMode = 0o700
+const globalConfigFileMode = 0o600
+
+export type ConfigScope = 'local' | 'global'
+
+const safeCwd = (): string => {
+  try {
+    return process.cwd()
+  } catch {
+    return homedir()
+  }
+}
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -56,6 +71,27 @@ const readJsonConfig = async (path: string): Promise<Partial<BrainlinkConfig>> =
   }
 }
 
+export const getGlobalConfigPath = (): string =>
+  join(getBrainlinkHomePath(), globalConfigFilename)
+
+export const getLocalConfigPath = (cwd = safeCwd()): string =>
+  resolve(cwd, localConfigFilename)
+
+export const resolveConfigPath = (scope: ConfigScope, cwd = safeCwd()): string =>
+  scope === 'global' ? getGlobalConfigPath() : getLocalConfigPath(cwd)
+
+export const loadRawConfig = async (scope: ConfigScope, cwd = safeCwd()): Promise<Partial<BrainlinkConfig>> =>
+  readJsonConfig(resolveConfigPath(scope, cwd))
+
+export const writeRawConfig = async (scope: ConfigScope, value: Partial<BrainlinkConfig>, cwd = safeCwd()): Promise<string> => {
+  const path = resolveConfigPath(scope, cwd)
+
+  await mkdir(dirname(path), { recursive: true, mode: globalConfigDirectoryMode })
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: globalConfigFileMode })
+
+  return path
+}
+
 const sanitizeConfig = (value: Partial<BrainlinkConfig>): BrainlinkConfig => ({
   ...defaultBrainlinkConfig,
   ...value,
@@ -79,9 +115,10 @@ const sanitizeConfig = (value: Partial<BrainlinkConfig>): BrainlinkConfig => ({
   defaultSearchMode: sanitizeSearchMode(value.defaultSearchMode)
 })
 
-export const loadBrainlinkConfig = async (cwd = process.cwd()): Promise<BrainlinkConfig> => {
-  const configs = await Promise.all(configFilenames.map((filename) => readJsonConfig(resolve(cwd, filename))))
-  const merged = configs.reduce<Partial<BrainlinkConfig>>(
+export const loadBrainlinkConfig = async (cwd = safeCwd()): Promise<BrainlinkConfig> => {
+  const globalConfig = await readJsonConfig(getGlobalConfigPath())
+  const localConfigs = await Promise.all(configFilenames.map((filename) => readJsonConfig(resolve(cwd, filename))))
+  const merged = [globalConfig, ...localConfigs].reduce<Partial<BrainlinkConfig>>(
     (state, config) => ({
       ...state,
       ...config

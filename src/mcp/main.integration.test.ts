@@ -19,13 +19,18 @@ describe('brainlink mcp integration', () => {
 
   it('lists tools, writes linked memory and returns context', async () => {
     const vault = await mkdtemp(join(tmpdir(), 'brainlink-mcp-vault-'))
-    tempPaths.push(vault)
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-mcp-home-'))
+    tempPaths.push(vault, brainlinkHome)
 
     const client = new Client({ name: 'brainlink-test', version: '1.0.0' })
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: ['--import', tsxLoader, mcpEntryPoint],
       cwd: projectPath,
+      env: {
+        ...process.env,
+        BRAINLINK_HOME: brainlinkHome
+      },
       stderr: 'pipe'
     })
 
@@ -36,7 +41,7 @@ describe('brainlink mcp integration', () => {
       const toolNames = tools.tools.map((tool) => tool.name)
 
       expect(toolNames).toEqual(
-        expect.arrayContaining(['brainlink_context', 'brainlink_add_note', 'brainlink_index', 'brainlink_validate'])
+        expect.arrayContaining(['brainlink_bootstrap', 'brainlink_context', 'brainlink_add_note', 'brainlink_index', 'brainlink_validate'])
       )
 
       const addResult = await client.callTool({
@@ -92,6 +97,25 @@ describe('brainlink mcp integration', () => {
             priority: 'high'
           })
         ]
+      })
+
+      const bootstrapResult = await client.callTool({
+        name: 'brainlink_bootstrap',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          query: 'What should I know before changing architecture?',
+          mode: 'hybrid'
+        }
+      })
+
+      expect(bootstrapResult.structuredContent).toMatchObject({
+        vault,
+        agent: 'coding-agent',
+        mode: 'hybrid',
+        context: {
+          query: 'What should I know before changing architecture?'
+        }
       })
     } finally {
       await client.close()
