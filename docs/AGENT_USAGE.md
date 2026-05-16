@@ -383,12 +383,15 @@ Use `--dry-run` to preview `copied`, `conflicted`, `unchanged` before writing fi
 blink agent install
 blink agent install --self-test
 blink agent upgrade
+blink agent policy --preset fully-auto
+blink agent policy --preset strict
 blink agent install --plugin-path ./plugins/brainlink
 blink agent status
 ```
 
 `agent install` configures Brainlink MCP in `~/.codex/config.toml` so compatible agents can use Brainlink by default.
 Use `agent upgrade` on legacy installations to reapply the latest defaults and run self-test diagnostics.
+Use `agent policy --preset fully-auto` to keep startup/read auto-bootstrap enabled, or `agent policy --preset strict` to force explicit bootstrap calls.
 
 ### Quickstart Plug-And-Play
 

@@ -5,9 +5,9 @@ import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { Command } from 'commander'
 import { loadBrainlinkConfig } from '../../infrastructure/config.js'
-import { getBootstrapPolicy, getBootstrapSessionStatus, getSessionStatePath } from '../../infrastructure/session-state.js'
+import { getBootstrapPolicy, getBootstrapSessionStatus, getSessionStatePath, setBootstrapPolicy } from '../../infrastructure/session-state.js'
 import { print } from '../runtime.js'
-import type { AgentInstallOptions, AgentStatusOptions } from '../types.js'
+import type { AgentInstallOptions, AgentPolicyOptions, AgentStatusOptions } from '../types.js'
 
 type MarketplacePluginEntry = {
   readonly name: string
@@ -311,6 +311,60 @@ const isBrainlinkConfigured = (codexConfig: string): { hasMcpSection: boolean; h
   return { hasMcpSection, hasCommand }
 }
 
+const parseBooleanOption = (value: string | undefined, name: string): boolean | undefined => {
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (value === 'true') {
+    return true
+  }
+
+  if (value === 'false') {
+    return false
+  }
+
+  throw new Error(`Invalid value for ${name}: ${value}. Use true or false.`)
+}
+
+const parsePositiveIntegerOption = (value: string | undefined, name: string): number | undefined => {
+  if (value === undefined) {
+    return undefined
+  }
+
+  const parsed = Number.parseInt(value, 10)
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Invalid value for ${name}: ${value}. Use a positive integer.`)
+  }
+
+  return parsed
+}
+
+const applyPolicyPreset = (preset: string | undefined): Partial<Awaited<ReturnType<typeof getBootstrapPolicy>>> => {
+  if (!preset) {
+    return {}
+  }
+
+  if (preset === 'fully-auto') {
+    return {
+      enforceBootstrap: true,
+      autoBootstrapOnRead: true,
+      autoBootstrapOnStartup: true
+    }
+  }
+
+  if (preset === 'strict') {
+    return {
+      enforceBootstrap: true,
+      autoBootstrapOnRead: false,
+      autoBootstrapOnStartup: false
+    }
+  }
+
+  throw new Error(`Unknown policy preset: ${preset}. Use "fully-auto" or "strict".`)
+}
+
 export const registerAgentCommands = (program: Command): void => {
   const agent = program.command('agent').description('install or inspect Brainlink agent integration')
 
@@ -369,6 +423,50 @@ export const registerAgentCommands = (program: Command): void => {
           ...result
         },
         () => `Upgraded Brainlink agent integration at ${result.codexConfigPath}. Self-test: ${result.selfTest?.ok ? 'ok' : 'failed'}`
+      )
+    })
+
+  agent
+    .command('policy')
+    .option('--preset <preset>', 'policy preset: fully-auto or strict')
+    .option('--enforce-bootstrap <true|false>', 'override enforceBootstrap')
+    .option('--auto-bootstrap-on-read <true|false>', 'override autoBootstrapOnRead')
+    .option('--auto-bootstrap-on-startup <true|false>', 'override autoBootstrapOnStartup')
+    .option('--stale-after-minutes <minutes>', 'override staleAfterMinutes with positive integer')
+    .option('--json', 'print machine-readable JSON')
+    .description('read or update Brainlink MCP bootstrap policy')
+    .action(async (options: AgentPolicyOptions) => {
+      const presetPatch = applyPolicyPreset(options.preset)
+      const enforceBootstrap = parseBooleanOption(options.enforceBootstrap, '--enforce-bootstrap')
+      const autoBootstrapOnRead = parseBooleanOption(options.autoBootstrapOnRead, '--auto-bootstrap-on-read')
+      const autoBootstrapOnStartup = parseBooleanOption(options.autoBootstrapOnStartup, '--auto-bootstrap-on-startup')
+      const staleAfterMinutes = parsePositiveIntegerOption(options.staleAfterMinutes, '--stale-after-minutes')
+      const overridePatch = {
+        ...(enforceBootstrap !== undefined ? { enforceBootstrap } : {}),
+        ...(autoBootstrapOnRead !== undefined ? { autoBootstrapOnRead } : {}),
+        ...(autoBootstrapOnStartup !== undefined ? { autoBootstrapOnStartup } : {}),
+        ...(staleAfterMinutes !== undefined ? { staleAfterMinutes } : {})
+      }
+      const patch = {
+        ...presetPatch,
+        ...overridePatch
+      }
+      const policy = Object.keys(patch).length === 0 ? await getBootstrapPolicy() : await setBootstrapPolicy(patch)
+
+      print(
+        options.json,
+        {
+          policy,
+          ...(options.preset ? { presetApplied: options.preset } : {})
+        },
+        () =>
+          [
+            ...(options.preset ? [`presetApplied=${options.preset}`] : []),
+            `enforceBootstrap=${policy.enforceBootstrap}`,
+            `autoBootstrapOnRead=${policy.autoBootstrapOnRead}`,
+            `autoBootstrapOnStartup=${policy.autoBootstrapOnStartup}`,
+            `staleAfterMinutes=${policy.staleAfterMinutes}`
+          ].join('\n')
       )
     })
 

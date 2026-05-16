@@ -535,6 +535,77 @@ describe('brainlink cli integration', () => {
     expect(typeof install.selfTest.mcpCommandInPath).toBe('boolean')
   }, 20000)
 
+  it('applies MCP policy presets for strict and fully-auto modes', async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), 'brainlink-agent-policy-home-'))
+    const workspace = await mkdtemp(join(tmpdir(), 'brainlink-agent-policy-workspace-'))
+    tempPaths.push(fakeHome, workspace)
+
+    const env = {
+      HOME: fakeHome,
+      BRAINLINK_HOME: join(fakeHome, '.brainlink')
+    }
+
+    const strictPolicy = parseJson<{
+      presetApplied: string
+      policy: {
+        enforceBootstrap: boolean
+        autoBootstrapOnRead: boolean
+        autoBootstrapOnStartup: boolean
+      }
+    }>(await cli(['agent', 'policy', '--preset', 'strict', '--json'], workspace, env))
+
+    expect(strictPolicy).toMatchObject({
+      presetApplied: 'strict',
+      policy: {
+        enforceBootstrap: true,
+        autoBootstrapOnRead: false,
+        autoBootstrapOnStartup: false
+      }
+    })
+
+    const autoPolicy = parseJson<{
+      presetApplied: string
+      policy: {
+        enforceBootstrap: boolean
+        autoBootstrapOnRead: boolean
+        autoBootstrapOnStartup: boolean
+        staleAfterMinutes: number
+      }
+    }>(
+      await cli(
+        ['agent', 'policy', '--preset', 'fully-auto', '--stale-after-minutes', '30', '--json'],
+        workspace,
+        env
+      )
+    )
+
+    expect(autoPolicy).toMatchObject({
+      presetApplied: 'fully-auto',
+      policy: {
+        enforceBootstrap: true,
+        autoBootstrapOnRead: true,
+        autoBootstrapOnStartup: true,
+        staleAfterMinutes: 30
+      }
+    })
+
+    const status = parseJson<{
+      bootstrapPolicy: {
+        enforceBootstrap: boolean
+        autoBootstrapOnRead: boolean
+        autoBootstrapOnStartup: boolean
+        staleAfterMinutes: number
+      }
+    }>(await cli(['agent', 'status', '--json'], workspace, env))
+
+    expect(status.bootstrapPolicy).toMatchObject({
+      enforceBootstrap: true,
+      autoBootstrapOnRead: true,
+      autoBootstrapOnStartup: true,
+      staleAfterMinutes: 30
+    })
+  }, 20000)
+
   it('reapplies latest integration defaults for legacy installs', async () => {
     const fakeHome = await mkdtemp(join(tmpdir(), 'brainlink-agent-upgrade-home-'))
     const workspace = await mkdtemp(join(tmpdir(), 'brainlink-agent-upgrade-workspace-'))
