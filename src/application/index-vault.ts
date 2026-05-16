@@ -4,6 +4,7 @@ import { sharedAgentId } from '../domain/agents.js'
 import { createEmbeddingProvider } from '../domain/embeddings.js'
 import { loadBrainlinkConfig } from '../infrastructure/config.js'
 import { ensureVault, readMarkdownFiles } from '../infrastructure/file-system-vault.js'
+import { buildSearchPacks } from '../infrastructure/search-packs.js'
 import { openSqliteIndex } from '../infrastructure/sqlite-index.js'
 
 export type IndexVaultResult = {
@@ -112,6 +113,11 @@ export const indexVault = async (vaultPath: string): Promise<IndexVaultResult> =
   try {
     index.reset()
     index.saveDocuments(indexedDocuments)
+    try {
+      await buildSearchPacks(absoluteVaultPath, indexedDocuments)
+    } catch {
+      // Pack generation is best-effort. SQLite index remains the primary path.
+    }
 
     return {
       documentCount: indexedDocuments.length,
