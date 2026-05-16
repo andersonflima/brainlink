@@ -41,7 +41,7 @@ describe('brainlink mcp integration', () => {
       const toolNames = tools.tools.map((tool) => tool.name)
 
       expect(toolNames).toEqual(
-        expect.arrayContaining(['brainlink_bootstrap', 'brainlink_context', 'brainlink_add_note', 'brainlink_index', 'brainlink_validate'])
+        expect.arrayContaining(['brainlink_bootstrap', 'brainlink_policy', 'brainlink_context', 'brainlink_add_note', 'brainlink_index', 'brainlink_validate'])
       )
 
       const addResult = await client.callTool({
@@ -73,10 +73,34 @@ describe('brainlink mcp integration', () => {
       expect(contextResult.structuredContent).toMatchObject({
         vault,
         agent: 'coding-agent',
-        query: 'How does MCP store memory?'
+        blockedTool: 'brainlink_context',
+        preflightRequired: true
       })
       expect(contextResult.content[0]).toMatchObject({
         type: 'text'
+      })
+
+      const bootstrapResult = await client.callTool({
+        name: 'brainlink_bootstrap',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          query: 'What should I know before changing architecture?',
+          mode: 'hybrid'
+        }
+      })
+
+      expect(bootstrapResult.structuredContent).toMatchObject({
+        vault,
+        agent: 'coding-agent',
+        mode: 'hybrid',
+        session: {
+          vault,
+          agent: 'coding-agent'
+        },
+        context: {
+          query: 'What should I know before changing architecture?'
+        }
       })
 
       const graphResult = await client.callTool({
@@ -97,25 +121,6 @@ describe('brainlink mcp integration', () => {
             priority: 'high'
           })
         ]
-      })
-
-      const bootstrapResult = await client.callTool({
-        name: 'brainlink_bootstrap',
-        arguments: {
-          vault,
-          agent: 'coding-agent',
-          query: 'What should I know before changing architecture?',
-          mode: 'hybrid'
-        }
-      })
-
-      expect(bootstrapResult.structuredContent).toMatchObject({
-        vault,
-        agent: 'coding-agent',
-        mode: 'hybrid',
-        context: {
-          query: 'What should I know before changing architecture?'
-        }
       })
     } finally {
       await client.close()

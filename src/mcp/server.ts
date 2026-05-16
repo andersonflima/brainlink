@@ -19,6 +19,8 @@ import {
   indexTool,
   orphansInputSchema,
   orphansTool,
+  policyInputSchema,
+  policyTool,
   searchInputSchema,
   searchTool,
   statsInputSchema,
@@ -57,6 +59,16 @@ export const createBrainlinkMcpServer = (): McpServer => {
       inputSchema: bootstrapInputSchema
     },
     bootstrapTool
+  )
+
+  server.registerTool(
+    'brainlink_policy',
+    {
+      title: 'Brainlink Bootstrap Policy',
+      description: 'Read or update bootstrap enforcement policy and inspect bootstrap readiness for the current vault/agent.',
+      inputSchema: policyInputSchema
+    },
+    policyTool
   )
 
   server.registerTool(

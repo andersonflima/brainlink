@@ -15,6 +15,7 @@ Use this skill when a task may benefit from project memory, durable decisions, r
 - Retrieved context does not create notes, backlinks or graph edges.
 - Real relationships require explicit `[[wiki links]]` in Markdown notes.
 - Important relationships should put a priority marker on the same line as the link, such as `priority: high`, `#important` or `#critical`.
+- MCP read tools enforce bootstrap by default; call `brainlink_bootstrap` first for the active vault/agent session.
 - Run indexing after writes. The MCP `brainlink_add_note` tool already writes and reindexes.
 - Store durable knowledge only. Do not store secrets, credentials, private keys, access tokens or transient chat noise.
 

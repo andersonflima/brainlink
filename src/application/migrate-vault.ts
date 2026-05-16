@@ -10,7 +10,8 @@ export type VaultMigrationResult = {
   readonly conflicted: number
 }
 
-type MigrationAction = {
+export type VaultMigrationAction = {
+  readonly sourcePath: string
   readonly targetPath: string
   readonly sourceContent: Buffer
   readonly kind: 'copy' | 'unchanged' | 'conflict'
@@ -50,10 +51,10 @@ const writeMigratedFile = async (targetVault: string, targetRoot: string, absolu
   await writePreservedFile(absolutePath, content)
 }
 
-const planVaultMigration = async (source: string, target: string): Promise<readonly MigrationAction[]> => {
+export const planVaultMigration = async (source: string, target: string): Promise<readonly VaultMigrationAction[]> => {
   const sourceFiles = (await listVaultFiles(source)).filter(isMarkdownPath)
 
-  return sourceFiles.reduce<Promise<readonly MigrationAction[]>>(async (statePromise, sourceFile) => {
+  return sourceFiles.reduce<Promise<readonly VaultMigrationAction[]>>(async (statePromise, sourceFile) => {
     const state = await statePromise
     const targetFile = join(target, relative(source, sourceFile))
 
@@ -67,16 +68,16 @@ const planVaultMigration = async (source: string, target: string): Promise<reado
       const targetContent = await readFile(targetFile)
 
       if (sourceContent.equals(targetContent)) {
-        return [...state, { kind: 'unchanged', targetPath: targetFile, sourceContent }]
+        return [...state, { kind: 'unchanged', sourcePath: sourceFile, targetPath: targetFile, sourceContent }]
       }
 
-      return [...state, { kind: 'conflict', targetPath: conflictPath(targetFile), sourceContent }]
+      return [...state, { kind: 'conflict', sourcePath: sourceFile, targetPath: conflictPath(targetFile), sourceContent }]
     } catch (error) {
       if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
         throw error
       }
 
-      return [...state, { kind: 'copy', targetPath: targetFile, sourceContent }]
+      return [...state, { kind: 'copy', sourcePath: sourceFile, targetPath: targetFile, sourceContent }]
     }
   }, Promise.resolve([]))
 }

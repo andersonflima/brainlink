@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, relative, resolve } from 'node:path'
 import type { Command } from 'commander'
 import { addNote } from '../../application/add-note.js'
 import { indexVault } from '../../application/index-vault.js'
-import { migrateVaultContent, previewVaultMigration, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
+import { migrateVaultContent, planVaultMigration, previewVaultMigration, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
 import { startServer } from '../../application/start-server.js'
 import { startVaultWatcher } from '../../application/watch-vault.js'
 import { doctorVault } from '../../application/analyze-vault.js'
@@ -62,6 +64,7 @@ export const registerWriteCommands = (program: Command): void => {
     .option('--from <vault>', 'source vault path')
     .option('--to <vault>', 'target vault path')
     .option('--dry-run', 'preview migration without writing files')
+    .option('--report <path>', 'write detailed per-file migration report to JSON file')
     .option('--no-index', 'skip reindexing target vault after migration')
     .option('--json', 'print machine-readable JSON')
     .description('copy markdown memory from one vault to another with conflict preservation')
@@ -69,14 +72,43 @@ export const registerWriteCommands = (program: Command): void => {
       const config = await loadBrainlinkConfig()
       const sourceVault = assertVaultAllowed(options.from ?? config.vault, config.allowedVaults)
       const targetVault = assertVaultAllowed(options.to ?? defaultBrainlinkConfig.vault, config.allowedVaults)
+      const sourceRoot = await ensureVault(sourceVault)
+      const targetRoot = await ensureVault(targetVault)
       const preview = await previewVaultMigration(sourceVault, targetVault)
+      const actions = await planVaultMigration(sourceRoot, targetRoot)
+      const reportEntries = actions.map((action) => ({
+        kind: action.kind,
+        sourcePath: action.sourcePath,
+        sourceRelativePath: relative(sourceRoot, action.sourcePath),
+        targetPath: action.targetPath,
+        targetRelativePath: relative(targetRoot, action.targetPath)
+      }))
+
+      const writeReport = async (): Promise<string | null> => {
+        if (!options.report) {
+          return null
+        }
+
+        const reportPath = resolve(options.report)
+
+        await mkdir(dirname(reportPath), { recursive: true })
+        await writeFile(
+          reportPath,
+          `${JSON.stringify({ source: sourceVault, target: targetVault, summary: preview, entries: reportEntries }, null, 2)}\n`,
+          'utf8'
+        )
+
+        return reportPath
+      }
 
       if (options.dryRun) {
+        const reportPath = await writeReport()
+
         print(
           options.json,
-          { dryRun: true, ...preview },
+          { dryRun: true, ...preview, entries: reportEntries, ...(reportPath ? { reportPath } : {}) },
           () =>
-            `Dry run migration ${preview.source} -> ${preview.target}: copy=${preview.copied}, conflicts=${preview.conflicted}, unchanged=${preview.unchanged}`
+            `Dry run migration ${preview.source} -> ${preview.target}: copy=${preview.copied}, conflicts=${preview.conflicted}, unchanged=${preview.unchanged}${reportPath ? ` report=${reportPath}` : ''}`
         )
         return
       }
@@ -84,17 +116,19 @@ export const registerWriteCommands = (program: Command): void => {
       const migration = await migrateVaultContent(sourceVault, targetVault)
       const shouldIndex = options.index !== false && migration.copied + migration.conflicted > 0
       const index = shouldIndex ? await indexVault(targetVault) : undefined
+      const reportPath = await writeReport()
 
       print(
         options.json,
-        { dryRun: false, ...migration, ...(index ? { index } : {}) },
+        { dryRun: false, ...migration, entries: reportEntries, ...(index ? { index } : {}), ...(reportPath ? { reportPath } : {}) },
         () => {
           const summary = `Migrated ${migration.copied} files, preserved ${migration.conflicted} conflicts and kept ${migration.unchanged} unchanged files.`
           const indexMessage = index
             ? ` Indexed ${index.documentCount} documents, ${index.chunkCount} chunks and ${index.linkCount} links.`
             : ''
+          const reportMessage = reportPath ? ` Report written to ${reportPath}.` : ''
 
-          return `${summary}${indexMessage}`
+          return `${summary}${indexMessage}${reportMessage}`
         }
       )
     })

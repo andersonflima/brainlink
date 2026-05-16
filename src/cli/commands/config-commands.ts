@@ -2,7 +2,7 @@ import type { Command } from 'commander'
 import { doctorVault } from '../../application/analyze-vault.js'
 import { indexVault } from '../../application/index-vault.js'
 import { migrateVaultContent, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
-import { defaultBrainlinkConfig, detectVaultConfigSource, loadBrainlinkConfig, loadRawConfig, resolveConfigPath, writeRawConfig } from '../../infrastructure/config.js'
+import { defaultBrainlinkConfig, detectVaultConfigSource, loadBrainlinkConfig, loadLegacyLocalRawConfig, loadRawConfig, resolveConfigPath, writeRawConfig } from '../../infrastructure/config.js'
 import { assertVaultAllowed } from '../../infrastructure/file-system-vault.js'
 import { print } from '../runtime.js'
 import type { ConfigGetOptions, ConfigSetVaultOptions } from '../types.js'
@@ -17,6 +17,9 @@ const normalizeVaultPath = (vault: string): string =>
 
 const uniqueValues = (values: readonly string[]): readonly string[] =>
   Array.from(new Set(values))
+
+const resolveScopeFromSource = (source: string): ConfigScope =>
+  source === 'global' || source === 'default' ? 'global' : 'local'
 
 export const registerConfigCommands = (program: Command): void => {
   const configCommand = program.command('config').description('read or update Brainlink configuration')
@@ -132,6 +135,7 @@ export const registerConfigCommands = (program: Command): void => {
 
   configCommand
     .command('doctor')
+    .option('--fix', 'apply safe config fixes (without this flag, doctor is dry-run)')
     .option('--json', 'print machine-readable JSON')
     .description('inspect effective config sources and run vault readiness checks')
     .action(async (options: ConfigGetOptions) => {
@@ -141,13 +145,51 @@ export const registerConfigCommands = (program: Command): void => {
       const localConfigPath = resolveConfigPath('local')
       const allowedVaultCheck = assertVaultAllowed(config.vault, config.allowedVaults)
       const vaultDoctor = await doctorVault(config.vault)
+      const targetScope = resolveScopeFromSource(source)
+      const rawConfig =
+        source === 'local-legacy'
+          ? await loadLegacyLocalRawConfig()
+          : await loadRawConfig(targetScope)
+      const normalizedVault = normalizeVaultPath(typeof rawConfig.vault === 'string' ? rawConfig.vault : config.vault)
+      const normalizedAllowedVaults = uniqueValues(
+        [
+          ...(Array.isArray(rawConfig.allowedVaults) ? rawConfig.allowedVaults.filter((item): item is string => typeof item === 'string') : []),
+          normalizedVault
+        ].map((value) => normalizeVaultPath(value))
+      )
+      const nextRawConfig = {
+        ...rawConfig,
+        vault: normalizedVault,
+        allowedVaults: normalizedAllowedVaults
+      }
+      const plannedFixes = [
+        `normalize vault path in ${targetScope} config`,
+        `ensure allowedVaults includes ${normalizedVault}`,
+        ...(source === 'local-legacy' ? ['migrate .brainlink.json settings into brainlink.config.json'] : []),
+        ...(source === 'default' ? ['create global brainlink.config.json with explicit vault'] : [])
+      ]
+      let fixApplied = false
+      let fixedConfigPath: string | null = null
+
+      if (options.fix) {
+        fixedConfigPath = await writeRawConfig(targetScope, nextRawConfig)
+        fixApplied = true
+      }
+
       const response = {
         vault: config.vault,
         vaultSource: source,
         allowedVaultCheck,
         localConfigPath,
         globalConfigPath,
-        doctor: vaultDoctor
+        doctor: vaultDoctor,
+        fix: {
+          dryRun: options.fix !== true,
+          applied: fixApplied,
+          scope: targetScope,
+          path: fixedConfigPath,
+          plannedFixes
+        }
       }
 
       print(
@@ -159,6 +201,9 @@ export const registerConfigCommands = (program: Command): void => {
             `vaultSource=${response.vaultSource}`,
             `localConfigPath=${response.localConfigPath}`,
             `globalConfigPath=${response.globalConfigPath}`,
+            `configFixDryRun=${response.fix.dryRun}`,
+            ...(response.fix.applied && response.fix.path ? [`configFixAppliedAt=${response.fix.path}`] : []),
+            ...(response.fix.plannedFixes.length > 0 ? ['Planned config fixes:', ...response.fix.plannedFixes.map((step) => `- ${step}`)] : []),
             ...response.doctor.checks.map((check) => `${check.ok ? 'OK' : 'FAIL'} ${check.name}: ${check.message}`),
             ...(response.doctor.recommendations && response.doctor.recommendations.length > 0
               ? ['Recommended next steps:', ...response.doctor.recommendations.map((recommendation) => `- ${recommendation}`)]

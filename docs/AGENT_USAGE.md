@@ -358,6 +358,7 @@ $HOME/.brainlink/vault/
 blink config where
 blink config get vault
 blink config doctor
+blink config doctor --fix
 blink config set-vault /absolute/path/to/vault
 blink config set-vault /absolute/path/to/vault --global
 ```
@@ -370,6 +371,7 @@ blink config set-vault /absolute/path/to/vault --global
 blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --dry-run
 blink migrate-vault --from ~/.brainlink/vault --to ./team-vault
 blink migrate-vault --from ~/.brainlink/vault --to "s3://my-memory-bucket/brainlink"
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --report ./migration-report.json
 ```
 
 Use `--dry-run` to preview `copied`, `conflicted`, `unchanged` before writing files.
@@ -378,6 +380,7 @@ Use `--dry-run` to preview `copied`, `conflicted`, `unchanged` before writing fi
 
 ```bash
 blink agent install
+blink agent install --self-test
 blink agent install --plugin-path ./plugins/brainlink
 blink agent status
 ```
@@ -560,6 +563,7 @@ Example MCP client configuration:
 Available MCP tools:
 
 - `brainlink_bootstrap`
+- `brainlink_policy`
 - `brainlink_context`
 - `brainlink_search`
 - `brainlink_add_note`
@@ -572,7 +576,7 @@ Available MCP tools:
 - `brainlink_broken_links`
 - `brainlink_orphans`
 
-Recommended start of every memory-dependent task: call `brainlink_bootstrap` first, then `brainlink_context` only when additional retrieval is needed.
+Recommended start of every memory-dependent task: call `brainlink_bootstrap` first, then `brainlink_context` only when additional retrieval is needed. By default, Brainlink enforces bootstrap for MCP read tools and returns a preflight response when bootstrap is missing or stale.
 
 MCP clients can pass `vault` and `agent` arguments per tool call. Set `BRAINLINK_ALLOWED_VAULTS` when exposing Brainlink to an external agent process so a tool cannot pass arbitrary vault paths:
 
