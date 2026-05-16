@@ -465,6 +465,7 @@ Search modes:
 - `semantic`: local deterministic embedding similarity.
 
 Hybrid results are cached in-memory for a short TTL and invalidated when `.brainlink/index.json` changes.
+Context assembly uses middle-out ordering inside each note: the highest-scoring chunk is selected first, then nearby chunks are expanded while token budget allows.
 
 ### Build Agent Context
 
@@ -635,6 +636,7 @@ GET  /api/validate
 The HTTP API is read-only. Use the CLI for writes and indexing.
 
 Indexing writes private encrypted search packs at `.brainlink/search-packs/*.blpk` for resilient retrieval and portability.
+Pack search now uses compressed-space prefiltering (token bloom index per pack) before decrypting/reading pack payloads.
 Pack decryption keys are resolved from `$BRAINLINK_HOME/keys` (or `BRAINLINK_SEARCH_PACK_KEY` when explicitly set).
 
 ## Agent Integration Contract

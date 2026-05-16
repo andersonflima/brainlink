@@ -25,6 +25,7 @@ type IndexSearchRow = {
   readonly title: string
   readonly path: string
   readonly chunkId: string
+  readonly chunkOrdinal: number
   readonly content: string
   readonly tags: readonly string[]
   readonly embedding: readonly number[]
@@ -132,6 +133,7 @@ const toResult = (row: IndexSearchRow, mode: SearchMode, text: number, semantic:
     title: row.title,
     path: row.path,
     chunkId: row.chunkId,
+    chunkOrdinal: row.chunkOrdinal,
     content: row.content,
     score,
     textScore: text,
@@ -204,6 +206,7 @@ export const openFileIndex = (vaultPath: string) => {
             title: document.title,
             path: document.path,
             chunkId: chunk.id,
+            chunkOrdinal: chunk.ordinal,
             content: chunk.content,
             tags: document.tags,
             embedding: chunk.embedding
@@ -337,6 +340,7 @@ export const openFileIndex = (vaultPath: string) => {
               title: document.title,
               path: document.path,
               chunkId: document.id,
+              chunkOrdinal: 0,
               content: document.content,
               tags: document.tags,
               embedding: []
