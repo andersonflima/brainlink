@@ -51,125 +51,306 @@ const normalizeAgentFilter = (agentId?: string): string | undefined =>
 const toTitleKey = (title: string): string =>
   title.toLowerCase()
 
-export const createGraphReader = (database: Database.Database): SqliteGraphReader => ({
-  listLinks: (agentId) => {
-      const normalizedAgentId = normalizeAgentFilter(agentId)
-      const agentFilter = normalizedAgentId ? 'WHERE source.agent_id = ?' : ''
-      const rows = database
-        .prepare(
-          `
-          SELECT
-            source.agent_id AS agent_id,
-            source.title AS from_title,
-            source.path AS from_path,
-            COALESCE(target.title, links.to_title) AS to_title,
-            target.path AS to_path,
-            links.weight AS weight,
-            links.priority AS priority
-          FROM links
-          JOIN documents source ON source.id = links.from_document_id
-          LEFT JOIN documents target ON target.id = links.to_document_id
-          ${agentFilter}
-          ORDER BY source.title, links.weight DESC, to_title
-        `
-        )
-        .all(...(normalizedAgentId ? [normalizedAgentId] : [])) as unknown as readonly GraphLinkRow[]
+const toFtsQuery = (query: string): string =>
+  query
+    .toLowerCase()
+    .match(/[\p{L}\p{N}_-]+/gu)
+    ?.map((term) => `"${term.replaceAll('"', '""')}"*`)
+    .join(' OR ') ?? ''
 
-      return rows.map(toGraphLink)
-    },
-  listBacklinks: (title, agentId) => {
-      const normalizedAgentId = normalizeAgentFilter(agentId)
-      const agentFilter = normalizedAgentId ? 'AND source.agent_id = ?' : ''
-      const titleKey = toTitleKey(title)
-      const rows = database
-        .prepare(
-          `
-          SELECT
-            source.agent_id AS agent_id,
-            source.title AS from_title,
-            source.path AS from_path,
-            COALESCE(target.title, links.to_title) AS to_title,
-            target.path AS to_path,
-            links.weight AS weight,
-            links.priority AS priority
-          FROM links
-          JOIN documents source ON source.id = links.from_document_id
-          LEFT JOIN documents target ON target.id = links.to_document_id
-          WHERE links.to_title_key = ?
-          ${agentFilter}
-          ORDER BY links.weight DESC, source.title
-        `
-        )
-        .all(...(normalizedAgentId ? [titleKey, normalizedAgentId] : [titleKey])) as unknown as readonly GraphLinkRow[]
+export const createGraphReader = (database: Database.Database): SqliteGraphReader =>
+  (() => {
+    const listLinksStatement = database.prepare(`
+      SELECT
+        source.agent_id AS agent_id,
+        source.title AS from_title,
+        source.path AS from_path,
+        COALESCE(target.title, links.to_title) AS to_title,
+        target.path AS to_path,
+        links.weight AS weight,
+        links.priority AS priority
+      FROM links
+      JOIN documents source ON source.id = links.from_document_id
+      LEFT JOIN documents target ON target.id = links.to_document_id
+      ORDER BY source.title, links.weight DESC, to_title
+    `)
 
-      return rows.map(toGraphLink)
-    },
-  getGraph: (agentId) => {
-      const normalizedAgentId = normalizeAgentFilter(agentId)
-      const documentAgentFilter = normalizedAgentId ? 'WHERE agent_id = ?' : ''
-      const edgeAgentFilter = normalizedAgentId ? 'WHERE source.agent_id = ?' : ''
-      const nodeRows = database
-        .prepare(
-          `
-          SELECT id, agent_id, title, path, content, tags_json
-          FROM documents
-          ${documentAgentFilter}
-          ORDER BY title
-        `
-        )
-        .all(...(normalizedAgentId ? [normalizedAgentId] : [])) as unknown as readonly GraphNodeRow[]
-      const edgeRows = database
-        .prepare(
-          `
-          SELECT
-            links.from_document_id AS source,
-            links.to_document_id AS target,
-            links.to_title AS target_title,
-            links.weight AS weight,
-            links.priority AS priority
-          FROM links
-          JOIN documents source ON source.id = links.from_document_id
-          ${edgeAgentFilter}
-          ORDER BY links.from_document_id, links.weight DESC, links.to_title
-        `
-        )
-        .all(...(normalizedAgentId ? [normalizedAgentId] : [])) as unknown as readonly GraphEdgeRow[]
-      const nodes: readonly GraphNode[] = nodeRows.map((row) => ({
-        id: row.id,
-        agentId: row.agent_id,
-        title: row.title,
-        path: row.path,
-        content: row.content,
-        tags: JSON.parse(row.tags_json) as readonly string[]
-      }))
-      const edges: readonly GraphEdge[] = edgeRows.map((row) => ({
-        source: row.source,
-        target: row.target,
-        targetTitle: row.target_title,
-        weight: row.weight,
-        priority: row.priority
-      }))
+    const listLinksByAgentStatement = database.prepare(`
+      SELECT
+        source.agent_id AS agent_id,
+        source.title AS from_title,
+        source.path AS from_path,
+        COALESCE(target.title, links.to_title) AS to_title,
+        target.path AS to_path,
+        links.weight AS weight,
+        links.priority AS priority
+      FROM links
+      JOIN documents source ON source.id = links.from_document_id
+      LEFT JOIN documents target ON target.id = links.to_document_id
+      WHERE source.agent_id = ?
+      ORDER BY source.title, links.weight DESC, to_title
+    `)
 
-      return {
-        nodes,
-        edges
-      }
-    },
-  listAgents: () => {
-      const rows = database
-        .prepare(
-          `
-          SELECT agent_id AS id, count(*) AS document_count
-          FROM documents
-          GROUP BY agent_id
-          ORDER BY agent_id
-        `
-        )
-        .all() as unknown as readonly AgentSummaryRow[]
+    const listBacklinksStatement = database.prepare(`
+      SELECT
+        source.agent_id AS agent_id,
+        source.title AS from_title,
+        source.path AS from_path,
+        COALESCE(target.title, links.to_title) AS to_title,
+        target.path AS to_path,
+        links.weight AS weight,
+        links.priority AS priority
+      FROM links
+      JOIN documents source ON source.id = links.from_document_id
+      LEFT JOIN documents target ON target.id = links.to_document_id
+      WHERE links.to_title_key = ?
+      ORDER BY links.weight DESC, source.title
+    `)
 
-      return rows.map((row) => ({
-        id: row.id,
-        documentCount: row.document_count
-      }))
+    const listBacklinksByAgentStatement = database.prepare(`
+      SELECT
+        source.agent_id AS agent_id,
+        source.title AS from_title,
+        source.path AS from_path,
+        COALESCE(target.title, links.to_title) AS to_title,
+        target.path AS to_path,
+        links.weight AS weight,
+        links.priority AS priority
+      FROM links
+      JOIN documents source ON source.id = links.from_document_id
+      LEFT JOIN documents target ON target.id = links.to_document_id
+      WHERE links.to_title_key = ? AND source.agent_id = ?
+      ORDER BY links.weight DESC, source.title
+    `)
+
+    const graphNodesStatement = database.prepare(`
+      SELECT id, agent_id, title, path, content, tags_json
+      FROM documents
+      ORDER BY title
+    `)
+
+    const graphNodesByAgentStatement = database.prepare(`
+      SELECT id, agent_id, title, path, content, tags_json
+      FROM documents
+      WHERE agent_id = ?
+      ORDER BY title
+    `)
+
+    const graphSummaryNodesStatement = database.prepare(`
+      SELECT id, agent_id, title, path, '' AS content, tags_json
+      FROM documents
+      ORDER BY title
+    `)
+
+    const graphSummaryNodesByAgentStatement = database.prepare(`
+      SELECT id, agent_id, title, path, '' AS content, tags_json
+      FROM documents
+      WHERE agent_id = ?
+      ORDER BY title
+    `)
+
+    const graphEdgesStatement = database.prepare(`
+      SELECT
+        links.from_document_id AS source,
+        links.to_document_id AS target,
+        links.to_title AS target_title,
+        links.weight AS weight,
+        links.priority AS priority
+      FROM links
+      JOIN documents source ON source.id = links.from_document_id
+      ORDER BY links.from_document_id, links.weight DESC, links.to_title
+    `)
+
+    const graphEdgesByAgentStatement = database.prepare(`
+      SELECT
+        links.from_document_id AS source,
+        links.to_document_id AS target,
+        links.to_title AS target_title,
+        links.weight AS weight,
+        links.priority AS priority
+      FROM links
+      JOIN documents source ON source.id = links.from_document_id
+      WHERE source.agent_id = ?
+      ORDER BY links.from_document_id, links.weight DESC, links.to_title
+    `)
+
+    const graphNodeByIdStatement = database.prepare(`
+      SELECT id, agent_id, title, path, content, tags_json
+      FROM documents
+      WHERE id = ?
+    `)
+
+    const graphNodeByIdAndAgentStatement = database.prepare(`
+      SELECT id, agent_id, title, path, content, tags_json
+      FROM documents
+      WHERE id = ? AND agent_id = ?
+    `)
+
+    const filterNodeIdsMetadataStatement = database.prepare(`
+      SELECT id
+      FROM documents
+      WHERE lower(title) LIKE ?
+         OR lower(path) LIKE ?
+         OR lower(tags_json) LIKE ?
+      ORDER BY title
+      LIMIT ?
+    `)
+
+    const filterNodeIdsMetadataByAgentStatement = database.prepare(`
+      SELECT id
+      FROM documents
+      WHERE agent_id = ?
+        AND (
+          lower(title) LIKE ?
+          OR lower(path) LIKE ?
+          OR lower(tags_json) LIKE ?
+        )
+      ORDER BY title
+      LIMIT ?
+    `)
+
+    const filterNodeIdsContentStatement = database.prepare(`
+      SELECT DISTINCT documents.id AS id
+      FROM chunks_fts
+      JOIN documents ON documents.id = chunks_fts.document_id
+      WHERE chunks_fts MATCH ?
+      LIMIT ?
+    `)
+
+    const filterNodeIdsContentByAgentStatement = database.prepare(`
+      SELECT DISTINCT documents.id AS id
+      FROM chunks_fts
+      JOIN documents ON documents.id = chunks_fts.document_id
+      WHERE chunks_fts MATCH ?
+        AND documents.agent_id = ?
+      LIMIT ?
+    `)
+
+    const listAgentsStatement = database.prepare(`
+      SELECT agent_id AS id, count(*) AS document_count
+      FROM documents
+      GROUP BY agent_id
+      ORDER BY agent_id
+    `)
+
+    return {
+      listLinks: (agentId) => {
+        const normalizedAgentId = normalizeAgentFilter(agentId)
+        const rows = (
+          normalizedAgentId
+            ? listLinksByAgentStatement.all(normalizedAgentId)
+            : listLinksStatement.all()
+        ) as readonly GraphLinkRow[]
+
+        return rows.map(toGraphLink)
+      },
+      listBacklinks: (title, agentId) => {
+        const normalizedAgentId = normalizeAgentFilter(agentId)
+        const titleKey = toTitleKey(title)
+        const rows = (
+          normalizedAgentId
+            ? listBacklinksByAgentStatement.all(titleKey, normalizedAgentId)
+            : listBacklinksStatement.all(titleKey)
+        ) as readonly GraphLinkRow[]
+
+        return rows.map(toGraphLink)
+      },
+      getGraph: (agentId) => {
+        const normalizedAgentId = normalizeAgentFilter(agentId)
+        const nodeRows = (
+          normalizedAgentId
+            ? graphNodesByAgentStatement.all(normalizedAgentId)
+            : graphNodesStatement.all()
+        ) as readonly GraphNodeRow[]
+        const edgeRows = (
+          normalizedAgentId
+            ? graphEdgesByAgentStatement.all(normalizedAgentId)
+            : graphEdgesStatement.all()
+        ) as readonly GraphEdgeRow[]
+
+        return {
+          nodes: nodeRows.map(toGraphNode),
+          edges: edgeRows.map(toGraphEdge)
+        }
+      },
+      getGraphSummary: (agentId) => {
+        const normalizedAgentId = normalizeAgentFilter(agentId)
+        const nodeRows = (
+          normalizedAgentId
+            ? graphSummaryNodesByAgentStatement.all(normalizedAgentId)
+            : graphSummaryNodesStatement.all()
+        ) as readonly GraphNodeRow[]
+        const edgeRows = (
+          normalizedAgentId
+            ? graphEdgesByAgentStatement.all(normalizedAgentId)
+            : graphEdgesStatement.all()
+        ) as readonly GraphEdgeRow[]
+
+        return {
+          nodes: nodeRows.map(toGraphNode),
+          edges: edgeRows.map(toGraphEdge)
+        }
+      },
+      getGraphNode: (id, agentId) => {
+        const normalizedAgentId = normalizeAgentFilter(agentId)
+        const row = (
+          normalizedAgentId
+            ? graphNodeByIdAndAgentStatement.get(id, normalizedAgentId)
+            : graphNodeByIdStatement.get(id)
+        ) as GraphNodeRow | undefined
+
+        return row ? toGraphNode(row) : undefined
+      },
+      searchGraphNodeIds: (query, limit, agentId) => {
+        const normalizedQuery = query.trim().toLowerCase()
+        if (!normalizedQuery || limit <= 0) {
+          return []
+        }
+        const normalizedAgentId = normalizeAgentFilter(agentId)
+        const likeQuery = `%${normalizedQuery}%`
+        const metadataRows = (
+          normalizedAgentId
+            ? filterNodeIdsMetadataByAgentStatement.all(normalizedAgentId, likeQuery, likeQuery, likeQuery, limit)
+            : filterNodeIdsMetadataStatement.all(likeQuery, likeQuery, likeQuery, limit)
+        ) as readonly { readonly id: string }[]
+        const ids = new Set(metadataRows.map((row) => row.id))
+        const remainingLimit = Math.max(limit - ids.size, 0)
+
+        if (remainingLimit > 0) {
+          const ftsQuery = toFtsQuery(normalizedQuery)
+          if (ftsQuery) {
+            const contentRows = (
+              normalizedAgentId
+                ? filterNodeIdsContentByAgentStatement.all(ftsQuery, normalizedAgentId, remainingLimit)
+                : filterNodeIdsContentStatement.all(ftsQuery, remainingLimit)
+            ) as readonly { readonly id: string }[]
+            contentRows.forEach((row) => ids.add(row.id))
+          }
+        }
+
+        return Array.from(ids).slice(0, limit)
+      },
+      listAgents: () =>
+        (listAgentsStatement.all() as readonly AgentSummaryRow[]).map((row) => ({
+          id: row.id,
+          documentCount: row.document_count
+        }))
     }
+  })()
+
+const toGraphNode = (row: GraphNodeRow): GraphNode => ({
+  id: row.id,
+  agentId: row.agent_id,
+  title: row.title,
+  path: row.path,
+  content: row.content,
+  tags: JSON.parse(row.tags_json) as readonly string[]
+})
+
+const toGraphEdge = (row: GraphEdgeRow): GraphEdge => ({
+  source: row.source,
+  target: row.target,
+  targetTitle: row.target_title,
+  weight: row.weight,
+  priority: row.priority
 })

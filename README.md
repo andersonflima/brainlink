@@ -57,6 +57,7 @@ LLMs do not have infinite context. Brainlink gives agents an external memory lay
 6. Brainlink returns compact, source-backed context.
 
 Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable index.
+Brainlink now keeps an automatic rollback snapshot at `.brainlink/brainlink.db.backup`. If the main SQLite file is corrupted, Brainlink automatically restores from snapshot (or recreates a clean index when no snapshot exists).
 
 ## Features
 
@@ -507,7 +508,7 @@ Restart the client after changing marketplace or MCP configuration so it reloads
 Available tools:
 
 - `brainlink_bootstrap`: plug-and-play entrypoint that runs index + health checks and can return context in one call.
-- `brainlink_policy`: read or update bootstrap enforcement policy, including presets (`preset: "fully-auto" | "strict"`).
+- `brainlink_policy`: read or update bootstrap/context-first policy, including presets (`preset: "fully-auto" | "strict"`).
 - `brainlink_recommendations`: return an automatic action plan so agents can run Brainlink in the recommended order.
 - `brainlink_context`: read indexed context for a task or question.
 - `brainlink_search`: search indexed notes.
@@ -522,6 +523,7 @@ Available tools:
 - `brainlink_orphans`: list disconnected notes.
 
 For the most automatic workflow, start MCP sessions with `brainlink_bootstrap` (optionally with `query`) and then continue with `brainlink_context`/`brainlink_add_note`.
+By default, Brainlink enforces context-first for MCP reads (`enforceContextFirst=true`): non-context read tools return preflight until `brainlink_context` is called for the vault/agent session.
 By default, MCP startup already runs bootstrap on the configured default vault/agent (`autoBootstrapOnStartup=true`), so sessions begin warm.
 By default, Brainlink enforces bootstrap and auto-runs it for read tools when session state is missing or stale (`autoBootstrapOnRead=true`).
 If you disable `autoBootstrapOnRead` through `brainlink_policy`, read tools return a preflight instruction with suggested `brainlink_bootstrap` arguments.
@@ -553,11 +555,14 @@ The graph UI shows:
 
 - notes as nodes
 - `[[wiki links]]` as weighted edges
-- backlinks and outgoing links
-- full Markdown content for the selected note
+- details opened on node click (tags, outgoing links, backlinks, full Markdown content)
 - neutral graph nodes with segment/group metadata
 - agent selector for isolated views
+- graph filter matches title, path, tags and note content
 - realtime refresh while `--watch` is enabled
+- graph controls for zoom in, zoom out, fit visible nodes and reset-to-fit-all
+- wheel zoom anchored to cursor position for faster navigation in large graphs
+- floating graph totals (notes, links, tags) below the Brainlink title
 
 The server indexes before starting by default. Use `--no-index` to skip that step:
 
@@ -576,6 +581,7 @@ Routes:
 - `GET /api/agents`
 - `GET /api/graph`
 - `GET /api/graph-layout`
+- `GET /api/graph-node?id=<node-id>`
 - `GET /api/search?q=<query>&limit=10&mode=hybrid`
 - `GET /api/context?q=<query>&limit=12&tokens=2000&mode=hybrid`
 - `GET /api/links`
@@ -605,6 +611,7 @@ blink agent install --self-test
 blink agent upgrade
 blink agent policy --preset fully-auto
 blink agent policy --preset strict
+blink agent policy --enforce-context-first false
 blink agent install --plugin-path ./plugins/brainlink
 blink agent install --mcp-only --allowed-vaults "/absolute/vault,/absolute/team-vault"
 blink agent status
@@ -615,6 +622,7 @@ When plugin files are available, it also links Brainlink plugin files into `~/pl
 With `--self-test`, install also validates MCP block presence, command wiring and local plugin registration signals.
 Use `agent upgrade` on legacy installations to reapply current defaults and run the same self-test diagnostics.
 Use `agent policy --preset fully-auto` for plug-and-play defaults, or `agent policy --preset strict` to require explicit bootstrap calls.
+Both presets keep `enforceContextFirst=true` so Brainlink stays the primary context source for MCP sessions.
 
 ### `quickstart`
 

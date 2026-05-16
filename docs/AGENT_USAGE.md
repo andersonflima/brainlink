@@ -531,6 +531,8 @@ Without `--vault`, the graph UI serves `$HOME/.brainlink/vault`.
 
 The frontend includes an agent selector. Selecting an agent calls the same read APIs with `agent=<agent-id>` and renders that namespace instead of merging every agent into one graph.
 
+Graph navigation controls include zoom in, zoom out, fit visible nodes and reset-to-fit-all nodes. Mouse wheel zoom is anchored to the cursor. Totals for notes, links and tags stay visible as floating metrics under the Brainlink title, and node details open on click in a modal (tags, outgoing links, backlinks and Markdown content).
+
 The command reindexes by default, then serves:
 
 ```txt
@@ -597,9 +599,9 @@ Available MCP tools:
 - `brainlink_broken_links`
 - `brainlink_orphans`
 
-Recommended start of every memory-dependent task: call `brainlink_bootstrap` first, then `brainlink_context` only when additional retrieval is needed. By default, Brainlink enforces bootstrap for MCP read tools and auto-runs bootstrap on reads when state is missing or stale (`autoBootstrapOnRead=true`).
+Recommended start of every memory-dependent task: call `brainlink_bootstrap` first, then `brainlink_context`. By default, Brainlink enforces context-first for non-context MCP reads (`enforceContextFirst=true`), and also enforces bootstrap with auto-bootstrap on reads when state is missing or stale (`autoBootstrapOnRead=true`).
 MCP startup also bootstraps the configured default vault/agent automatically (`autoBootstrapOnStartup=true`), so sessions start warm without manual calls.
-If `autoBootstrapOnRead` is disabled through `brainlink_policy`, read tools return preflight-required responses.
+If `autoBootstrapOnRead` or `enforceContextFirst` are disabled through `brainlink_policy`, behavior is relaxed accordingly; otherwise read tools return preflight-required responses when requirements are not satisfied.
 `brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so clients can continue tool flows automatically.
 `brainlink_policy` also accepts policy presets (`fully-auto`, `strict`) so MCP clients can switch behavior in one call.
 `brainlink_recommendations` returns the suggested execution order so an agent can follow Brainlink best practices automatically.
@@ -618,6 +620,8 @@ export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault"
 ```txt
 GET  /api/graph
 GET  /api/graph-layout
+GET  /api/graph-node?id=<node-id>
+GET  /api/graph-filter?q=<query>&limit=<n>
 GET  /api/search?q=<query>&limit=10&mode=hybrid
 GET  /api/context?q=<query>&limit=12&tokens=2000&mode=hybrid
 GET  /api/links
@@ -629,6 +633,8 @@ GET  /api/validate
 ```
 
 The HTTP API is read-only. Use the CLI for writes and indexing.
+
+Brainlink maintains an automatic SQLite rollback snapshot at `.brainlink/brainlink.db.backup`. When `.brainlink/brainlink.db` is corrupted, Brainlink restores from snapshot automatically or recreates a clean index if no snapshot exists yet.
 
 ## Agent Integration Contract
 

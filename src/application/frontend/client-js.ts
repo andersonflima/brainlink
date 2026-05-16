@@ -7,8 +7,10 @@ const state = {
   selected: null,
   hovered: null,
   query: '',
+  contentFilter: { query: '', ids: null, token: 0, timer: null },
   agentId: '',
   agentsSignature: '',
+  nodeDetails: new Map(),
   transform: { x: 0, y: 0, scale: 1 },
   pointer: { x: 0, y: 0, down: false, dragNode: null, moved: false },
   graphSignature: '',
@@ -24,43 +26,37 @@ const escapeHtml = value => String(value)
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;')
 const elements = {
-  stats: byId('stats'),
   search: byId('search'),
   agent: byId('agent'),
-  title: byId('title'),
-  path: byId('path'),
-  tags: byId('tags'),
-  notes: byId('notes'),
-  outgoing: byId('outgoing'),
-  incoming: byId('incoming'),
   nodeCount: byId('nodeCount'),
   edgeCount: byId('edgeCount'),
   tagCount: byId('tagCount'),
   zoomIn: byId('zoomIn'),
   zoomOut: byId('zoomOut'),
+  fit: byId('fit'),
   reset: byId('reset'),
   contentDialog: byId('contentDialog'),
   contentTitle: byId('contentTitle'),
   contentPath: byId('contentPath'),
+  contentTags: byId('contentTags'),
+  contentOutgoing: byId('contentOutgoing'),
+  contentIncoming: byId('contentIncoming'),
   contentBody: byId('contentBody'),
   contentClose: byId('contentClose')
+}
+
+const zoomRange = {
+  min: 0.05,
+  max: 4.5
 }
 
 const agentQuery = () => state.agentId ? '?agent=' + encodeURIComponent(state.agentId) : ''
 
 const setGraphStatus = text => {
   state.graphStatus = text
-  elements.stats.textContent = text
 }
 
 const handleGraphRefreshError = error => {
-  if (state.graphSignature) {
-    elements.stats.textContent = state.graphStatus
-    console.error(error)
-    return
-  }
-
-  elements.stats.textContent = 'Failed to load graph'
   console.error(error)
 }
 
@@ -87,14 +83,23 @@ const resize = () => {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
 }
 
-const filteredNodes = () => {
-  const query = state.query.trim().toLowerCase()
-  if (!query) return state.nodes
-  return state.nodes.filter(node =>
+const normalizeQuery = value => value.trim().toLowerCase()
+
+const localFilteredNodes = query =>
+  state.nodes.filter(node =>
     node.title.toLowerCase().includes(query) ||
     node.path.toLowerCase().includes(query) ||
     node.tags.some(tag => tag.toLowerCase().includes(query))
   )
+
+const filteredNodes = () => {
+  const query = normalizeQuery(state.query)
+  if (!query) return state.nodes
+  if (state.contentFilter.query === query && state.contentFilter.ids instanceof Set) {
+    return state.nodes.filter(node => state.contentFilter.ids.has(node.id))
+  }
+
+  return localFilteredNodes(query)
 }
 
 const visibleIds = () => new Set(filteredNodes().map(node => node.id))
@@ -106,10 +111,60 @@ const visibleEdges = () => {
 
 const edgeWeight = edge => Number.isFinite(edge.weight) ? Math.max(1, edge.weight) : 1
 
-const resetView = () => {
-  const rect = canvas.getBoundingClientRect()
-  state.transform = { x: Math.max(rect.width, 320) / 2, y: Math.max(rect.height, 320) / 2, scale: 1 }
+const clampScale = value => Math.max(zoomRange.min, Math.min(zoomRange.max, value))
+
+const graphBounds = nodes => {
+  if (nodes.length === 0) return null
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+
+  nodes.forEach(node => {
+    const radius = nodeRadius(node)
+    minX = Math.min(minX, node.x - radius)
+    maxX = Math.max(maxX, node.x + radius)
+    minY = Math.min(minY, node.y - radius)
+    maxY = Math.max(maxY, node.y + radius)
+  })
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    width: Math.max(maxX - minX, 1),
+    height: Math.max(maxY - minY, 1)
+  }
 }
+
+const fitView = (options = { useFiltered: true }) => {
+  const rect = canvas.getBoundingClientRect()
+  const width = Math.max(rect.width, 320)
+  const height = Math.max(rect.height, 320)
+  const nodes = options.useFiltered ? filteredNodes() : state.nodes
+  const bounds = graphBounds(nodes)
+
+  if (!bounds) {
+    state.transform = { x: width / 2, y: height / 2, scale: 1 }
+    return
+  }
+
+  const padding = 100
+  const scaleX = width / (bounds.width + padding * 2)
+  const scaleY = height / (bounds.height + padding * 2)
+  const scale = clampScale(Math.min(scaleX, scaleY))
+  const centerX = (bounds.minX + bounds.maxX) / 2
+  const centerY = (bounds.minY + bounds.maxY) / 2
+
+  state.transform = {
+    x: width / 2 - centerX * scale,
+    y: height / 2 - centerY * scale,
+    scale
+  }
+}
+
+const resetView = () => fitView({ useFiltered: false })
 
 const createLayout = graph => {
   const nodes = graph.nodes.map(node => ({
@@ -136,9 +191,66 @@ const encodeEntityTag = (value) => {
 }
 
 const graphSignature = graph => JSON.stringify({
-  nodes: graph.nodes.map(node => [node.id, node.title, node.path, node.content, node.tags]),
+  nodes: graph.nodes.map(node => [node.id, node.title, node.path, node.tags]),
   edges: graph.edges.map(edge => [edge.source, edge.target, edge.targetTitle, edge.weight, edge.priority])
 })
+
+const resetContentFilter = () => {
+  if (state.contentFilter.timer) {
+    clearTimeout(state.contentFilter.timer)
+  }
+  state.contentFilter = {
+    query: '',
+    ids: null,
+    token: state.contentFilter.token + 1,
+    timer: null
+  }
+}
+
+const syncContentFilter = async (query, token) => {
+  const response = await fetch(
+    '/api/graph-filter?q=' +
+      encodeURIComponent(query) +
+      '&limit=' +
+      encodeURIComponent(String(Math.max(state.nodes.length, 1))) +
+      agentQuery()
+  )
+
+  if (!response.ok || token !== state.contentFilter.token) {
+    return
+  }
+
+  const payload = await response.json()
+  const nodeIds = Array.isArray(payload?.nodeIds) ? payload.nodeIds.filter(id => typeof id === 'string') : []
+  if (token !== state.contentFilter.token) {
+    return
+  }
+
+  state.contentFilter.query = query
+  state.contentFilter.ids = new Set(nodeIds)
+}
+
+const scheduleContentFilterSync = () => {
+  const query = normalizeQuery(state.query)
+  if (!query) {
+    resetContentFilter()
+    return
+  }
+
+  if (state.contentFilter.timer) {
+    clearTimeout(state.contentFilter.timer)
+  }
+
+  const token = state.contentFilter.token + 1
+  state.contentFilter = {
+    query: state.contentFilter.query,
+    ids: state.contentFilter.ids,
+    token,
+    timer: setTimeout(() => {
+      syncContentFilter(query, token).catch(() => {})
+    }, 180)
+  }
+}
 
 const tick = delta => {
   const nodes = filteredNodes()
@@ -278,31 +390,7 @@ const list = items => items.length
   ? items.map(item => '<li>' + (item.id ? '<button type="button" data-node-id="' + escapeHtml(item.id) + '">' + escapeHtml(item.title) + '</button>' : escapeHtml(item.title)) + '<small>' + escapeHtml(item.path) + (item.weight ? ' · weight ' + escapeHtml(item.weight) + ' · ' + escapeHtml(item.priority || 'normal') : '') + '</small></li>').join('')
   : '<li><small>No links found.</small></li>'
 
-const allNotesList = () => state.nodes.length
-  ? state.nodes.map(node => '<li><button type="button" data-node-id="' + escapeHtml(node.id) + '">' + escapeHtml(node.title) + '</button><small>' + escapeHtml(node.path) + '</small></li>').join('')
-  : '<li><small>No notes indexed.</small></li>'
-
-const openContentDialog = node => {
-  if (!node) return
-  elements.contentTitle.textContent = node.title
-  elements.contentPath.textContent = node.path
-  elements.contentBody.textContent = node.content
-  if (!elements.contentDialog.open) {
-    elements.contentDialog.showModal()
-  }
-}
-
-const selectNode = (node, options = { openContent: false }) => {
-  state.selected = node
-  if (!node) {
-    elements.title.textContent = 'Graph Overview'
-    elements.path.textContent = state.nodes.length + ' notes and ' + state.graph.edges.length + ' links indexed.'
-    elements.tags.innerHTML = ''
-    elements.notes.innerHTML = allNotesList()
-    elements.outgoing.innerHTML = '<li><small>Select a note to inspect outgoing links.</small></li>'
-    elements.incoming.innerHTML = '<li><small>Select a note to inspect backlinks.</small></li>'
-    return
-  }
+const linkedNodes = node => {
   const nodeById = new Map(state.nodes.map(item => [item.id, item]))
   const withEdgeMeta = (linkedNode, edge) => linkedNode ? {
     ...linkedNode,
@@ -318,15 +406,62 @@ const selectNode = (node, options = { openContent: false }) => {
     .map(edge => withEdgeMeta(nodeById.get(edge.source), edge))
     .filter(Boolean)
 
-  elements.title.textContent = node.title
-  elements.path.textContent = node.path
-  elements.tags.innerHTML = node.tags.length
+  return { outgoing, incoming }
+}
+
+const fetchNodeDetails = async node => {
+  const cached = state.nodeDetails.get(node.id)
+  if (cached) {
+    return cached
+  }
+
+  const response = await fetch('/api/graph-node?id=' + encodeURIComponent(node.id) + agentQuery())
+  if (!response.ok) {
+    throw new Error('Failed to load graph node details')
+  }
+
+  const payload = await response.json()
+  const detail = payload?.node
+  if (!detail || !detail.id) {
+    throw new Error('Invalid graph node payload')
+  }
+  state.nodeDetails.set(detail.id, detail)
+  return detail
+}
+
+const openContentDialog = async node => {
+  if (!node) return
+  const { outgoing, incoming } = linkedNodes(node)
+  elements.contentTitle.textContent = node.title
+  elements.contentPath.textContent = node.path
+  elements.contentTags.innerHTML = node.tags.length
     ? node.tags.map(tag => '<span>#' + escapeHtml(tag) + '</span>').join('')
     : '<span>No tags</span>'
-  elements.notes.innerHTML = allNotesList()
-  elements.outgoing.innerHTML = list(outgoing)
-  elements.incoming.innerHTML = list(incoming)
-  if (options.openContent) openContentDialog(node)
+  elements.contentOutgoing.innerHTML = list(outgoing)
+  elements.contentIncoming.innerHTML = list(incoming)
+  elements.contentBody.textContent = 'Loading note content...'
+  if (!elements.contentDialog.open) {
+    elements.contentDialog.showModal()
+  }
+
+  try {
+    const detailedNode = await fetchNodeDetails(node)
+    if (state.selected?.id !== node.id) {
+      return
+    }
+    elements.contentBody.textContent = detailedNode.content
+  } catch {
+    elements.contentBody.textContent = 'Unable to load note content.'
+  }
+}
+
+const selectNode = (node, options = { openContent: false }) => {
+  state.selected = node
+  if (node && options.openContent) {
+    openContentDialog(node).catch(() => {
+      elements.contentBody.textContent = 'Unable to load note content.'
+    })
+  }
 }
 
 const selectNodeById = id => {
@@ -334,44 +469,60 @@ const selectNodeById = id => {
   if (node) selectNode(node, { openContent: true })
 }
 
-const zoom = factor => {
-  state.transform.scale = Math.max(0.25, Math.min(3.5, state.transform.scale * factor))
+const zoomAtPoint = (screenX, screenY, factor) => {
+  const nextScale = clampScale(state.transform.scale * factor)
+  if (nextScale === state.transform.scale) return
+  const worldX = (screenX - state.transform.x) / state.transform.scale
+  const worldY = (screenY - state.transform.y) / state.transform.scale
+  state.transform.scale = nextScale
+  state.transform.x = screenX - worldX * nextScale
+  state.transform.y = screenY - worldY * nextScale
 }
 
 const bindEvents = () => {
   window.addEventListener('resize', resize)
   elements.search.addEventListener('input', event => {
     state.query = event.target.value
-    elements.stats.textContent = state.query
-      ? filteredNodes().length + ' filtered notes'
-      : state.nodes.length + ' notes · ' + state.edges.length + ' links'
+    scheduleContentFilterSync()
   })
   elements.agent.addEventListener('change', event => {
     state.agentId = event.target.value
     state.selected = null
+    state.nodeDetails = new Map()
+    resetContentFilter()
+    scheduleContentFilterSync()
     loadGraph({ reset: true }).catch(error => {
-      elements.stats.textContent = 'Failed to load agent graph'
       console.error(error)
     })
   })
-  elements.zoomIn.addEventListener('click', () => zoom(1.18))
-  elements.zoomOut.addEventListener('click', () => zoom(0.84))
+  elements.zoomIn.addEventListener('click', () => {
+    const rect = canvas.getBoundingClientRect()
+    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.18)
+  })
+  elements.zoomOut.addEventListener('click', () => {
+    const rect = canvas.getBoundingClientRect()
+    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.84)
+  })
+  if (elements.fit) {
+    elements.fit.addEventListener('click', () => fitView({ useFiltered: true }))
+  }
   elements.reset.addEventListener('click', resetView)
   elements.contentClose.addEventListener('click', () => elements.contentDialog.close())
   elements.contentDialog.addEventListener('click', event => {
+    const target = event.target
+    if (target instanceof HTMLElement && target.dataset.nodeId) {
+      selectNodeById(target.dataset.nodeId)
+      return
+    }
     if (event.target === elements.contentDialog) elements.contentDialog.close()
-  })
-  ;[elements.notes, elements.outgoing, elements.incoming].forEach(element => {
-    element.addEventListener('click', event => {
-      const target = event.target
-      if (!(target instanceof HTMLElement)) return
-      const nodeId = target.dataset.nodeId
-      if (nodeId) selectNodeById(nodeId)
-    })
   })
   canvas.addEventListener('wheel', event => {
     event.preventDefault()
-    zoom(event.deltaY < 0 ? 1.08 : 0.92)
+    const rect = canvas.getBoundingClientRect()
+    const cursorX = event.clientX - rect.left
+    const cursorY = event.clientY - rect.top
+    const factor = event.deltaY < 0 ? 1.08 : 0.92
+    zoomAtPoint(cursorX, cursorY, factor)
   }, { passive: false })
   canvas.addEventListener('pointerdown', event => {
     const point = worldPoint(event)
@@ -451,6 +602,9 @@ const loadGraph = async (options = { reset: false }) => {
   state.graph = graph
   state.nodes = layout.nodes
   state.edges = layout.edges
+  state.nodeDetails = new Map()
+  resetContentFilter()
+  scheduleContentFilterSync()
   const tags = new Set(graph.nodes.flatMap(node => node.tags))
   setGraphStatus(state.agentId + ' · ' + graph.nodes.length + ' notes · ' + graph.edges.length + ' links · live')
   elements.nodeCount.textContent = graph.nodes.length
@@ -458,7 +612,11 @@ const loadGraph = async (options = { reset: false }) => {
   elements.tagCount.textContent = tags.size
   resize()
   if (options.reset) resetView()
-  selectNode(state.nodes.find(node => node.id === selectedId) ?? null)
+  const selectedNode = state.nodes.find(node => node.id === selectedId) ?? null
+  selectNode(selectedNode, { openContent: Boolean(selectedNode && elements.contentDialog.open) })
+  if (!selectedNode && elements.contentDialog.open) {
+    elements.contentDialog.close()
+  }
 }
 
 bindEvents()
@@ -492,7 +650,6 @@ loadAgents()
     setInterval(refreshGraphLoop, pollIntervalMs)
   })
   .catch(error => {
-    elements.stats.textContent = 'Failed to load graph'
     console.error(error)
   })
 

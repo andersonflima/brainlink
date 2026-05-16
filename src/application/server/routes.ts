@@ -2,9 +2,11 @@ import type { IncomingMessage } from 'node:http'
 import { getBrokenLinksReport, getOrphansReport, getStats, validateVault } from '../analyze-vault.js'
 import { buildContextPackage } from '../build-context.js'
 import { getGraph } from '../get-graph.js'
+import { getGraphNode } from '../get-graph-node.js'
 import { getGraphLayout } from '../get-graph-layout.js'
 import { listAgents } from '../list-agents.js'
 import { listBacklinks, listLinks } from '../list-links.js'
+import { searchGraphNodeIds } from '../search-graph-node-ids.js'
 import { searchKnowledge } from '../search-knowledge.js'
 import { loadBrainlinkConfig, sanitizeSearchMode } from '../../infrastructure/config.js'
 import { createClientCss } from '../frontend/client-css.js'
@@ -65,6 +67,11 @@ const sameEntityTag = (candidate: string | string[] | undefined, signature: stri
 const readAgentQuery = (url: URL): string | undefined =>
   url.searchParams.get('agent') ?? undefined
 
+const stripLayoutContent = (layout: Awaited<ReturnType<typeof getGraphLayout>>['layout']) => ({
+  ...layout,
+  nodes: layout.nodes.map(({ content, ...node }) => node)
+})
+
 export const route = async (request: IncomingMessage, url: URL, vaultPath: string) => {
   if (isReadMethod(request) && (url.pathname === '/' || url.pathname === '/index.html')) {
     return createResponse(createClientHtml(), 200, contentTypes['.html'])
@@ -87,7 +94,7 @@ export const route = async (request: IncomingMessage, url: URL, vaultPath: strin
     const requestEtags = request.headers['if-none-match']
     const notModified = sameEntityTag(requestEtags, signature)
     const etag = encodeEntityTag(signature)
-    const body = createJsonResponse({ signature, layout })
+    const body = createJsonResponse({ signature, layout: stripLayoutContent(layout) })
     const jsonResponse = createResponse(body, 200, contentTypes['.json'])
     const notModifiedResponse = createResponse('', 304, contentTypes['.json'])
 
@@ -108,6 +115,35 @@ export const route = async (request: IncomingMessage, url: URL, vaultPath: strin
         etag
       }
     }
+  }
+
+  if (isReadMethod(request) && url.pathname === '/api/graph-node') {
+    const id = url.searchParams.get('id')?.trim() ?? ''
+
+    if (!id) {
+      return createResponse(createJsonResponse({ error: 'Missing id query parameter' }), 400, contentTypes['.json'])
+    }
+
+    const node = await getGraphNode(vaultPath, id, readAgentQuery(url))
+
+    if (!node) {
+      return createResponse(createJsonResponse({ error: 'Node not found' }), 404, contentTypes['.json'])
+    }
+
+    return createResponse(createJsonResponse({ node }), 200, contentTypes['.json'])
+  }
+
+  if (isReadMethod(request) && url.pathname === '/api/graph-filter') {
+    const query = url.searchParams.get('q')?.trim() ?? ''
+    const limit = parsePositiveInteger(url.searchParams.get('limit'), 1200)
+
+    if (!query) {
+      return createResponse(createJsonResponse({ query, nodeIds: [] }), 200, contentTypes['.json'])
+    }
+
+    const nodeIds = await searchGraphNodeIds(vaultPath, query, limit, readAgentQuery(url))
+
+    return createResponse(createJsonResponse({ query, nodeIds }), 200, contentTypes['.json'])
   }
 
   if (isReadMethod(request) && url.pathname === '/api/agents') {

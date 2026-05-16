@@ -5,7 +5,13 @@ import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { Command } from 'commander'
 import { loadBrainlinkConfig } from '../../infrastructure/config.js'
-import { getBootstrapPolicy, getBootstrapSessionStatus, getSessionStatePath, setBootstrapPolicy } from '../../infrastructure/session-state.js'
+import {
+  getBootstrapPolicy,
+  getBootstrapSessionStatus,
+  getContextSessionStatus,
+  getSessionStatePath,
+  setBootstrapPolicy
+} from '../../infrastructure/session-state.js'
 import { print } from '../runtime.js'
 import type { AgentInstallOptions, AgentPolicyOptions, AgentStatusOptions } from '../types.js'
 
@@ -349,6 +355,7 @@ const applyPolicyPreset = (preset: string | undefined): Partial<Awaited<ReturnTy
   if (preset === 'fully-auto') {
     return {
       enforceBootstrap: true,
+      enforceContextFirst: true,
       autoBootstrapOnRead: true,
       autoBootstrapOnStartup: true
     }
@@ -357,6 +364,7 @@ const applyPolicyPreset = (preset: string | undefined): Partial<Awaited<ReturnTy
   if (preset === 'strict') {
     return {
       enforceBootstrap: true,
+      enforceContextFirst: true,
       autoBootstrapOnRead: false,
       autoBootstrapOnStartup: false
     }
@@ -430,6 +438,7 @@ export const registerAgentCommands = (program: Command): void => {
     .command('policy')
     .option('--preset <preset>', 'policy preset: fully-auto or strict')
     .option('--enforce-bootstrap <true|false>', 'override enforceBootstrap')
+    .option('--enforce-context-first <true|false>', 'override enforceContextFirst')
     .option('--auto-bootstrap-on-read <true|false>', 'override autoBootstrapOnRead')
     .option('--auto-bootstrap-on-startup <true|false>', 'override autoBootstrapOnStartup')
     .option('--stale-after-minutes <minutes>', 'override staleAfterMinutes with positive integer')
@@ -438,11 +447,13 @@ export const registerAgentCommands = (program: Command): void => {
     .action(async (options: AgentPolicyOptions) => {
       const presetPatch = applyPolicyPreset(options.preset)
       const enforceBootstrap = parseBooleanOption(options.enforceBootstrap, '--enforce-bootstrap')
+      const enforceContextFirst = parseBooleanOption(options.enforceContextFirst, '--enforce-context-first')
       const autoBootstrapOnRead = parseBooleanOption(options.autoBootstrapOnRead, '--auto-bootstrap-on-read')
       const autoBootstrapOnStartup = parseBooleanOption(options.autoBootstrapOnStartup, '--auto-bootstrap-on-startup')
       const staleAfterMinutes = parsePositiveIntegerOption(options.staleAfterMinutes, '--stale-after-minutes')
       const overridePatch = {
         ...(enforceBootstrap !== undefined ? { enforceBootstrap } : {}),
+        ...(enforceContextFirst !== undefined ? { enforceContextFirst } : {}),
         ...(autoBootstrapOnRead !== undefined ? { autoBootstrapOnRead } : {}),
         ...(autoBootstrapOnStartup !== undefined ? { autoBootstrapOnStartup } : {}),
         ...(staleAfterMinutes !== undefined ? { staleAfterMinutes } : {})
@@ -463,6 +474,7 @@ export const registerAgentCommands = (program: Command): void => {
           [
             ...(options.preset ? [`presetApplied=${options.preset}`] : []),
             `enforceBootstrap=${policy.enforceBootstrap}`,
+            `enforceContextFirst=${policy.enforceContextFirst}`,
             `autoBootstrapOnRead=${policy.autoBootstrapOnRead}`,
             `autoBootstrapOnStartup=${policy.autoBootstrapOnStartup}`,
             `staleAfterMinutes=${policy.staleAfterMinutes}`
@@ -505,6 +517,7 @@ export const registerAgentCommands = (program: Command): void => {
       const config = await loadBrainlinkConfig()
       const policy = await getBootstrapPolicy()
       const bootstrapStatus = await getBootstrapSessionStatus(config.vault, options.agent ?? config.defaultAgent)
+      const contextStatus = await getContextSessionStatus(config.vault, options.agent ?? config.defaultAgent)
       const sessionStatePath = getSessionStatePath()
 
       print(
@@ -522,7 +535,8 @@ export const registerAgentCommands = (program: Command): void => {
           vault: config.vault,
           agent: options.agent ?? config.defaultAgent ?? '*',
           bootstrapPolicy: policy,
-          bootstrapStatus
+          bootstrapStatus,
+          contextStatus
         },
         () =>
           [
@@ -533,7 +547,9 @@ export const registerAgentCommands = (program: Command): void => {
             `vault=${config.vault}`,
             `agent=${options.agent ?? config.defaultAgent ?? '*'}`,
             `bootstrapReady=${bootstrapStatus.ready}`,
-            `bootstrapStale=${bootstrapStatus.stale}`
+            `bootstrapStale=${bootstrapStatus.stale}`,
+            `contextReady=${contextStatus.ready}`,
+            `contextStale=${contextStatus.stale}`
           ].join('\n')
       )
     })
