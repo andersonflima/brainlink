@@ -60,6 +60,7 @@ Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable
 Brainlink now keeps an automatic rollback snapshot at `.brainlink/brainlink.db.backup` plus rotating snapshots in `.brainlink/brainlink.db.backup.snapshots/`. If the main SQLite file is corrupted, Brainlink automatically restores the newest valid snapshot (or recreates a clean index when no snapshot exists).
 After each index run, Brainlink also writes private encrypted search packs at `.brainlink/search-packs/*.blpk`. If SQLite is unavailable, search falls back to these packs automatically.
 Pack decryption uses a Brainlink key from `$BRAINLINK_HOME/keys` or from `BRAINLINK_SEARCH_PACK_KEY` when explicitly configured.
+On upgrade, if a legacy SQLite index exists without private packs, Brainlink imports index rows into `.blpk` automatically on first search/context access.
 
 ## Features
 

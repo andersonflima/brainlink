@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ensureVault } from '../infrastructure/file-system-vault.js'
-import { searchInPacks } from '../infrastructure/search-packs.js'
+import { ensurePrivatePacksFromLegacyIndex, searchInPacks } from '../infrastructure/search-packs.js'
 import { openSqliteIndex } from '../infrastructure/sqlite-index.js'
 import { createEmbeddingProvider } from '../domain/embeddings.js'
 import { loadBrainlinkConfig, sanitizeSearchMode } from '../infrastructure/config.js'
@@ -74,6 +74,7 @@ export const searchKnowledge = async (
   const absoluteVaultPath = await ensureVault(vaultPath)
   const config = await loadBrainlinkConfig()
   const searchMode = sanitizeSearchMode(mode, config.defaultSearchMode)
+  await ensurePrivatePacksFromLegacyIndex(absoluteVaultPath)
   const cacheKey = searchMode === 'hybrid' ? toCacheKey(absoluteVaultPath, query, limit, agentId) : undefined
   const indexMtimeMs = cacheKey ? await readIndexMtimeMs(absoluteVaultPath) : 0
   const cached = cacheKey ? cacheGet(cacheKey, indexMtimeMs) : undefined
