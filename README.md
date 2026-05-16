@@ -57,7 +57,7 @@ LLMs do not have infinite context. Brainlink gives agents an external memory lay
 6. Brainlink returns compact, source-backed context.
 
 Markdown is the source of truth. `.brainlink/brainlink.db` is only a rebuildable index.
-Brainlink now keeps an automatic rollback snapshot at `.brainlink/brainlink.db.backup`. If the main SQLite file is corrupted, Brainlink automatically restores from snapshot (or recreates a clean index when no snapshot exists).
+Brainlink now keeps an automatic rollback snapshot at `.brainlink/brainlink.db.backup` plus rotating snapshots in `.brainlink/brainlink.db.backup.snapshots/`. If the main SQLite file is corrupted, Brainlink automatically restores the newest valid snapshot (or recreates a clean index when no snapshot exists).
 After each index run, Brainlink also writes private encrypted search packs at `.brainlink/search-packs/*.blpk`. If SQLite is unavailable, search falls back to these packs automatically.
 Pack decryption uses a Brainlink key from `$BRAINLINK_HOME/keys` or from `BRAINLINK_SEARCH_PACK_KEY` when explicitly configured.
 
