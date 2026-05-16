@@ -8,7 +8,7 @@ import { buildContextPackage } from '../application/build-context.js'
 import { getGraph } from '../application/get-graph.js'
 import { indexVault } from '../application/index-vault.js'
 import { searchKnowledge } from '../application/search-knowledge.js'
-import { sanitizeSearchMode } from '../infrastructure/config.js'
+import { resolveAgentRuntimeDefaults, sanitizeSearchMode } from '../infrastructure/config.js'
 import { loadBrainlinkConfig } from '../infrastructure/config.js'
 import { assertVaultAllowed } from '../infrastructure/file-system-vault.js'
 import { getBootstrapPolicy, getBootstrapSessionStatus, setBootstrapPolicy, touchBootstrapSession } from '../infrastructure/session-state.js'
@@ -20,6 +20,13 @@ const positiveInteger = (fallback: number) =>
     .positive()
     .optional()
     .transform((value) => value ?? fallback)
+
+const optionalPositiveInteger = () =>
+  z
+    .number()
+    .int()
+    .positive()
+    .optional()
 
 const vaultInput = {
   vault: z.string().min(1).optional().describe('Vault directory. Omit to use the configured Brainlink default vault.')
@@ -46,11 +53,13 @@ const resolveExecutionContext = async (input: ToolInput) => {
   const config = await loadBrainlinkConfig()
   const vault = await assertVaultAllowed(input.vault ?? config.vault, config.allowedVaults)
   const agent = input.agent ?? config.defaultAgent
+  const defaults = resolveAgentRuntimeDefaults(config, agent)
 
   return {
     config,
     vault,
-    agent
+    agent,
+    defaults
   }
 }
 
@@ -146,8 +155,8 @@ export const contextInputSchema = {
   ...agentInput,
   ...searchModeInput,
   query: z.string().min(1).describe('Task or question to retrieve Brainlink context for.'),
-  limit: positiveInteger(12).describe('Maximum search results before context selection.'),
-  tokens: positiveInteger(2000).describe('Maximum estimated context tokens.')
+  limit: optionalPositiveInteger().describe('Maximum search results before context selection.'),
+  tokens: optionalPositiveInteger().describe('Maximum estimated context tokens.')
 }
 
 export const searchInputSchema = {
@@ -155,7 +164,7 @@ export const searchInputSchema = {
   ...agentInput,
   ...searchModeInput,
   query: z.string().min(1).describe('Search query.'),
-  limit: positiveInteger(10).describe('Maximum result count.')
+  limit: optionalPositiveInteger().describe('Maximum result count.')
 }
 
 export const addNoteInputSchema = {
@@ -215,8 +224,8 @@ export const syncInputSchema = {
   ...agentInput,
   contextQuery: z.string().min(1).optional().describe('Optional context smoke query. Omit to skip context probe.'),
   mode: z.enum(['fts', 'semantic', 'hybrid']).optional().describe('Search mode for the optional context probe. Defaults to config value.'),
-  contextLimit: positiveInteger(12).describe('Context smoke result limit when contextQuery is provided.'),
-  contextTokens: positiveInteger(2000).describe('Context smoke token target when contextQuery is provided.')
+  contextLimit: optionalPositiveInteger().describe('Context smoke result limit when contextQuery is provided.'),
+  contextTokens: optionalPositiveInteger().describe('Context smoke token target when contextQuery is provided.')
 }
 
 export const bootstrapInputSchema = {
@@ -228,8 +237,8 @@ export const bootstrapInputSchema = {
     .min(1)
     .optional()
     .describe('Optional task query. When provided, Brainlink also returns a context package in the same call.'),
-  limit: positiveInteger(12).describe('Context limit used when query is provided.'),
-  tokens: positiveInteger(2000).describe('Context token target used when query is provided.')
+  limit: optionalPositiveInteger().describe('Context limit used when query is provided.'),
+  tokens: optionalPositiveInteger().describe('Context token target used when query is provided.')
 }
 
 export const policyInputSchema = {
@@ -247,12 +256,14 @@ export const contextTool = async (input: z.infer<z.ZodObject<typeof contextInput
     return preflight
   }
 
-  const mode = sanitizeSearchMode(input.mode, context.config.defaultSearchMode)
+  const mode = sanitizeSearchMode(input.mode, context.defaults.defaultSearchMode)
+  const limit = input.limit ?? context.defaults.defaultSearchLimit
+  const tokens = input.tokens ?? context.defaults.defaultContextTokens
   const contextPackage = await buildContextPackage(
     context.vault,
     input.query,
-    input.limit,
-    input.tokens,
+    limit,
+    tokens,
     context.agent,
     mode
   )
@@ -261,6 +272,8 @@ export const contextTool = async (input: z.infer<z.ZodObject<typeof contextInput
     vault: context.vault,
     agent: context.agent,
     mode,
+    limit,
+    tokens,
     ...contextPackage
   })
 }
@@ -273,14 +286,15 @@ export const searchTool = async (input: z.infer<z.ZodObject<typeof searchInputSc
     return preflight
   }
 
-  const mode = sanitizeSearchMode(input.mode, context.config.defaultSearchMode)
-  const results = await searchKnowledge(context.vault, input.query, input.limit, context.agent, mode)
+  const mode = sanitizeSearchMode(input.mode, context.defaults.defaultSearchMode)
+  const limit = input.limit ?? context.defaults.defaultSearchLimit
+  const results = await searchKnowledge(context.vault, input.query, limit, context.agent, mode)
 
   return jsonResult({
     vault: context.vault,
     agent: context.agent,
     query: input.query,
-    limit: input.limit,
+    limit,
     mode,
     results
   })
@@ -452,12 +466,14 @@ export const syncTool = async (input: z.infer<z.ZodObject<typeof syncInputSchema
     return jsonResult(response)
   }
 
-  const mode = sanitizeSearchMode(input.mode, context.config.defaultSearchMode)
+  const mode = sanitizeSearchMode(input.mode, context.defaults.defaultSearchMode)
+  const contextLimit = input.contextLimit ?? context.defaults.defaultSearchLimit
+  const contextTokens = input.contextTokens ?? context.defaults.defaultContextTokens
   const contextPackage = await buildContextPackage(
     context.vault,
     input.contextQuery,
-    input.contextLimit,
-    input.contextTokens,
+    contextLimit,
+    contextTokens,
     context.agent,
     mode
   )
@@ -476,9 +492,11 @@ export const bootstrapTool = async (input: z.infer<z.ZodObject<typeof bootstrapI
   const index = await indexVault(context.vault)
   const stats = await getStats(context.vault, context.agent)
   const validation = await validateVault(context.vault, context.agent)
-  const mode = sanitizeSearchMode(input.mode, context.config.defaultSearchMode)
+  const mode = sanitizeSearchMode(input.mode, context.defaults.defaultSearchMode)
+  const limit = input.limit ?? context.defaults.defaultSearchLimit
+  const tokens = input.tokens ?? context.defaults.defaultContextTokens
   const contextPackage = input.query
-    ? await buildContextPackage(context.vault, input.query, input.limit, input.tokens, context.agent, mode)
+    ? await buildContextPackage(context.vault, input.query, limit, tokens, context.agent, mode)
     : undefined
 
   const guidance =
@@ -534,8 +552,8 @@ export const bootstrapTool = async (input: z.infer<z.ZodObject<typeof bootstrapI
                 ...(context.agent ? { agent: context.agent } : {}),
                 query: '<task>',
                 mode,
-                limit: input.limit,
-                tokens: input.tokens
+                limit,
+                tokens
               }
             }
           ]
@@ -544,6 +562,8 @@ export const bootstrapTool = async (input: z.infer<z.ZodObject<typeof bootstrapI
     vault: context.vault,
     agent: context.agent,
     mode,
+    limit,
+    tokens,
     index,
     stats,
     validation,
@@ -574,7 +594,7 @@ export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSc
           args: {
             vault: context.vault,
             ...(context.agent ? { agent: context.agent } : {}),
-            mode: context.config.defaultSearchMode
+            mode: context.defaults.defaultSearchMode
           }
         }
       ]

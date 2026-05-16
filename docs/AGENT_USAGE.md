@@ -51,6 +51,7 @@ Set `BRAINLINK_HOME` when the whole Brainlink home directory should live somewhe
 Use `blink config where` and `blink config doctor` to inspect active paths and effective source.
 
 You can also set `defaultAgent` in `brainlink.config.json` / `.brainlink.json` (for example `"defaultAgent": "coding-agent"`). When set, CLI commands and MCP calls reuse it when `--agent`/`agent` is not passed.
+You can set `agentProfiles` to define per-agent defaults for `defaultSearchMode`, `defaultSearchLimit` and `defaultContextTokens`.
 
 `autoIndexOnWrite` (default: `true`) controls whether `add` and MCP write tools index right after writing.
 
@@ -451,12 +452,15 @@ blink search "authentication token policy" --vault ./vault --mode semantic --jso
 ```
 
 This returns matching chunks with title, source path, score, `textScore`, `semanticScore`, `searchMode`, and content.
+If `--mode`/`--limit` are omitted, Brainlink resolves those values from the active agent profile before global defaults.
 
 Search modes:
 
 - `hybrid`: default; combines SQLite FTS and local embedding similarity.
 - `fts`: lexical SQLite full-text search only.
 - `semantic`: local deterministic embedding similarity with SQLite bucket candidate narrowing.
+
+Hybrid results are cached in-memory for a short TTL and invalidated when `.brainlink/brainlink.db` changes.
 
 ### Build Agent Context
 

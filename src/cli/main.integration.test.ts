@@ -378,6 +378,88 @@ describe('brainlink cli integration', () => {
     expect(configDoctorHuman).toContain('Recommended next steps:')
   }, 20000)
 
+  it('applies agent profile defaults and exposes extended stats', async () => {
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-profile-home-'))
+    const workspace = await mkdtemp(join(tmpdir(), 'brainlink-profile-workspace-'))
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-profile-vault-'))
+    tempPaths.push(brainlinkHome, workspace, vault)
+    const env = { BRAINLINK_HOME: brainlinkHome }
+
+    await writeFile(
+      join(workspace, 'brainlink.config.json'),
+      JSON.stringify(
+        {
+          vault,
+          defaultSearchMode: 'fts',
+          defaultSearchLimit: 9,
+          agentProfiles: {
+            'coding-agent': {
+              defaultSearchMode: 'semantic',
+              defaultSearchLimit: 2,
+              defaultContextTokens: 1200
+            }
+          }
+        },
+        null,
+        2
+      )
+    )
+
+    await cli(
+      [
+        'add',
+        'Architecture',
+        '--vault',
+        vault,
+        '--agent',
+        'coding-agent',
+        '--content',
+        'Architecture memory and semantic retrieval. #architecture'
+      ],
+      workspace,
+      env
+    )
+
+    const codingSearch = parseJson<{ mode: string; limit: number }>(
+      await cli(['search', 'architecture', '--agent', 'coding-agent', '--json'], workspace, env)
+    )
+    expect(codingSearch).toMatchObject({
+      mode: 'semantic',
+      limit: 2
+    })
+
+    const sharedSearch = parseJson<{ mode: string; limit: number }>(
+      await cli(['search', 'architecture', '--json'], workspace, env)
+    )
+    expect(sharedSearch).toMatchObject({
+      mode: 'fts',
+      limit: 9
+    })
+
+    const extendedStats = parseJson<{
+      stats: { documentCount: number }
+      storage: { markdownFileCount: number; totalFileCount: number; totalBytes: number }
+      quality: { resolvedLinkRatio: number; priorityDistribution: Record<string, number> }
+      observability: { probeQuery: string; latenciesMs: { index: number; search: number; context: number } }
+    }>(await cli(['stats', '--agent', 'coding-agent', '--extended', '--json'], workspace, env))
+
+    expect(extendedStats.stats.documentCount).toBeGreaterThan(0)
+    expect(extendedStats.storage.markdownFileCount).toBeGreaterThan(0)
+    expect(extendedStats.storage.totalFileCount).toBeGreaterThan(0)
+    expect(extendedStats.storage.totalBytes).toBeGreaterThan(0)
+    expect(typeof extendedStats.quality.resolvedLinkRatio).toBe('number')
+    expect(extendedStats.quality.priorityDistribution).toMatchObject({
+      low: expect.any(Number),
+      normal: expect.any(Number),
+      high: expect.any(Number),
+      critical: expect.any(Number)
+    })
+    expect(extendedStats.observability.probeQuery.length).toBeGreaterThan(0)
+    expect(extendedStats.observability.latenciesMs.index).toBeGreaterThanOrEqual(0)
+    expect(extendedStats.observability.latenciesMs.search).toBeGreaterThanOrEqual(0)
+    expect(extendedStats.observability.latenciesMs.context).toBeGreaterThanOrEqual(0)
+  }, 20000)
+
   it('installs Brainlink agent integration in one command and reports status', async () => {
     const fakeHome = await mkdtemp(join(tmpdir(), 'brainlink-agent-home-'))
     const workspace = await mkdtemp(join(tmpdir(), 'brainlink-agent-workspace-'))

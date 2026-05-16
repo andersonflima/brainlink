@@ -618,6 +618,7 @@ blink quickstart --vault ./team-vault --mcp-only --json
 ```
 
 Runs index + doctor + stats + validation, refreshes bootstrap session readiness, optionally returns context for a query, and (by default) upgrades local agent integration for plug-and-play MCP usage.
+When `--mode`, `--limit` or `--tokens` are omitted, quickstart uses agent profile defaults when available.
 
 ### `config`
 
@@ -699,12 +700,15 @@ blink search "query" --vault ./vault --mode semantic --json
 ```
 
 Runs retrieval over indexed chunks.
+If `--mode` or `--limit` is omitted, Brainlink resolves values from the current agent profile before falling back to global defaults.
 
 Modes:
 
 - `hybrid`: default; combines SQLite FTS with local embedding similarity.
 - `fts`: exact lexical retrieval through SQLite FTS.
 - `semantic`: local deterministic embedding similarity only.
+
+Hybrid results are cached in-memory for a short TTL and invalidated automatically when the local index file changes.
 
 ### `context`
 
@@ -748,9 +752,11 @@ Prints indexed graph data. Edges include `weight` and `priority` so agents can c
 ```bash
 blink stats --vault ./vault
 blink stats --vault ./vault --agent coding-agent --json
+blink stats --vault ./vault --agent coding-agent --extended --json
 ```
 
 Prints vault metrics.
+Use `--extended` to include storage footprint, link quality ratios and observability probes (`index`, `search`, `context` latencies).
 
 ### `broken-links`
 
@@ -839,11 +845,22 @@ If no `vault` is configured and no `--vault` flag is passed, Brainlink uses `$HO
   "defaultContextTokens": 2000,
   "embeddingProvider": "local",
   "defaultSearchMode": "hybrid",
-  "chunkSize": 1200
+  "chunkSize": 1200,
+  "agentProfiles": {
+    "coding-agent": {
+      "defaultSearchMode": "semantic",
+      "defaultSearchLimit": 8,
+      "defaultContextTokens": 2400
+    },
+    "*": {
+      "defaultSearchMode": "hybrid"
+    }
+  }
 }
 ```
 
 `defaultAgent` is optional. When set, CLI and MCP calls that omit `--agent`/`agent` use this value automatically. If not set, behavior remains as before.
+`agentProfiles` is optional. When present, CLI and MCP resolve `mode`, `limit` and `tokens` per agent automatically, then fallback to global defaults.
 
 `autoIndexOnWrite` is optional and defaults to `true`. Set it to `false` to defer indexing after writes.
 
