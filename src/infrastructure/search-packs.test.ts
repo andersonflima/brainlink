@@ -69,15 +69,28 @@ describe('search packs', () => {
       readonly recordCount: number
       readonly version: number
       readonly format: string
+      readonly packIndex?: readonly {
+        readonly fileName: string
+        readonly recordCount: number
+        readonly agents: readonly string[]
+        readonly tokenBloomB64: string
+      }[]
     }
     const firstPack = await readFile(join(vault, '.brainlink', 'search-packs', 'pack-0001.blpk'))
     const results = await searchInPacks(vault, 'jwt token auth', 5)
 
     expect(report.recordCount).toBe(2)
     expect(report.packCount).toBeGreaterThan(0)
-    expect(manifest.version).toBe(2)
+    expect(manifest.version).toBe(3)
     expect(manifest.format).toBe('private-v2')
     expect(manifest.recordCount).toBe(2)
+    expect(Array.isArray(manifest.packIndex)).toBe(true)
+    expect(manifest.packIndex?.[0]).toMatchObject({
+      fileName: 'pack-0001.blpk',
+      recordCount: 2,
+      agents: ['shared']
+    })
+    expect(typeof manifest.packIndex?.[0]?.tokenBloomB64).toBe('string')
     expect(() => gunzipSync(firstPack)).toThrow()
     expect(results.length).toBeGreaterThan(0)
     expect(results[0]).toMatchObject({

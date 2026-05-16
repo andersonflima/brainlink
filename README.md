@@ -67,8 +67,9 @@ Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/c
 - Obsidian-compatible `[[wiki links]]` and `#tags`.
 - Weighted graph edges so agents can rank relationship importance and priority.
 - Backlinks, broken-link reports, orphan detection and validation.
-- Full-text, semantic and hybrid retrieval modes.
 - Full-text, semantic and hybrid retrieval on a local file index.
+- Middle-out context assembly around the strongest chunk per document.
+- Compressed-space prefiltering for `.blpk` packs before decryption and scan.
 - Agent namespaces under `agents/<agent-id>/`.
 - S3-compatible bucket vaults through `s3://bucket/prefix` URIs.
 - CLI with machine-readable `--json` output.
@@ -728,6 +729,7 @@ Modes:
 - `semantic`: local deterministic embedding similarity only.
 
 Hybrid results are cached in-memory for a short TTL and invalidated automatically when the local index file changes.
+Context selection uses a middle-out strategy: it starts from the strongest chunk in a note and expands to neighboring chunks while respecting token budget.
 
 ### `context`
 

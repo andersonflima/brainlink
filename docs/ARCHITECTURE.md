@@ -138,8 +138,10 @@ read markdown files
 question
   -> selected mode: fts | semantic | hybrid
   -> optional query embedding
+  -> optional compressed pack prefilter (token bloom)
   -> lexical scoring and/or semantic cosine scoring
   -> cosine similarity over candidate chunks
+  -> middle-out context expansion around strongest chunk
   -> ranked chunks with textScore and semanticScore
   -> token-budget selection
   -> Markdown context package
@@ -293,6 +295,7 @@ Markdown keeps the system portable, inspectable, Git-friendly, and compatible wi
 Brainlink uses a local JSON index plus encrypted pack exports for fast rebuildable retrieval without external infrastructure.
 Hybrid retrieval also uses a short-lived in-memory cache keyed by vault/query/agent and invalidated by index file mtime to reduce repeated query latency.
 Indexing exports private encrypted pack files (`.brainlink/search-packs/*.blpk`) from indexed chunks for fast retrieval and recovery continuity.
+Pack manifests include compressed-space token bloom metadata so retrieval can skip unrelated packs before decryption.
 Pack encryption keys are resolved from `$BRAINLINK_HOME/keys` or from `BRAINLINK_SEARCH_PACK_KEY` when configured.
 Legacy `.jsonl.gz` search packs are auto-upgraded to `.blpk` on first retrieval flow.
 

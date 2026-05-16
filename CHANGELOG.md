@@ -22,6 +22,8 @@
 - Added short-lived hybrid search cache with automatic invalidation on index changes.
 - Added `stats --extended` observability output with storage, quality and latency probes.
 - Added `docs/QUICKSTART.md` and aligned README/agent docs with the latest CLI/MCP flows.
+- Added middle-out context assembly so chunk selection expands around the strongest note chunk.
+- Added compressed-space pack prefiltering (token bloom index) before `.blpk` decryption and scan.
 
 ## 0.1.0-beta.3
 
