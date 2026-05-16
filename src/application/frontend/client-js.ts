@@ -2,12 +2,17 @@ export const createClientJs = (): string => `const canvas = document.getElementB
 const ctx = canvas.getContext('2d')
 const largeGraphNodeThreshold = 4000
 const largeGraphEdgeRenderLimit = 16000
+const renderNodeBudget = 1800
+const minNodePixelRadius = 1.8
+const viewportPaddingPx = 280
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
   edges: [],
   visibleNodes: [],
   visibleEdges: [],
+  renderNodes: [],
+  renderEdges: [],
   nodeDegrees: new Map(),
   selected: null,
   hovered: null,
@@ -133,7 +138,7 @@ const graphBounds = nodes => {
   let maxY = Number.NEGATIVE_INFINITY
 
   nodes.forEach(node => {
-    const radius = nodeRadius(node)
+    const radius = baseNodeRadius(node)
     minX = Math.min(minX, node.x - radius)
     maxX = Math.max(maxX, node.x + radius)
     minY = Math.min(minY, node.y - radius)
@@ -165,7 +170,9 @@ const fitView = (options = { useFiltered: true }) => {
   const padding = 100
   const scaleX = width / (bounds.width + padding * 2)
   const scaleY = height / (bounds.height + padding * 2)
-  const scale = clampScale(Math.min(scaleX, scaleY))
+  const fitScale = clampScale(Math.min(scaleX, scaleY))
+  const minimumLargeGraphScale = nodes.length > largeGraphNodeThreshold ? 0.13 : zoomRange.min
+  const scale = Math.max(fitScale, minimumLargeGraphScale)
   const centerX = (bounds.minX + bounds.maxX) / 2
   const centerY = (bounds.minY + bounds.maxY) / 2
 
@@ -267,8 +274,8 @@ const scheduleContentFilterSync = () => {
 }
 
 const tick = delta => {
-  const nodes = state.visibleNodes
-  const edges = state.visibleEdges
+  const nodes = state.renderNodes.length > 0 ? state.renderNodes : state.visibleNodes
+  const edges = state.renderEdges.length > 0 ? state.renderEdges : state.visibleEdges
   if (nodes.length > 1200) {
     return
   }
@@ -334,7 +341,7 @@ const hitNode = point => {
     return null
   }
 
-  const nodes = state.visibleNodes
+  const nodes = state.renderNodes
   for (let index = nodes.length - 1; index >= 0; index -= 1) {
     const node = nodes[index]
     const radius = nodeRadius(node)
@@ -343,15 +350,88 @@ const hitNode = point => {
   return null
 }
 
-const nodeRadius = node => {
+const baseNodeRadius = node => {
   const degree = state.nodeDegrees.get(node.id) ?? 0
   return 9 + Math.min(degree, 8) * 1.6
+}
+
+const nodeRadius = node => Math.max(baseNodeRadius(node), minNodePixelRadius / Math.max(state.transform.scale, 0.0001))
+
+const worldViewportBounds = () => {
+  const rect = canvas.getBoundingClientRect()
+  const width = Math.max(rect.width, 320)
+  const height = Math.max(rect.height, 320)
+  const padding = viewportPaddingPx
+
+  return {
+    minX: (-state.transform.x - padding) / state.transform.scale,
+    maxX: (width - state.transform.x + padding) / state.transform.scale,
+    minY: (-state.transform.y - padding) / state.transform.scale,
+    maxY: (height - state.transform.y + padding) / state.transform.scale
+  }
+}
+
+const isNodeInViewport = (node, viewport) =>
+  node.x >= viewport.minX &&
+  node.x <= viewport.maxX &&
+  node.y >= viewport.minY &&
+  node.y <= viewport.maxY
+
+const viewportNodeStride = () => {
+  if (state.nodes.length <= largeGraphNodeThreshold) {
+    return 1
+  }
+
+  if (state.transform.scale >= 0.95) {
+    return 1
+  }
+  if (state.transform.scale >= 0.7) {
+    return 2
+  }
+  if (state.transform.scale >= 0.48) {
+    return 3
+  }
+  if (state.transform.scale >= 0.28) {
+    return 5
+  }
+
+  return 8
+}
+
+const computeRenderVisibility = () => {
+  const viewport = worldViewportBounds()
+  const stride = viewportNodeStride()
+  const picked = []
+
+  for (let index = 0; index < state.visibleNodes.length; index += 1) {
+    const node = state.visibleNodes[index]
+    if (!isNodeInViewport(node, viewport)) {
+      continue
+    }
+
+    const isPriority =
+      node.id === state.selected?.id ||
+      node.id === state.hovered?.id ||
+      node.id === state.pointer.dragNode?.id
+    if (isPriority || index % stride === 0) {
+      picked.push(node)
+    }
+  }
+
+  const nodes = picked.length > renderNodeBudget
+    ? picked.slice(0, renderNodeBudget)
+    : picked
+  const nodeIds = new Set(nodes.map((node) => node.id))
+  const edges = state.visibleEdges.filter((edge) => nodeIds.has(edge.source) && edge.target && nodeIds.has(edge.target))
+
+  state.renderNodes = nodes
+  state.renderEdges = edges
 }
 
 const render = now => {
   const delta = now - state.last
   state.last = now
-  const minFrameIntervalMs = state.nodes.length > largeGraphNodeThreshold ? 180 : 16
+  const minFrameIntervalMs = state.nodes.length > largeGraphNodeThreshold ? 48 : 16
   if (delta < minFrameIntervalMs) {
     requestAnimationFrame(render)
     return
@@ -372,10 +452,11 @@ const render = now => {
   ctx.translate(state.transform.x, state.transform.y)
   ctx.scale(state.transform.scale, state.transform.scale)
 
+  computeRenderVisibility()
   tick(delta)
   const drawEdges = !(state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.22)
   if (drawEdges) {
-    state.visibleEdges.forEach(edge => {
+    state.renderEdges.forEach(edge => {
     const selectedEdge = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
     ctx.beginPath()
     ctx.moveTo(edge.sourceNode.x, edge.sourceNode.y)
@@ -386,7 +467,7 @@ const render = now => {
     })
   }
 
-  state.visibleNodes.forEach(node => {
+  state.renderNodes.forEach(node => {
     const radius = nodeRadius(node)
     const isSelected = state.selected?.id === node.id
     const isHovered = state.hovered?.id === node.id
@@ -416,6 +497,12 @@ const render = now => {
   })
 
   ctx.restore()
+  if (state.renderNodes.length === 0) {
+    ctx.fillStyle = '#99a5b5'
+    ctx.font = '12px Inter, system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('Move or zoom to reveal nearby notes', width / 2, height / 2)
+  }
   requestAnimationFrame(render)
 }
 
