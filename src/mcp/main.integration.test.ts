@@ -76,6 +76,13 @@ describe('brainlink mcp integration', () => {
         blockedTool: 'brainlink_context',
         preflightRequired: true
       })
+      expect(contextResult.structuredContent).toMatchObject({
+        nextActions: [
+          expect.objectContaining({
+            tool: 'brainlink_bootstrap'
+          })
+        ]
+      })
       expect(contextResult.content[0]).toMatchObject({
         type: 'text'
       })
@@ -100,7 +107,12 @@ describe('brainlink mcp integration', () => {
         },
         context: {
           query: 'What should I know before changing architecture?'
-        }
+        },
+        nextActions: [
+          expect.objectContaining({
+            tool: 'brainlink_add_note'
+          })
+        ]
       })
 
       const graphResult = await client.callTool({

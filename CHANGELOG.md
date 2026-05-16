@@ -5,8 +5,12 @@
 - Added bootstrap session-state persistence in `$BRAINLINK_HOME/session-state.json` for vault/agent readiness tracking.
 - Added MCP `brainlink_policy` tool and default bootstrap enforcement for read tools.
 - Added `agent install --self-test` diagnostics and bootstrap readiness details in `agent status`.
+- Added `agent upgrade` for legacy installations to reapply latest MCP/plugin defaults with self-test diagnostics.
 - Added `config doctor --fix` safe autofix mode with dry-run default behavior.
 - Added detailed per-file migration reporting through `migrate-vault --report`.
+- Added `quickstart` command to run plug-and-play vault + bootstrap + agent setup in one flow.
+- Added structured MCP `nextActions` in bootstrap/policy/preflight responses for automatic client continuation.
+- Improved graph/index robustness by splitting oversized paragraphs into bounded chunks and dropping self-referential links.
 - Added `docs/QUICKSTART.md` and aligned README/agent docs with the latest CLI/MCP flows.
 
 ## 0.1.0-beta.3

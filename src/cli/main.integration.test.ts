@@ -453,6 +453,109 @@ describe('brainlink cli integration', () => {
     expect(typeof install.selfTest.mcpCommandInPath).toBe('boolean')
   }, 20000)
 
+  it('reapplies latest integration defaults for legacy installs', async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), 'brainlink-agent-upgrade-home-'))
+    const workspace = await mkdtemp(join(tmpdir(), 'brainlink-agent-upgrade-workspace-'))
+    tempPaths.push(fakeHome, workspace)
+
+    const env = {
+      HOME: fakeHome
+    }
+
+    await cli(['agent', 'install', '--mcp-only', '--json'], workspace, env)
+
+    const upgrade = parseJson<{
+      upgraded: boolean
+      installed: boolean
+      selfTest: {
+        ok: boolean
+        hasMcpSection: boolean
+        hasCommand: boolean
+      }
+    }>(await cli(['agent', 'upgrade', '--mcp-only', '--json'], workspace, env))
+
+    expect(upgrade.upgraded).toBe(true)
+    expect(upgrade.installed).toBe(true)
+    expect(upgrade.selfTest).toMatchObject({
+      hasMcpSection: true,
+      hasCommand: true
+    })
+    expect(typeof upgrade.selfTest.ok).toBe('boolean')
+  }, 20000)
+
+  it('runs plug-and-play quickstart with bootstrap readiness and next actions', async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), 'brainlink-quickstart-home-'))
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-quickstart-brainlink-home-'))
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-quickstart-vault-'))
+    const workspace = await mkdtemp(join(tmpdir(), 'brainlink-quickstart-workspace-'))
+    tempPaths.push(fakeHome, brainlinkHome, vault, workspace)
+
+    const env = {
+      HOME: fakeHome,
+      BRAINLINK_HOME: brainlinkHome
+    }
+
+    const firstRun = parseJson<{
+      vault: string
+      agent: string
+      stats: { documentCount: number }
+      bootstrapStatus: { ready: boolean }
+      agentIntegration: { installed: boolean; selfTest?: { ok: boolean } } | null
+      nextActions: readonly { priority: string; command: string; reason: string }[]
+    }>(await cli(['quickstart', '--vault', vault, '--agent', 'coding-agent', '--mcp-only', '--json'], workspace, env))
+
+    expect(firstRun.vault).toBe(vault)
+    expect(firstRun.agent).toBe('coding-agent')
+    expect(firstRun.stats.documentCount).toBe(0)
+    expect(firstRun.bootstrapStatus.ready).toBe(true)
+    expect(firstRun.agentIntegration?.installed).toBe(true)
+    expect(firstRun.nextActions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          priority: 'required'
+        })
+      ])
+    )
+
+    await cli(
+      [
+        'add',
+        'Architecture',
+        '--vault',
+        vault,
+        '--agent',
+        'coding-agent',
+        '--content',
+        'Quickstart durable memory with [[Roadmap]] priority: high. #architecture',
+        '--json'
+      ],
+      workspace,
+      env
+    )
+
+    const secondRun = parseJson<{
+      stats: { documentCount: number }
+      context: { query: string } | null
+      nextActions: readonly { priority: string; command: string; reason: string }[]
+    }>(
+      await cli(
+        ['quickstart', '--vault', vault, '--agent', 'coding-agent', '--query', 'architecture', '--mcp-only', '--json'],
+        workspace,
+        env
+      )
+    )
+
+    expect(secondRun.stats.documentCount).toBeGreaterThan(0)
+    expect(secondRun.context?.query).toBe('architecture')
+    expect(secondRun.nextActions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          priority: 'recommended'
+        })
+      ])
+    )
+  }, 20000)
+
   it('prints the package version', async () => {
     const packageJson = parseJson<{ version: string }>(await readFile(join(projectPath, 'package.json'), 'utf8'))
 

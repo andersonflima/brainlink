@@ -381,11 +381,23 @@ Use `--dry-run` to preview `copied`, `conflicted`, `unchanged` before writing fi
 ```bash
 blink agent install
 blink agent install --self-test
+blink agent upgrade
 blink agent install --plugin-path ./plugins/brainlink
 blink agent status
 ```
 
 `agent install` configures Brainlink MCP in `~/.codex/config.toml` so compatible agents can use Brainlink by default.
+Use `agent upgrade` on legacy installations to reapply the latest defaults and run self-test diagnostics.
+
+### Quickstart Plug-And-Play
+
+```bash
+blink quickstart --json
+blink quickstart --vault ./team-vault --agent coding-agent --query "architecture decisions" --json
+blink quickstart --vault ./team-vault --mcp-only --json
+```
+
+`quickstart` runs index, doctor, stats and validation, marks bootstrap readiness for MCP sessions, optionally returns context, and updates agent integration by default.
 
 ### Add A Note
 
@@ -577,6 +589,7 @@ Available MCP tools:
 - `brainlink_orphans`
 
 Recommended start of every memory-dependent task: call `brainlink_bootstrap` first, then `brainlink_context` only when additional retrieval is needed. By default, Brainlink enforces bootstrap for MCP read tools and returns a preflight response when bootstrap is missing or stale.
+`brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so clients can continue tool flows automatically.
 
 MCP clients can pass `vault` and `agent` arguments per tool call. Set `BRAINLINK_ALLOWED_VAULTS` when exposing Brainlink to an external agent process so a tool cannot pass arbitrary vault paths:
 

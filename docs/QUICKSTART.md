@@ -12,6 +12,7 @@ npm install -g @andespindola/brainlink@latest
 
 ```bash
 blink agent install --self-test
+blink agent upgrade
 blink agent status
 ```
 
@@ -19,6 +20,12 @@ For local plugin gallery in this repository:
 
 ```bash
 blink agent install --plugin-path ./plugins/brainlink --self-test
+```
+
+One-command setup and readiness check:
+
+```bash
+blink quickstart --query "what should I know before this task?" --json
 ```
 
 ## 3) Initialize Or Select Vault
@@ -37,6 +44,7 @@ blink config set-vault /absolute/path/to/vault
 ## 4) Run Bootstrap Before Work
 
 MCP clients should call `brainlink_bootstrap` first for each vault/agent session.
+Bootstrap and preflight responses include structured `nextActions` for automatic client flows.
 
 For CLI workflows:
 
@@ -76,4 +84,3 @@ S3 target:
 ```bash
 blink migrate-vault --from ~/.brainlink/vault --to "s3://my-memory-bucket/brainlink" --dry-run
 ```
-

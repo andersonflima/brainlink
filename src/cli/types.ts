@@ -69,3 +69,15 @@ export type AgentStatusOptions = {
   readonly json?: boolean
   readonly agent?: string
 }
+
+export type QuickstartOptions = VaultOptions & {
+  readonly query?: string
+  readonly mode?: string
+  readonly limit?: string
+  readonly tokens?: string
+  readonly installAgent?: boolean
+  readonly mcpOnly?: boolean
+  readonly pluginPath?: string
+  readonly allowedVaults?: string
+  readonly brainlinkHome?: string
+}
