@@ -104,6 +104,14 @@ select {
   margin-left: auto;
 }
 
+.license-badge {
+  margin-left: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 .search input,
 .agent-filter select {
   width: 100%;
@@ -368,6 +376,13 @@ li small {
     margin-left: 0;
     justify-content: space-between;
     order: 4;
+  }
+
+  .license-badge {
+    width: 100%;
+    margin-left: 0;
+    order: 5;
+    white-space: normal;
   }
 
   .content-dialog header {
