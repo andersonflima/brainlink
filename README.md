@@ -677,6 +677,7 @@ blink add "Note Title" --vault ./vault --content-file ./notes.md --no-auto-index
 `--content` and `--content-file` are mutually exclusive. Add `--no-auto-index` when you want to defer reindexing.
 
 Creates a Markdown note under `agents/<agent-id>/`. Common secret patterns are blocked by default; use `--allow-sensitive` only for an intentionally protected vault.
+To avoid disconnected memory, Brainlink auto-adds a fallback wiki edge when a note is written without links, creating agent hub notes when needed.
 
 ### `index`
 

@@ -416,6 +416,7 @@ blink add "Note Title" --vault ./vault --content-file ./notes.md --no-auto-index
 This creates a slugged Markdown file with frontmatter and a heading.
 
 The CLI blocks common secret patterns by default. Do not use `--allow-sensitive` unless the vault is intentionally protected.
+Brainlink also auto-connects notes that have no `[[wiki links]]` by adding a fallback edge to an agent hub note, so new memory does not stay disconnected.
 
 For agent-private memory:
 
