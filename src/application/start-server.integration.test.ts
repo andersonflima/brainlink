@@ -54,10 +54,10 @@ describe('brainlink http server integration', () => {
       const layoutResponse = (await fetch(`${server.url}/api/graph-layout?agent=shared`).then((response) => response.json())) as {
         readonly signature?: string
         readonly layout?: {
-          readonly nodes: readonly { readonly segment: string; readonly group: string }[]
+          readonly nodes: readonly { readonly id: string; readonly segment: string; readonly group: string; readonly content?: string }[]
           readonly edges: readonly unknown[]
         }
-        readonly nodes?: readonly { readonly segment: string; readonly group: string }[]
+        readonly nodes?: readonly { readonly id: string; readonly segment: string; readonly group: string; readonly content?: string }[]
         readonly edges?: readonly unknown[]
       }
       const layout = layoutResponse.layout ?? layoutResponse
@@ -65,7 +65,18 @@ describe('brainlink http server integration', () => {
       expect(layout.edges).toHaveLength(2)
       expect(layout.nodes.every((node) => typeof node.segment === 'string' && node.segment.length > 0)).toBe(true)
       expect(layout.nodes.every((node) => typeof node.group === 'string' && node.group.length > 0)).toBe(true)
+      expect(layout.nodes.every((node) => typeof node.content === 'undefined')).toBe(true)
       expect(layoutResponse.signature).toMatch(/^[a-f0-9]{64}$/)
+
+      const layoutNode = layout.nodes[0]
+      expect(layoutNode).toBeDefined()
+      const nodeDetailsResponse = await fetch(`${server.url}/api/graph-node?id=${encodeURIComponent(layoutNode?.id ?? '')}&agent=shared`)
+      expect(nodeDetailsResponse.status).toBe(200)
+      const nodeDetails = (await nodeDetailsResponse.json()) as {
+        readonly node: { readonly id: string; readonly content: string }
+      }
+      expect(nodeDetails.node.id).toBe(layoutNode?.id)
+      expect(nodeDetails.node.content.length).toBeGreaterThan(0)
 
       const cachedLayout = await fetch(`${server.url}/api/graph-layout?agent=shared`, {
         headers: {

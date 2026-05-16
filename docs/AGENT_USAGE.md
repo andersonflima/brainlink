@@ -620,6 +620,7 @@ export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault"
 ```txt
 GET  /api/graph
 GET  /api/graph-layout
+GET  /api/graph-node?id=<node-id>
 GET  /api/search?q=<query>&limit=10&mode=hybrid
 GET  /api/context?q=<query>&limit=12&tokens=2000&mode=hybrid
 GET  /api/links
@@ -631,6 +632,8 @@ GET  /api/validate
 ```
 
 The HTTP API is read-only. Use the CLI for writes and indexing.
+
+Brainlink maintains an automatic SQLite rollback snapshot at `.brainlink/brainlink.db.backup`. When `.brainlink/brainlink.db` is corrupted, Brainlink restores from snapshot automatically or recreates a clean index if no snapshot exists yet.
 
 ## Agent Integration Contract
 

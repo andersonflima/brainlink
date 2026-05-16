@@ -40,7 +40,7 @@ describe('sqlite schema', () => {
       expect(
         database.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get()
       ).toEqual({
-        value: '5'
+        value: '6'
       })
     } finally {
       database.close()
