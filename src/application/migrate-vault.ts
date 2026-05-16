@@ -10,6 +10,12 @@ export type VaultMigrationResult = {
   readonly conflicted: number
 }
 
+type MigrationAction = {
+  readonly targetPath: string
+  readonly sourceContent: Buffer
+  readonly kind: 'copy' | 'unchanged' | 'conflict'
+}
+
 const directoryMode = 0o700
 const fileMode = 0o600
 const isMarkdownPath = (path: string): boolean => extname(path).toLowerCase() === '.md'
@@ -44,17 +50,10 @@ const writeMigratedFile = async (targetVault: string, targetRoot: string, absolu
   await writePreservedFile(absolutePath, content)
 }
 
-export const migrateVaultContent = async (sourceVault: string, targetVault: string): Promise<VaultMigrationResult> => {
-  const source = await ensureVault(sourceVault)
-  const target = await ensureVault(targetVault)
-
-  if (source === target) {
-    return { source, target, copied: 0, unchanged: 0, conflicted: 0 }
-  }
-
+const planVaultMigration = async (source: string, target: string): Promise<readonly MigrationAction[]> => {
   const sourceFiles = (await listVaultFiles(source)).filter(isMarkdownPath)
 
-  const migrated = await sourceFiles.reduce<Promise<VaultMigrationResult>>(async (statePromise, sourceFile) => {
+  return sourceFiles.reduce<Promise<readonly MigrationAction[]>>(async (statePromise, sourceFile) => {
     const state = await statePromise
     const targetFile = join(target, relative(source, sourceFile))
 
@@ -68,24 +67,59 @@ export const migrateVaultContent = async (sourceVault: string, targetVault: stri
       const targetContent = await readFile(targetFile)
 
       if (sourceContent.equals(targetContent)) {
-        return { ...state, unchanged: state.unchanged + 1 }
+        return [...state, { kind: 'unchanged', targetPath: targetFile, sourceContent }]
       }
 
-      await writeMigratedFile(targetVault, target, conflictPath(targetFile), sourceContent)
-
-      return { ...state, conflicted: state.conflicted + 1 }
+      return [...state, { kind: 'conflict', targetPath: conflictPath(targetFile), sourceContent }]
     } catch (error) {
       if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
         throw error
       }
 
-      await writeMigratedFile(targetVault, target, targetFile, sourceContent)
-
-      return { ...state, copied: state.copied + 1 }
+      return [...state, { kind: 'copy', targetPath: targetFile, sourceContent }]
     }
-  }, Promise.resolve({ source, target, copied: 0, unchanged: 0, conflicted: 0 }))
+  }, Promise.resolve([]))
+}
 
-  return migrated
+export const previewVaultMigration = async (sourceVault: string, targetVault: string): Promise<VaultMigrationResult> => {
+  const source = await ensureVault(sourceVault)
+  const target = await ensureVault(targetVault)
+
+  if (source === target) {
+    return { source, target, copied: 0, unchanged: 0, conflicted: 0 }
+  }
+
+  const actions = await planVaultMigration(source, target)
+  const copied = actions.filter((action) => action.kind === 'copy').length
+  const unchanged = actions.filter((action) => action.kind === 'unchanged').length
+  const conflicted = actions.filter((action) => action.kind === 'conflict').length
+
+  return { source, target, copied, unchanged, conflicted }
+}
+
+export const migrateVaultContent = async (sourceVault: string, targetVault: string): Promise<VaultMigrationResult> => {
+  const source = await ensureVault(sourceVault)
+  const target = await ensureVault(targetVault)
+
+  if (source === target) {
+    return { source, target, copied: 0, unchanged: 0, conflicted: 0 }
+  }
+
+  const actions = await planVaultMigration(source, target)
+
+  for (const action of actions) {
+    if (action.kind === 'unchanged') {
+      continue
+    }
+
+    await writeMigratedFile(targetVault, target, action.targetPath, action.sourceContent)
+  }
+
+  const copied = actions.filter((action) => action.kind === 'copy').length
+  const unchanged = actions.filter((action) => action.kind === 'unchanged').length
+  const conflicted = actions.filter((action) => action.kind === 'conflict').length
+
+  return { source, target, copied, unchanged, conflicted }
 }
 
 export const shouldMigrateDefaultVault = async (sourceVault: string, targetVault: string): Promise<boolean> => {

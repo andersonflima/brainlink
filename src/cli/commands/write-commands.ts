@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { addNote } from '../../application/add-note.js'
 import { indexVault } from '../../application/index-vault.js'
-import { migrateVaultContent, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
+import { migrateVaultContent, previewVaultMigration, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
 import { startServer } from '../../application/start-server.js'
 import { startVaultWatcher } from '../../application/watch-vault.js'
 import { doctorVault } from '../../application/analyze-vault.js'
@@ -10,7 +10,7 @@ import { defaultBrainlinkConfig } from '../../infrastructure/config.js'
 import { loadBrainlinkConfig } from '../../infrastructure/config.js'
 import { assertVaultAllowed, ensureVault } from '../../infrastructure/file-system-vault.js'
 import { parsePositiveInteger, print, resolveOptions } from '../runtime.js'
-import type { AddOptions, InitOptions, ServerOptions, VaultOptions } from '../types.js'
+import type { AddOptions, InitOptions, MigrateVaultOptions, ServerOptions, VaultOptions } from '../types.js'
 
 const resolveAddContent = (options: AddOptions): string => {
   if (options.content != null && options.content.trim().length > 0) {
@@ -56,6 +56,48 @@ export const registerWriteCommands = (program: Command): void => {
       }
     )
   })
+
+  program
+    .command('migrate-vault')
+    .option('--from <vault>', 'source vault path')
+    .option('--to <vault>', 'target vault path')
+    .option('--dry-run', 'preview migration without writing files')
+    .option('--no-index', 'skip reindexing target vault after migration')
+    .option('--json', 'print machine-readable JSON')
+    .description('copy markdown memory from one vault to another with conflict preservation')
+    .action(async (options: MigrateVaultOptions) => {
+      const config = await loadBrainlinkConfig()
+      const sourceVault = assertVaultAllowed(options.from ?? config.vault, config.allowedVaults)
+      const targetVault = assertVaultAllowed(options.to ?? defaultBrainlinkConfig.vault, config.allowedVaults)
+      const preview = await previewVaultMigration(sourceVault, targetVault)
+
+      if (options.dryRun) {
+        print(
+          options.json,
+          { dryRun: true, ...preview },
+          () =>
+            `Dry run migration ${preview.source} -> ${preview.target}: copy=${preview.copied}, conflicts=${preview.conflicted}, unchanged=${preview.unchanged}`
+        )
+        return
+      }
+
+      const migration = await migrateVaultContent(sourceVault, targetVault)
+      const shouldIndex = options.index !== false && migration.copied + migration.conflicted > 0
+      const index = shouldIndex ? await indexVault(targetVault) : undefined
+
+      print(
+        options.json,
+        { dryRun: false, ...migration, ...(index ? { index } : {}) },
+        () => {
+          const summary = `Migrated ${migration.copied} files, preserved ${migration.conflicted} conflicts and kept ${migration.unchanged} unchanged files.`
+          const indexMessage = index
+            ? ` Indexed ${index.documentCount} documents, ${index.chunkCount} chunks and ${index.linkCount} links.`
+            : ''
+
+          return `${summary}${indexMessage}`
+        }
+      )
+    })
 
   program
     .command('add')
@@ -109,9 +151,15 @@ export const registerWriteCommands = (program: Command): void => {
     const resolved = await resolveOptions(options)
     const report = await doctorVault(resolved.vault)
 
-    print(options.json, report, () =>
-      report.checks.map((check) => `${check.ok ? 'OK' : 'FAIL'} ${check.name}: ${check.message}`).join('\n')
-    )
+    print(options.json, report, () => {
+      const checks = report.checks.map((check) => `${check.ok ? 'OK' : 'FAIL'} ${check.name}: ${check.message}`).join('\n')
+      const recommendations =
+        report.recommendations && report.recommendations.length > 0
+          ? `\n\nRecommended next steps:\n${report.recommendations.map((step) => `- ${step}`).join('\n')}`
+          : ''
+
+      return `${checks}${recommendations}`
+    })
     process.exitCode = report.ok ? 0 : 1
   })
 

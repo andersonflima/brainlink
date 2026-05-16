@@ -303,6 +303,54 @@ describe('brainlink cli integration', () => {
     expect(configuredGlobalVault).toEqual({ key: 'vault', value: globalVault })
   }, 20000)
 
+  it('previews vault migration and reports empty-vault recommendations', async () => {
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-migration-home-'))
+    const sourceVault = await mkdtemp(join(tmpdir(), 'brainlink-migration-source-'))
+    const targetVault = await mkdtemp(join(tmpdir(), 'brainlink-migration-target-'))
+    const workspace = await mkdtemp(join(tmpdir(), 'brainlink-migration-workspace-'))
+    tempPaths.push(brainlinkHome, sourceVault, targetVault, workspace)
+    const env = { BRAINLINK_HOME: brainlinkHome }
+
+    await cli(['add', 'Migratable Note', '--vault', sourceVault, '--content', 'Migration candidate. #migration', '--json'], projectPath, env)
+
+    const preview = parseJson<{ dryRun: boolean; copied: number; conflicted: number; unchanged: number }>(
+      await cli(['migrate-vault', '--from', sourceVault, '--to', targetVault, '--dry-run', '--json'], workspace, env)
+    )
+    expect(preview).toMatchObject({
+      dryRun: true,
+      copied: 1,
+      conflicted: 0,
+      unchanged: 0
+    })
+
+    const migrated = parseJson<{ dryRun: boolean; copied: number; conflicted: number; unchanged: number; index: { documentCount: number } }>(
+      await cli(['migrate-vault', '--from', sourceVault, '--to', targetVault, '--json'], workspace, env)
+    )
+    expect(migrated).toMatchObject({
+      dryRun: false,
+      copied: 1,
+      conflicted: 0,
+      unchanged: 0
+    })
+    expect(migrated.index.documentCount).toBe(1)
+
+    const emptyVault = await mkdtemp(join(tmpdir(), 'brainlink-empty-vault-'))
+    tempPaths.push(emptyVault)
+    await cli(['config', 'set-vault', emptyVault, '--no-migrate', '--json'], workspace, env)
+
+    const configDoctor = parseJson<{
+      vault: string
+      vaultSource: string
+      doctor: { recommendations?: readonly string[] }
+    }>(await cli(['config', 'doctor', '--json'], workspace, env))
+    expect(configDoctor.vault).toBe(emptyVault)
+    expect(configDoctor.vaultSource).toBe('local')
+    expect(configDoctor.doctor.recommendations?.length ?? 0).toBeGreaterThan(0)
+
+    const configDoctorHuman = await cli(['config', 'doctor'], workspace, env)
+    expect(configDoctorHuman).toContain('Recommended next steps:')
+  }, 20000)
+
   it('prints the package version', async () => {
     const packageJson = parseJson<{ version: string }>(await readFile(join(projectPath, 'package.json'), 'utf8'))
 
