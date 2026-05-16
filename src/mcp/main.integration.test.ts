@@ -278,4 +278,60 @@ describe('brainlink mcp integration', () => {
       await client.close()
     }
   }, 20000)
+
+  it('bootstraps default vault and agent during MCP startup', async () => {
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-mcp-startup-vault-'))
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-mcp-startup-home-'))
+    tempPaths.push(vault, brainlinkHome)
+
+    await writeFile(
+      join(brainlinkHome, 'brainlink.config.json'),
+      `${JSON.stringify(
+        {
+          vault,
+          defaultAgent: 'coding-agent'
+        },
+        null,
+        2
+      )}\n`
+    )
+
+    const client = new Client({ name: 'brainlink-test-startup', version: '1.0.0' })
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', tsxLoader, mcpEntryPoint],
+      cwd: projectPath,
+      env: {
+        ...process.env,
+        BRAINLINK_HOME: brainlinkHome
+      },
+      stderr: 'pipe'
+    })
+
+    await client.connect(transport)
+
+    try {
+      const policyResult = await client.callTool({
+        name: 'brainlink_policy',
+        arguments: {
+          vault,
+          agent: 'coding-agent'
+        }
+      })
+
+      expect(policyResult.structuredContent).toMatchObject({
+        vault,
+        agent: 'coding-agent',
+        policy: expect.objectContaining({
+          autoBootstrapOnStartup: true
+        }),
+        bootstrapStatus: expect.objectContaining({
+          ready: true,
+          stale: false
+        })
+      })
+    } finally {
+      await client.close()
+    }
+  }, 20000)
 })

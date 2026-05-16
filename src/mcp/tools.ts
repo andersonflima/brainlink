@@ -296,6 +296,10 @@ export const policyInputSchema = {
     .boolean()
     .optional()
     .describe('When bootstrap is missing/stale, run automatic bootstrap on read tools instead of returning preflight-required responses.'),
+  autoBootstrapOnStartup: z
+    .boolean()
+    .optional()
+    .describe('Run automatic bootstrap during MCP server startup using configured default vault/agent.'),
   staleAfterMinutes: positiveInteger(120).describe('Bootstrap freshness window in minutes before read tools require a new bootstrap.')
 }
 
@@ -640,6 +644,7 @@ export const policyTool = async (input: z.infer<z.ZodObject<typeof policyInputSc
       ? await setBootstrapPolicy({
           ...(typeof input.enforceBootstrap === 'boolean' ? { enforceBootstrap: input.enforceBootstrap } : {}),
           ...(typeof input.autoBootstrapOnRead === 'boolean' ? { autoBootstrapOnRead: input.autoBootstrapOnRead } : {}),
+          ...(typeof input.autoBootstrapOnStartup === 'boolean' ? { autoBootstrapOnStartup: input.autoBootstrapOnStartup } : {}),
           ...(typeof input.staleAfterMinutes === 'number' ? { staleAfterMinutes: input.staleAfterMinutes } : {})
         })
       : await getBootstrapPolicy()

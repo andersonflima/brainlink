@@ -189,6 +189,7 @@ MCP client
 ```
 
 The MCP adapter stays thin. It validates tool inputs, resolves the configured vault and calls the same application use cases used by the CLI.
+At server startup, Brainlink runs a bootstrap pass on the configured default vault/agent, then keeps enforcing bootstrap policy on read tools.
 When `mode`/`limit`/`tokens` are omitted, MCP read tools resolve per-agent defaults from `agentProfiles` and then fallback to global config defaults.
 Session bootstrap state is persisted in `$BRAINLINK_HOME/session-state.json` so read tools can enforce bootstrap policy per vault/agent and auto-bootstrap reads when configured.
 
