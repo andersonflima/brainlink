@@ -13,7 +13,6 @@ export const createClientHtml = (): string => `<!doctype html>
         <div class="topbar">
           <div>
             <strong>Brainlink</strong>
-            <span id="stats">Loading graph</span>
           </div>
           <label class="search">
             <input id="search" type="search" placeholder="Filter notes, tags or paths" autocomplete="off" />
@@ -22,6 +21,20 @@ export const createClientHtml = (): string => `<!doctype html>
             <select id="agent"></select>
           </label>
         </div>
+        <div class="floating-metrics" aria-label="Graph totals">
+          <div class="metric-chip">
+            <strong id="nodeCount">0</strong>
+            <small>Notes</small>
+          </div>
+          <div class="metric-chip">
+            <strong id="edgeCount">0</strong>
+            <small>Links</small>
+          </div>
+          <div class="metric-chip">
+            <strong id="tagCount">0</strong>
+            <small>Tags</small>
+          </div>
+        </div>
         <div class="toolbar" aria-label="Graph controls">
           <button id="zoomIn" type="button" title="Zoom in">+</button>
           <button id="zoomOut" type="button" title="Zoom out">-</button>
@@ -29,34 +42,6 @@ export const createClientHtml = (): string => `<!doctype html>
           <button id="reset" type="button" title="Reset view">⌂</button>
         </div>
       </section>
-      <aside class="inspector" aria-label="Selected note">
-        <div>
-          <span class="eyebrow">Selected note</span>
-          <h1 id="title">Graph Overview</h1>
-          <p id="path">Select a node to inspect links and backlinks.</p>
-        </div>
-        <div class="metrics">
-          <div><span id="nodeCount">0</span><small>Notes</small></div>
-          <div><span id="edgeCount">0</span><small>Links</small></div>
-          <div><span id="tagCount">0</span><small>Tags</small></div>
-        </div>
-        <section class="inspector-section">
-          <h2>Tags</h2>
-          <div id="tags" class="tags"></div>
-        </section>
-        <section class="inspector-section">
-          <h2>Notes</h2>
-          <ul id="notes"></ul>
-        </section>
-        <section class="inspector-section">
-          <h2>Outgoing</h2>
-          <ul id="outgoing"></ul>
-        </section>
-        <section class="inspector-section">
-          <h2>Backlinks</h2>
-          <ul id="incoming"></ul>
-        </section>
-      </aside>
     </main>
     <dialog id="contentDialog" class="content-dialog" aria-labelledby="contentTitle">
       <article>
@@ -68,6 +53,20 @@ export const createClientHtml = (): string => `<!doctype html>
           </div>
           <button id="contentClose" type="button">Close</button>
         </header>
+        <div class="content-meta">
+          <section class="content-meta-section">
+            <h3>Tags</h3>
+            <div id="contentTags" class="tags"></div>
+          </section>
+          <section class="content-meta-section">
+            <h3>Outgoing</h3>
+            <ul id="contentOutgoing"></ul>
+          </section>
+          <section class="content-meta-section">
+            <h3>Backlinks</h3>
+            <ul id="contentIncoming"></ul>
+          </section>
+        </div>
         <pre id="contentBody" class="note-content"></pre>
       </article>
     </dialog>
