@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { performance } from 'node:perf_hooks'
 import { join } from 'node:path'
 import { validateGraph, getBrokenLinks, getOrphanNodes, getVaultStats } from '../domain/graph-analysis.js'
@@ -126,7 +126,11 @@ export const doctorVault = async (vaultPath: string): Promise<DoctorReport> => {
   const graph = await getGraphSummary(absoluteVaultPath)
   const validation = validateGraph(graph)
   const backupPath = join(absoluteVaultPath, '.brainlink', 'brainlink.db.backup')
+  const snapshotDirectory = join(absoluteVaultPath, '.brainlink', 'brainlink.db.backup.snapshots')
   const hasBackup = existsSync(backupPath)
+  const snapshotCount = existsSync(snapshotDirectory)
+    ? readdirSync(snapshotDirectory).filter((name) => name.endsWith('.db')).length
+    : 0
   const backupReady = graph.nodes.length === 0 || hasBackup
   const checks = [
     createCheck('vault', true, `Vault ready at ${absoluteVaultPath}`),
@@ -137,7 +141,9 @@ export const doctorVault = async (vaultPath: string): Promise<DoctorReport> => {
       'index-backup',
       backupReady,
       backupReady
-        ? (hasBackup ? 'SQLite recovery snapshot is available' : 'No index yet. Snapshot will be created after first indexing run')
+        ? (hasBackup
+          ? `SQLite recovery snapshot is available (${snapshotCount} rotating snapshots)`
+          : 'No index yet. Snapshot will be created after first indexing run')
         : 'Recovery snapshot missing. Run blink index to create a rollback snapshot'
     )
   ]
