@@ -4,6 +4,10 @@ export type VaultOptions = {
   readonly json?: boolean
 }
 
+export type StatsOptions = VaultOptions & {
+  readonly extended?: boolean
+}
+
 export type InitOptions = {
   readonly json?: boolean
   readonly migrateFrom?: string

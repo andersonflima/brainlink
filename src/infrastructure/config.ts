@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import type { BrainlinkConfig, EmbeddingProviderName, SearchMode } from '../domain/types.js'
+import type { AgentProfileConfig, BrainlinkConfig, EmbeddingProviderName, SearchMode } from '../domain/types.js'
 import { sanitizeAgentId } from '../domain/agents.js'
 import { getBrainlinkHomePath, getDefaultVaultPath } from './paths.js'
 
@@ -16,7 +16,8 @@ export const defaultBrainlinkConfig: BrainlinkConfig = {
   defaultContextTokens: 2000,
   embeddingProvider: 'local',
   defaultSearchMode: 'hybrid',
-  chunkSize: 1200
+  chunkSize: 1200,
+  agentProfiles: {}
 }
 
 const configFilenames = ['brainlink.config.json', '.brainlink.json']
@@ -50,6 +51,49 @@ export const sanitizeSearchMode = (value: unknown, fallback = defaultBrainlinkCo
 
 const sanitizeAllowedVaults = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : []
+
+const sanitizePositiveNumber = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
+
+const sanitizeAgentProfile = (value: unknown): AgentProfileConfig | null => {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const defaultSearchLimit = sanitizePositiveNumber(value.defaultSearchLimit)
+  const defaultContextTokens = sanitizePositiveNumber(value.defaultContextTokens)
+  const defaultSearchMode =
+    typeof value.defaultSearchMode === 'string' && searchModes.has(value.defaultSearchMode)
+      ? (value.defaultSearchMode as SearchMode)
+      : undefined
+  const profile: AgentProfileConfig = {
+    ...(defaultSearchLimit ? { defaultSearchLimit } : {}),
+    ...(defaultContextTokens ? { defaultContextTokens } : {}),
+    ...(defaultSearchMode ? { defaultSearchMode } : {})
+  }
+
+  return Object.keys(profile).length > 0 ? profile : null
+}
+
+const sanitizeAgentProfiles = (value: unknown): Readonly<Record<string, AgentProfileConfig>> => {
+  if (!isRecord(value)) {
+    return {}
+  }
+
+  return Object.entries(value).reduce<Record<string, AgentProfileConfig>>((state, [key, profile]) => {
+    const normalizedKey = key === '*' ? '*' : sanitizeAgentId(key)
+    const sanitizedProfile = sanitizeAgentProfile(profile)
+
+    if (!sanitizedProfile || normalizedKey.length === 0) {
+      return state
+    }
+
+    return {
+      ...state,
+      [normalizedKey]: sanitizedProfile
+    }
+  }, {})
+}
 
 const readAllowedVaultsFromEnv = (): readonly string[] =>
   (process.env.BRAINLINK_ALLOWED_VAULTS ?? '')
@@ -138,8 +182,26 @@ const sanitizeConfig = (value: Partial<BrainlinkConfig>): BrainlinkConfig => ({
   allowedVaults: [...sanitizeAllowedVaults(value.allowedVaults), ...readAllowedVaultsFromEnv()],
   chunkSize: typeof value.chunkSize === 'number' && value.chunkSize > 0 ? value.chunkSize : defaultBrainlinkConfig.chunkSize,
   embeddingProvider: sanitizeEmbeddingProvider(value.embeddingProvider),
-  defaultSearchMode: sanitizeSearchMode(value.defaultSearchMode)
+  defaultSearchMode: sanitizeSearchMode(value.defaultSearchMode),
+  agentProfiles: sanitizeAgentProfiles(value.agentProfiles)
 })
+
+export type AgentRuntimeDefaults = {
+  readonly defaultSearchLimit: number
+  readonly defaultContextTokens: number
+  readonly defaultSearchMode: SearchMode
+}
+
+export const resolveAgentRuntimeDefaults = (config: BrainlinkConfig, agent: string | undefined): AgentRuntimeDefaults => {
+  const normalizedAgent = agent?.trim().length ? sanitizeAgentId(agent) : undefined
+  const profile = (normalizedAgent ? config.agentProfiles[normalizedAgent] : undefined) ?? config.agentProfiles['*']
+
+  return {
+    defaultSearchLimit: profile?.defaultSearchLimit ?? config.defaultSearchLimit,
+    defaultContextTokens: profile?.defaultContextTokens ?? config.defaultContextTokens,
+    defaultSearchMode: profile?.defaultSearchMode ?? config.defaultSearchMode
+  }
+}
 
 export const loadBrainlinkConfig = async (cwd = safeCwd()): Promise<BrainlinkConfig> => {
   const globalConfig = await readJsonConfig(getGlobalConfigPath())

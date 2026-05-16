@@ -41,6 +41,20 @@ To set a different default vault:
 blink config set-vault /absolute/path/to/vault
 ```
 
+Optional per-agent retrieval defaults in `brainlink.config.json`:
+
+```json
+{
+  "agentProfiles": {
+    "coding-agent": {
+      "defaultSearchMode": "semantic",
+      "defaultSearchLimit": 8,
+      "defaultContextTokens": 2400
+    }
+  }
+}
+```
+
 ## 4) Run Bootstrap Before Work
 
 MCP clients should call `brainlink_bootstrap` first for each vault/agent session.
@@ -63,6 +77,7 @@ blink add "Architecture Decision" --content "Use explicit [[Bounded Context]] li
 ```bash
 blink validate
 blink doctor
+blink stats --extended --json
 ```
 
 ## 7) Migrate Existing Memory (Optional)

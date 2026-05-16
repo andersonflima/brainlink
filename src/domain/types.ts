@@ -126,6 +126,13 @@ export type BrainlinkConfig = {
   readonly embeddingProvider: EmbeddingProviderName
   readonly defaultSearchMode: SearchMode
   readonly chunkSize: number
+  readonly agentProfiles: Readonly<Record<string, AgentProfileConfig>>
+}
+
+export type AgentProfileConfig = {
+  readonly defaultSearchLimit?: number
+  readonly defaultContextTokens?: number
+  readonly defaultSearchMode?: SearchMode
 }
 
 export type EmbeddingProviderName = 'none' | 'local'
@@ -157,6 +164,32 @@ export type VaultStats = {
   readonly orphanCount: number
   readonly tagCount: number
   readonly tags: readonly string[]
+}
+
+export type VaultExtendedStats = {
+  readonly stats: VaultStats
+  readonly storage: {
+    readonly markdownFileCount: number
+    readonly totalFileCount: number
+    readonly totalBytes: number
+    readonly averageMarkdownBytes: number
+    readonly newestNoteUpdatedAt?: ISODateString
+    readonly oldestNoteUpdatedAt?: ISODateString
+  }
+  readonly quality: {
+    readonly resolvedLinkRatio: number
+    readonly brokenLinkRatio: number
+    readonly orphanRatio: number
+    readonly priorityDistribution: Readonly<Record<LinkPriority, number>>
+  }
+  readonly observability: {
+    readonly probeQuery: string
+    readonly latenciesMs: {
+      readonly index: number
+      readonly search: number
+      readonly context: number
+    }
+  }
 }
 
 export type VaultValidation = {

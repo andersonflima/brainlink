@@ -11,6 +11,9 @@
 - Added `quickstart` command to run plug-and-play vault + bootstrap + agent setup in one flow.
 - Added structured MCP `nextActions` in bootstrap/policy/preflight responses for automatic client continuation.
 - Improved graph/index robustness by splitting oversized paragraphs into bounded chunks and dropping self-referential links.
+- Added `agentProfiles` configuration support so CLI and MCP can resolve per-agent defaults for mode/limit/tokens.
+- Added short-lived hybrid search cache with automatic invalidation on index changes.
+- Added `stats --extended` observability output with storage, quality and latency probes.
 - Added `docs/QUICKSTART.md` and aligned README/agent docs with the latest CLI/MCP flows.
 
 ## 0.1.0-beta.3

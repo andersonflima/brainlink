@@ -189,6 +189,7 @@ MCP client
 ```
 
 The MCP adapter stays thin. It validates tool inputs, resolves the configured vault and calls the same application use cases used by the CLI.
+When `mode`/`limit`/`tokens` are omitted, MCP read tools resolve per-agent defaults from `agentProfiles` and then fallback to global config defaults.
 Session bootstrap state is persisted in `$BRAINLINK_HOME/session-state.json` so read tools can enforce a preflight bootstrap policy per vault/agent.
 
 ## Link Resolution
@@ -296,6 +297,7 @@ Markdown keeps the system portable, inspectable, Git-friendly, and compatible wi
 ### SQLite As Local Index
 
 SQLite gives fast local search, local vector storage and rebuildable retrieval without forcing users to run external infrastructure.
+Hybrid retrieval also uses a short-lived in-memory cache keyed by vault/query/agent and invalidated by index file mtime to reduce repeated query latency.
 
 ### CLI First
 

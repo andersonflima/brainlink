@@ -1,6 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -133,6 +133,96 @@ describe('brainlink mcp integration', () => {
             priority: 'high'
           })
         ]
+      })
+    } finally {
+      await client.close()
+    }
+  }, 20000)
+
+  it('uses agent profile defaults for MCP mode and limits', async () => {
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-mcp-profile-vault-'))
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-mcp-profile-home-'))
+    tempPaths.push(vault, brainlinkHome)
+
+    await writeFile(
+      join(brainlinkHome, 'brainlink.config.json'),
+      `${JSON.stringify(
+        {
+          defaultSearchMode: 'fts',
+          defaultSearchLimit: 7,
+          agentProfiles: {
+            'coding-agent': {
+              defaultSearchMode: 'semantic',
+              defaultSearchLimit: 2,
+              defaultContextTokens: 900
+            }
+          }
+        },
+        null,
+        2
+      )}\n`
+    )
+
+    const client = new Client({ name: 'brainlink-test-profile', version: '1.0.0' })
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', tsxLoader, mcpEntryPoint],
+      cwd: projectPath,
+      env: {
+        ...process.env,
+        BRAINLINK_HOME: brainlinkHome
+      },
+      stderr: 'pipe'
+    })
+
+    await client.connect(transport)
+
+    try {
+      await client.callTool({
+        name: 'brainlink_add_note',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          title: 'Semantic Memory',
+          content: 'Semantic default mode should apply when mode is omitted. #semantic'
+        }
+      })
+
+      await client.callTool({
+        name: 'brainlink_bootstrap',
+        arguments: {
+          vault,
+          agent: 'coding-agent'
+        }
+      })
+
+      const contextResult = await client.callTool({
+        name: 'brainlink_context',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          query: 'semantic memory'
+        }
+      })
+
+      expect(contextResult.structuredContent).toMatchObject({
+        mode: 'semantic',
+        limit: 2,
+        tokens: 900
+      })
+
+      const searchResult = await client.callTool({
+        name: 'brainlink_search',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          query: 'semantic memory'
+        }
+      })
+
+      expect(searchResult.structuredContent).toMatchObject({
+        mode: 'semantic',
+        limit: 2
       })
     } finally {
       await client.close()
