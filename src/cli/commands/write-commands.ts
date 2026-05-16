@@ -1,16 +1,21 @@
 import { readFileSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, relative, resolve } from 'node:path'
 import type { Command } from 'commander'
 import { addNote } from '../../application/add-note.js'
+import { buildContextPackage } from '../../application/build-context.js'
 import { indexVault } from '../../application/index-vault.js'
-import { migrateVaultContent, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
+import { migrateVaultContent, planVaultMigration, previewVaultMigration, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
 import { startServer } from '../../application/start-server.js'
 import { startVaultWatcher } from '../../application/watch-vault.js'
-import { doctorVault } from '../../application/analyze-vault.js'
-import { defaultBrainlinkConfig } from '../../infrastructure/config.js'
+import { doctorVault, getStats, validateVault } from '../../application/analyze-vault.js'
+import { defaultBrainlinkConfig, sanitizeSearchMode } from '../../infrastructure/config.js'
 import { loadBrainlinkConfig } from '../../infrastructure/config.js'
 import { assertVaultAllowed, ensureVault } from '../../infrastructure/file-system-vault.js'
+import { getBootstrapPolicy, getBootstrapSessionStatus, touchBootstrapSession } from '../../infrastructure/session-state.js'
+import { installAgentIntegration } from './agent-commands.js'
 import { parsePositiveInteger, print, resolveOptions } from '../runtime.js'
-import type { AddOptions, InitOptions, ServerOptions, VaultOptions } from '../types.js'
+import type { AddOptions, InitOptions, MigrateVaultOptions, QuickstartOptions, ServerOptions, VaultOptions } from '../types.js'
 
 const resolveAddContent = (options: AddOptions): string => {
   if (options.content != null && options.content.trim().length > 0) {
@@ -56,6 +61,80 @@ export const registerWriteCommands = (program: Command): void => {
       }
     )
   })
+
+  program
+    .command('migrate-vault')
+    .option('--from <vault>', 'source vault path')
+    .option('--to <vault>', 'target vault path')
+    .option('--dry-run', 'preview migration without writing files')
+    .option('--report <path>', 'write detailed per-file migration report to JSON file')
+    .option('--no-index', 'skip reindexing target vault after migration')
+    .option('--json', 'print machine-readable JSON')
+    .description('copy markdown memory from one vault to another with conflict preservation')
+    .action(async (options: MigrateVaultOptions) => {
+      const config = await loadBrainlinkConfig()
+      const sourceVault = assertVaultAllowed(options.from ?? config.vault, config.allowedVaults)
+      const targetVault = assertVaultAllowed(options.to ?? defaultBrainlinkConfig.vault, config.allowedVaults)
+      const sourceRoot = await ensureVault(sourceVault)
+      const targetRoot = await ensureVault(targetVault)
+      const preview = await previewVaultMigration(sourceVault, targetVault)
+      const actions = await planVaultMigration(sourceRoot, targetRoot)
+      const reportEntries = actions.map((action) => ({
+        kind: action.kind,
+        sourcePath: action.sourcePath,
+        sourceRelativePath: relative(sourceRoot, action.sourcePath),
+        targetPath: action.targetPath,
+        targetRelativePath: relative(targetRoot, action.targetPath)
+      }))
+
+      const writeReport = async (): Promise<string | null> => {
+        if (!options.report) {
+          return null
+        }
+
+        const reportPath = resolve(options.report)
+
+        await mkdir(dirname(reportPath), { recursive: true })
+        await writeFile(
+          reportPath,
+          `${JSON.stringify({ source: sourceVault, target: targetVault, summary: preview, entries: reportEntries }, null, 2)}\n`,
+          'utf8'
+        )
+
+        return reportPath
+      }
+
+      if (options.dryRun) {
+        const reportPath = await writeReport()
+
+        print(
+          options.json,
+          { dryRun: true, ...preview, entries: reportEntries, ...(reportPath ? { reportPath } : {}) },
+          () =>
+            `Dry run migration ${preview.source} -> ${preview.target}: copy=${preview.copied}, conflicts=${preview.conflicted}, unchanged=${preview.unchanged}${reportPath ? ` report=${reportPath}` : ''}`
+        )
+        return
+      }
+
+      const migration = await migrateVaultContent(sourceVault, targetVault)
+      const shouldIndex = options.index !== false && migration.copied + migration.conflicted > 0
+      const index = shouldIndex ? await indexVault(targetVault) : undefined
+      const reportPath = await writeReport()
+
+      print(
+        options.json,
+        { dryRun: false, ...migration, entries: reportEntries, ...(index ? { index } : {}), ...(reportPath ? { reportPath } : {}) },
+        () => {
+          const summary = `Migrated ${migration.copied} files, preserved ${migration.conflicted} conflicts and kept ${migration.unchanged} unchanged files.`
+          const indexMessage = index
+            ? ` Indexed ${index.documentCount} documents, ${index.chunkCount} chunks and ${index.linkCount} links.`
+            : ''
+          const reportMessage = reportPath ? ` Report written to ${reportPath}.` : ''
+
+          return `${summary}${indexMessage}${reportMessage}`
+        }
+      )
+    })
 
   program
     .command('add')
@@ -109,9 +188,15 @@ export const registerWriteCommands = (program: Command): void => {
     const resolved = await resolveOptions(options)
     const report = await doctorVault(resolved.vault)
 
-    print(options.json, report, () =>
-      report.checks.map((check) => `${check.ok ? 'OK' : 'FAIL'} ${check.name}: ${check.message}`).join('\n')
-    )
+    print(options.json, report, () => {
+      const checks = report.checks.map((check) => `${check.ok ? 'OK' : 'FAIL'} ${check.name}: ${check.message}`).join('\n')
+      const recommendations =
+        report.recommendations && report.recommendations.length > 0
+          ? `\n\nRecommended next steps:\n${report.recommendations.map((step) => `- ${step}`).join('\n')}`
+          : ''
+
+      return `${checks}${recommendations}`
+    })
     process.exitCode = report.ok ? 0 : 1
   })
 
@@ -169,4 +254,104 @@ export const registerWriteCommands = (program: Command): void => {
 
     print(options.json, { url: server.url, watch: Boolean(options.watch), readonly: true }, () => `Brainlink graph server running at ${server.url}`)
   })
+
+  program
+    .command('quickstart')
+    .option('-v, --vault <vault>', 'vault directory')
+    .option('-a, --agent <agent>', 'agent memory namespace')
+    .option('--query <query>', 'optional task query to return immediate grounded context')
+    .option('--mode <mode>', 'search mode for context (fts|semantic|hybrid)')
+    .option('--limit <limit>', 'maximum context sections')
+    .option('--tokens <tokens>', 'maximum context token budget')
+    .option('--no-install-agent', 'skip agent MCP/plugin installation and upgrade automation')
+    .option('--mcp-only', 'when installing agent integration, only configure MCP section')
+    .option('--plugin-path <path>', 'custom source path for Brainlink plugin files')
+    .option('--allowed-vaults <paths>', 'comma separated vault allowlist to inject in MCP env')
+    .option('--brainlink-home <path>', 'BRAINLINK_HOME value to inject in MCP env')
+    .option('--json', 'print machine-readable JSON')
+    .description('run plug-and-play setup for vault, MCP integration and bootstrap readiness')
+    .action(async (options: QuickstartOptions) => {
+      const resolved = await resolveOptions(options)
+      const limit = parsePositiveInteger(options.limit ?? String(resolved.defaults.defaultSearchLimit), resolved.defaults.defaultSearchLimit)
+      const tokens = parsePositiveInteger(options.tokens ?? String(resolved.defaults.defaultContextTokens), resolved.defaults.defaultContextTokens)
+      const mode = sanitizeSearchMode(options.mode, resolved.defaults.defaultSearchMode)
+      const index = await indexVault(resolved.vault)
+      const stats = await getStats(resolved.vault, resolved.agent)
+      const validation = await validateVault(resolved.vault, resolved.agent)
+      const doctor = await doctorVault(resolved.vault)
+      const session = await touchBootstrapSession(resolved.vault, resolved.agent)
+      const policy = await getBootstrapPolicy()
+      const bootstrapStatus = await getBootstrapSessionStatus(resolved.vault, resolved.agent)
+      const context = options.query
+        ? await buildContextPackage(resolved.vault, options.query, limit, tokens, resolved.agent, mode)
+        : null
+      const agentIntegration =
+        options.installAgent === false
+          ? null
+          : await installAgentIntegration({
+              mcpOnly: options.mcpOnly,
+              pluginPath: options.pluginPath,
+              allowedVaults: options.allowedVaults,
+              brainlinkHome: options.brainlinkHome,
+              selfTest: true
+            })
+      const nextActions =
+        stats.documentCount === 0
+          ? [
+              {
+                priority: 'required',
+                command: `blink add "Architecture" --vault "${resolved.vault}" --content "Durable memory with [[Links]] and #tags."`,
+                reason: 'Seed your vault with at least one durable Markdown note.'
+              },
+              {
+                priority: 'required',
+                command: `blink index --vault "${resolved.vault}"`,
+                reason: 'Rebuild index after adding notes so retrieval can find new memory.'
+              }
+            ]
+          : options.query
+            ? [
+                {
+                  priority: 'recommended',
+                  command: `blink add "Task Update" --vault "${resolved.vault}" --agent "${resolved.agent ?? 'shared'}" --content "<durable memory>"`,
+                  reason: 'Persist important findings as Markdown notes after using the returned context.'
+                }
+              ]
+            : [
+                {
+                  priority: 'recommended',
+                  command: `blink context "<task>" --vault "${resolved.vault}" --agent "${resolved.agent ?? 'shared'}" --mode ${mode}`,
+                  reason: 'Retrieve grounded context for each task before responding.'
+                }
+              ]
+
+      print(
+        options.json,
+        {
+          vault: resolved.vault,
+          agent: resolved.agent ?? 'shared',
+          mode,
+          index,
+          stats,
+          validation,
+          doctor,
+          policy,
+          bootstrapStatus,
+          session,
+          context,
+          agentIntegration,
+          nextActions
+        },
+        () =>
+          [
+            `quickstart vault=${resolved.vault}`,
+            `agent=${resolved.agent ?? 'shared'}`,
+            `documents=${stats.documentCount}`,
+            `links=${stats.linkCount}`,
+            `bootstrapReady=${bootstrapStatus.ready}`,
+            ...(agentIntegration?.selfTest ? [`agentIntegrationSelfTest=${agentIntegration.selfTest.ok}`] : []),
+            ...(nextActions.length > 0 ? ['Next actions:', ...nextActions.map((step) => `- ${step.command}`)] : [])
+          ].join('\n')
+      )
+    })
 }

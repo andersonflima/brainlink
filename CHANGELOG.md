@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.1.0-beta.4
+
+- Added bootstrap session-state persistence in `$BRAINLINK_HOME/session-state.json` for vault/agent readiness tracking.
+- Added MCP `brainlink_policy` tool and default bootstrap enforcement for read tools.
+- Added `agent install --self-test` diagnostics and bootstrap readiness details in `agent status`.
+- Added `agent upgrade` for legacy installations to reapply latest MCP/plugin defaults with self-test diagnostics.
+- Added `config doctor --fix` safe autofix mode with dry-run default behavior.
+- Added detailed per-file migration reporting through `migrate-vault --report`.
+- Added `quickstart` command to run plug-and-play vault + bootstrap + agent setup in one flow.
+- Added structured MCP `nextActions` in bootstrap/policy/preflight responses for automatic client continuation.
+- Added default MCP read auto-bootstrap behavior controlled by `brainlink_policy.autoBootstrapOnRead`.
+- Added default MCP startup bootstrap behavior controlled by `brainlink_policy.autoBootstrapOnStartup`.
+- Added CLI MCP policy presets through `blink agent policy --preset fully-auto|strict`.
+- Added write-time non-orphan enforcement by auto-linking notes without wiki edges to agent hub notes.
+- Added MCP `brainlink_policy` presets (`fully-auto`, `strict`) for one-call policy switching.
+- Added MCP write connectivity metadata in `brainlink_add_note`/`brainlink_add_file` responses.
+- Added MCP `brainlink_recommendations` tool for plug-and-play workflow guidance.
+- Improved graph/index robustness by splitting oversized paragraphs into bounded chunks and dropping self-referential links.
+- Added `agentProfiles` configuration support so CLI and MCP can resolve per-agent defaults for mode/limit/tokens.
+- Added short-lived hybrid search cache with automatic invalidation on index changes.
+- Added `stats --extended` observability output with storage, quality and latency probes.
+- Added `docs/QUICKSTART.md` and aligned README/agent docs with the latest CLI/MCP flows.
+
+## 0.1.0-beta.3
+
+- Added CLI configuration commands for effective vault management, including `config where`, `config get`, `config doctor` and `config set-vault`.
+- Added explicit `migrate-vault` command with `--dry-run` preview and conflict-preserving copy behavior.
+- Added one-command agent setup through `agent install` plus `agent status` diagnostics.
+- Added MCP `brainlink_bootstrap` default entrypoint guidance for plug-and-play agent memory flows.
+- Added migration coverage for S3 bucket vault targets.
+- Updated architecture and agent-usage documentation to reflect current CLI/MCP behavior and configuration precedence.
+
 ## 0.1.0-beta.2
 
 - Added MCP installation guidance for direct server configuration and local client stores.

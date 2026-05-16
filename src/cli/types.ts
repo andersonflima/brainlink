@@ -4,6 +4,10 @@ export type VaultOptions = {
   readonly json?: boolean
 }
 
+export type StatsOptions = VaultOptions & {
+  readonly extended?: boolean
+}
+
 export type InitOptions = {
   readonly json?: boolean
   readonly migrateFrom?: string
@@ -31,4 +35,62 @@ export type AddOptions = VaultOptions & {
   readonly allowSensitive?: boolean
   readonly contentFile?: string
   readonly autoIndex?: boolean
+}
+
+export type ConfigGetOptions = {
+  readonly json?: boolean
+  readonly fix?: boolean
+}
+
+export type ConfigSetVaultOptions = {
+  readonly json?: boolean
+  readonly global?: boolean
+  readonly allowlist?: boolean
+  readonly migrate?: boolean
+  readonly migrateFrom?: string
+  readonly index?: boolean
+}
+
+export type MigrateVaultOptions = {
+  readonly json?: boolean
+  readonly from?: string
+  readonly to?: string
+  readonly dryRun?: boolean
+  readonly index?: boolean
+  readonly report?: string
+}
+
+export type AgentInstallOptions = {
+  readonly json?: boolean
+  readonly mcpOnly?: boolean
+  readonly pluginPath?: string
+  readonly allowedVaults?: string
+  readonly brainlinkHome?: string
+  readonly selfTest?: boolean
+}
+
+export type AgentStatusOptions = {
+  readonly json?: boolean
+  readonly agent?: string
+}
+
+export type AgentPolicyOptions = {
+  readonly json?: boolean
+  readonly preset?: string
+  readonly enforceBootstrap?: string
+  readonly autoBootstrapOnRead?: string
+  readonly autoBootstrapOnStartup?: string
+  readonly staleAfterMinutes?: string
+}
+
+export type QuickstartOptions = VaultOptions & {
+  readonly query?: string
+  readonly mode?: string
+  readonly limit?: string
+  readonly tokens?: string
+  readonly installAgent?: boolean
+  readonly mcpOnly?: boolean
+  readonly pluginPath?: string
+  readonly allowedVaults?: string
+  readonly brainlinkHome?: string
 }

@@ -106,6 +106,8 @@ npx @andespindola/brainlink@latest --help
 
 This section is written for agents. If you are an AI agent operating in a user workspace, use this workflow to install and use Brainlink without requiring the user to run commands manually.
 
+For a condensed setup path, see [docs/QUICKSTART.md](./docs/QUICKSTART.md).
+
 ### 1. Check Whether Brainlink Is Installed
 
 ```bash
@@ -380,6 +382,35 @@ Example MCP client configuration:
 }
 ```
 
+### One-Command Agent Setup
+
+If your agent runtime is Codex-compatible, run:
+
+```bash
+blink agent install --self-test
+blink agent upgrade
+```
+
+This configures `~/.codex/config.toml` with Brainlink MCP (`brainlink-mcp`) so Brainlink is available by default in agent sessions.
+
+If you are inside this repository and want plugin gallery setup too:
+
+```bash
+blink agent install --plugin-path ./plugins/brainlink
+```
+
+To verify:
+
+```bash
+blink agent status
+```
+
+For fully automated first run (vault index + health + bootstrap readiness + agent integration):
+
+```bash
+blink quickstart --query "what should I know before this task?" --json
+```
+
 For a locked-down setup, allowlist the vaults that MCP clients may access:
 
 ```json
@@ -475,6 +506,9 @@ Restart the client after changing marketplace or MCP configuration so it reloads
 
 Available tools:
 
+- `brainlink_bootstrap`: plug-and-play entrypoint that runs index + health checks and can return context in one call.
+- `brainlink_policy`: read or update bootstrap enforcement policy, including presets (`preset: "fully-auto" | "strict"`).
+- `brainlink_recommendations`: return an automatic action plan so agents can run Brainlink in the recommended order.
 - `brainlink_context`: read indexed context for a task or question.
 - `brainlink_search`: search indexed notes.
 - `brainlink_add_note`: write durable Markdown memory and reindex.
@@ -487,7 +521,14 @@ Available tools:
 - `brainlink_broken_links`: list unresolved wiki links.
 - `brainlink_orphans`: list disconnected notes.
 
-The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]`. `brainlink_add_note` and `brainlink_add_file` reindex by default and include the index result when enabled.
+For the most automatic workflow, start MCP sessions with `brainlink_bootstrap` (optionally with `query`) and then continue with `brainlink_context`/`brainlink_add_note`.
+By default, MCP startup already runs bootstrap on the configured default vault/agent (`autoBootstrapOnStartup=true`), so sessions begin warm.
+By default, Brainlink enforces bootstrap and auto-runs it for read tools when session state is missing or stale (`autoBootstrapOnRead=true`).
+If you disable `autoBootstrapOnRead` through `brainlink_policy`, read tools return a preflight instruction with suggested `brainlink_bootstrap` arguments.
+`brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so MCP clients can continue automatically without custom parsing.
+For one-call planning, use `brainlink_recommendations` to get the recommended tool sequence for the current vault/agent/query.
+
+The same linking rule applies through MCP: `brainlink_context` is read-only, and real graph links require Markdown notes with explicit `[[wiki links]]`. `brainlink_add_note` and `brainlink_add_file` reindex by default and include index + `writeConnectivity` metadata. Brainlink guarantees at least one edge per new note by auto-linking when needed.
 
 Agents can raise the importance of a relationship by putting priority markers on the same line as a wiki link:
 
@@ -556,6 +597,65 @@ Read routes accept `agent=<agent-id>`:
 
 Every command works with either `brainlink` or `blink`.
 
+### `agent`
+
+```bash
+blink agent install
+blink agent install --self-test
+blink agent upgrade
+blink agent policy --preset fully-auto
+blink agent policy --preset strict
+blink agent install --plugin-path ./plugins/brainlink
+blink agent install --mcp-only --allowed-vaults "/absolute/vault,/absolute/team-vault"
+blink agent status
+```
+
+Installs/checks agent integration. `install` writes Brainlink MCP config into `~/.codex/config.toml`.
+When plugin files are available, it also links Brainlink plugin files into `~/plugins/brainlink` and updates `~/.agents/plugins/marketplace.json`.
+With `--self-test`, install also validates MCP block presence, command wiring and local plugin registration signals.
+Use `agent upgrade` on legacy installations to reapply current defaults and run the same self-test diagnostics.
+Use `agent policy --preset fully-auto` for plug-and-play defaults, or `agent policy --preset strict` to require explicit bootstrap calls.
+
+### `quickstart`
+
+```bash
+blink quickstart --json
+blink quickstart --vault ./team-vault --agent coding-agent --query "architecture decisions" --json
+blink quickstart --vault ./team-vault --mcp-only --json
+```
+
+Runs index + doctor + stats + validation, refreshes bootstrap session readiness, optionally returns context for a query, and (by default) upgrades local agent integration for plug-and-play MCP usage.
+When `--mode`, `--limit` or `--tokens` are omitted, quickstart uses agent profile defaults when available.
+
+### `config`
+
+```bash
+blink config where
+blink config get vault
+blink config doctor
+blink config doctor --fix
+blink config set-vault /absolute/path/to/existing-vault
+blink config set-vault /absolute/path/to/existing-vault --migrate-from ~/.brainlink/vault
+blink config set-vault "s3://my-memory-bucket/brainlink" --global
+```
+
+`config set-vault` writes configuration through CLI (no manual file edits required).  
+By default it writes local config (`./brainlink.config.json`), appends the vault to `allowedVaults`, and migrates Markdown memory from the current configured vault when the target is empty.  
+Use `--global` to write to `$BRAINLINK_HOME/brainlink.config.json`, `--no-migrate` to skip migration, and `--no-index` to skip post-migration indexing.
+`config doctor` is dry-run by default; use `--fix` to apply safe config normalization and allowlist fixes.
+
+### `migrate-vault`
+
+```bash
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --dry-run
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault
+blink migrate-vault --from ~/.brainlink/vault --to "s3://my-memory-bucket/brainlink"
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --report ./migration-report.json
+```
+
+Runs explicit markdown migration between vaults while preserving conflicts as `.conflict-<timestamp>` files.  
+Use `--dry-run` to preview `copied`, `conflicted` and `unchanged` counts before writing.
+
 ### `init`
 
 ```bash
@@ -579,6 +679,7 @@ blink add "Note Title" --vault ./vault --content-file ./notes.md --no-auto-index
 `--content` and `--content-file` are mutually exclusive. Add `--no-auto-index` when you want to defer reindexing.
 
 Creates a Markdown note under `agents/<agent-id>/`. Common secret patterns are blocked by default; use `--allow-sensitive` only for an intentionally protected vault.
+To avoid disconnected memory, Brainlink auto-adds a fallback wiki edge when a note is written without links, creating agent hub notes when needed.
 
 ### `index`
 
@@ -607,12 +708,15 @@ blink search "query" --vault ./vault --mode semantic --json
 ```
 
 Runs retrieval over indexed chunks.
+If `--mode` or `--limit` is omitted, Brainlink resolves values from the current agent profile before falling back to global defaults.
 
 Modes:
 
 - `hybrid`: default; combines SQLite FTS with local embedding similarity.
 - `fts`: exact lexical retrieval through SQLite FTS.
 - `semantic`: local deterministic embedding similarity only.
+
+Hybrid results are cached in-memory for a short TTL and invalidated automatically when the local index file changes.
 
 ### `context`
 
@@ -656,9 +760,11 @@ Prints indexed graph data. Edges include `weight` and `priority` so agents can c
 ```bash
 blink stats --vault ./vault
 blink stats --vault ./vault --agent coding-agent --json
+blink stats --vault ./vault --agent coding-agent --extended --json
 ```
 
 Prints vault metrics.
+Use `--extended` to include storage footprint, link quality ratios and observability probes (`index`, `search`, `context` latencies).
 
 ### `broken-links`
 
@@ -690,7 +796,7 @@ Validates graph health. The command exits non-zero when required checks fail.
 blink doctor --vault ./vault
 ```
 
-Runs environment and vault checks.
+Runs environment and vault checks. When vault has zero markdown and zero indexed documents, `doctor` prints recommended next steps (add note, inspect config source, migrate memory).
 
 ### `watch`
 
@@ -727,7 +833,13 @@ npm run --silent dev -- context "question" --vault ./vault --json
 
 ## Configuration
 
-Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current working directory. If no `vault` is configured and no `--vault` flag is passed, Brainlink uses `$HOME/.brainlink/vault`.
+Brainlink merges configuration in this order:
+
+1. Global: `$BRAINLINK_HOME/brainlink.config.json` (or `$HOME/.brainlink/brainlink.config.json` by default)
+2. Local: `brainlink.config.json` in the current working directory
+3. Local legacy compatibility: `.brainlink.json` in the current working directory
+
+If no `vault` is configured and no `--vault` flag is passed, Brainlink uses `$HOME/.brainlink/vault`.
 
 ```json
 {
@@ -741,11 +853,22 @@ Brainlink reads `brainlink.config.json` or `.brainlink.json` from the current wo
   "defaultContextTokens": 2000,
   "embeddingProvider": "local",
   "defaultSearchMode": "hybrid",
-  "chunkSize": 1200
+  "chunkSize": 1200,
+  "agentProfiles": {
+    "coding-agent": {
+      "defaultSearchMode": "semantic",
+      "defaultSearchLimit": 8,
+      "defaultContextTokens": 2400
+    },
+    "*": {
+      "defaultSearchMode": "hybrid"
+    }
+  }
 }
 ```
 
 `defaultAgent` is optional. When set, CLI and MCP calls that omit `--agent`/`agent` use this value automatically. If not set, behavior remains as before.
+`agentProfiles` is optional. When present, CLI and MCP resolve `mode`, `limit` and `tokens` per agent automatically, then fallback to global defaults.
 
 `autoIndexOnWrite` is optional and defaults to `true`. Set it to `false` to defer indexing after writes.
 

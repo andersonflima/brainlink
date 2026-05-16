@@ -39,9 +39,19 @@ $HOME/.brainlink/vault
 
 `blink server` follows the same rule, so it serves the default Brainlink vault instead of the current working directory.
 
-Use `--vault <path>` for a one-off custom vault, or set `vault` in `brainlink.config.json` / `.brainlink.json` for a workspace-level custom default. Set `BRAINLINK_HOME` when the whole Brainlink home directory should live somewhere else.
+Use `--vault <path>` for a one-off custom vault, or set `vault` in config for a persistent default.
+Configuration precedence is:
+
+1. global: `$BRAINLINK_HOME/brainlink.config.json` (or `$HOME/.brainlink/brainlink.config.json`)
+2. local: `./brainlink.config.json`
+3. local legacy: `./.brainlink.json`
+
+Set `BRAINLINK_HOME` when the whole Brainlink home directory should live somewhere else.
+
+Use `blink config where` and `blink config doctor` to inspect active paths and effective source.
 
 You can also set `defaultAgent` in `brainlink.config.json` / `.brainlink.json` (for example `"defaultAgent": "coding-agent"`). When set, CLI commands and MCP calls reuse it when `--agent`/`agent` is not passed.
+You can set `agentProfiles` to define per-agent defaults for `defaultSearchMode`, `defaultSearchLimit` and `defaultContextTokens`.
 
 `autoIndexOnWrite` (default: `true`) controls whether `add` and MCP write tools index right after writing.
 
@@ -246,7 +256,7 @@ cp docs/templates/agent-note-template.md /tmp/agent-note.md
 When using MCP, use this compact sequence for the same memory discipline:
 
 1. Bootstrap context:
-   - `brainlink_context` with `agent`, `query`, `mode: hybrid`, `limit`.
+   - `brainlink_bootstrap` with `agent`, optional `query`, `mode: hybrid`, `limit`.
 2. Capture durable decisions:
    - `brainlink_add_note` or `brainlink_add_file` with explicit `[[wiki links]]` and `#tags`.
 3. Run maintenance before handoff or before the next step:
@@ -343,6 +353,56 @@ $HOME/.brainlink/vault/
 
 `blink init ./vault` creates a custom vault instead. If the custom vault is empty and the default `$HOME/.brainlink/vault` already has Markdown memory, Brainlink copies that content into the custom vault and reindexes it. Use `blink init ./vault --no-migrate-existing` to intentionally start empty, or `blink init ./vault --migrate-from <old-vault>` to migrate from a specific previous vault. Existing target files are not overwritten; conflicting source files are preserved with a `.conflict-<timestamp>` suffix.
 
+### Configure Defaults
+
+```bash
+blink config where
+blink config get vault
+blink config doctor
+blink config doctor --fix
+blink config set-vault /absolute/path/to/vault
+blink config set-vault /absolute/path/to/vault --global
+```
+
+`config set-vault` updates Brainlink config through CLI. By default it writes local `brainlink.config.json`, appends the vault to `allowedVaults`, and migrates markdown when the target is empty.
+
+### Migrate Vaults Explicitly
+
+```bash
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --dry-run
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault
+blink migrate-vault --from ~/.brainlink/vault --to "s3://my-memory-bucket/brainlink"
+blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --report ./migration-report.json
+```
+
+Use `--dry-run` to preview `copied`, `conflicted`, `unchanged` before writing files.
+
+### Install Agent Integration
+
+```bash
+blink agent install
+blink agent install --self-test
+blink agent upgrade
+blink agent policy --preset fully-auto
+blink agent policy --preset strict
+blink agent install --plugin-path ./plugins/brainlink
+blink agent status
+```
+
+`agent install` configures Brainlink MCP in `~/.codex/config.toml` so compatible agents can use Brainlink by default.
+Use `agent upgrade` on legacy installations to reapply the latest defaults and run self-test diagnostics.
+Use `agent policy --preset fully-auto` to keep startup/read auto-bootstrap enabled, or `agent policy --preset strict` to force explicit bootstrap calls.
+
+### Quickstart Plug-And-Play
+
+```bash
+blink quickstart --json
+blink quickstart --vault ./team-vault --agent coding-agent --query "architecture decisions" --json
+blink quickstart --vault ./team-vault --mcp-only --json
+```
+
+`quickstart` runs index, doctor, stats and validation, marks bootstrap readiness for MCP sessions, optionally returns context, and updates agent integration by default.
+
 ### Add A Note
 
 ```bash
@@ -356,6 +416,7 @@ blink add "Note Title" --vault ./vault --content-file ./notes.md --no-auto-index
 This creates a slugged Markdown file with frontmatter and a heading.
 
 The CLI blocks common secret patterns by default. Do not use `--allow-sensitive` unless the vault is intentionally protected.
+Brainlink also auto-connects notes that have no `[[wiki links]]` by adding a fallback edge to an agent hub note, so new memory does not stay disconnected.
 
 For agent-private memory:
 
@@ -395,12 +456,15 @@ blink search "authentication token policy" --vault ./vault --mode semantic --jso
 ```
 
 This returns matching chunks with title, source path, score, `textScore`, `semanticScore`, `searchMode`, and content.
+If `--mode`/`--limit` are omitted, Brainlink resolves those values from the active agent profile before global defaults.
 
 Search modes:
 
 - `hybrid`: default; combines SQLite FTS and local embedding similarity.
 - `fts`: lexical SQLite full-text search only.
 - `semantic`: local deterministic embedding similarity with SQLite bucket candidate narrowing.
+
+Hybrid results are cached in-memory for a short TTL and invalidated when `.brainlink/brainlink.db` changes.
 
 ### Build Agent Context
 
@@ -518,6 +582,9 @@ Example MCP client configuration:
 
 Available MCP tools:
 
+- `brainlink_bootstrap`
+- `brainlink_policy`
+- `brainlink_recommendations`
 - `brainlink_context`
 - `brainlink_search`
 - `brainlink_add_note`
@@ -530,9 +597,17 @@ Available MCP tools:
 - `brainlink_broken_links`
 - `brainlink_orphans`
 
+Recommended start of every memory-dependent task: call `brainlink_bootstrap` first, then `brainlink_context` only when additional retrieval is needed. By default, Brainlink enforces bootstrap for MCP read tools and auto-runs bootstrap on reads when state is missing or stale (`autoBootstrapOnRead=true`).
+MCP startup also bootstraps the configured default vault/agent automatically (`autoBootstrapOnStartup=true`), so sessions start warm without manual calls.
+If `autoBootstrapOnRead` is disabled through `brainlink_policy`, read tools return preflight-required responses.
+`brainlink_bootstrap`, `brainlink_policy` and preflight responses include structured `nextActions` so clients can continue tool flows automatically.
+`brainlink_policy` also accepts policy presets (`fully-auto`, `strict`) so MCP clients can switch behavior in one call.
+`brainlink_recommendations` returns the suggested execution order so an agent can follow Brainlink best practices automatically.
+
 MCP clients can pass `vault` and `agent` arguments per tool call. Set `BRAINLINK_ALLOWED_VAULTS` when exposing Brainlink to an external agent process so a tool cannot pass arbitrary vault paths:
 
 `brainlink_graph` returns weighted edges. Agents should prefer higher `weight` and stronger `priority` when deciding which related notes matter most.
+`brainlink_add_note` and `brainlink_add_file` return `writeConnectivity` metadata and guarantee at least one edge for new notes.
 
 ```bash
 export BRAINLINK_ALLOWED_VAULTS="/absolute/path/to/project-vault"

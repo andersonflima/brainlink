@@ -9,6 +9,8 @@ import {
   addNoteTool,
   brokenLinksInputSchema,
   brokenLinksTool,
+  bootstrapInputSchema,
+  bootstrapTool,
   contextInputSchema,
   contextTool,
   graphInputSchema,
@@ -17,6 +19,10 @@ import {
   indexTool,
   orphansInputSchema,
   orphansTool,
+  policyInputSchema,
+  policyTool,
+  recommendationsInputSchema,
+  recommendationsTool,
   searchInputSchema,
   searchTool,
   statsInputSchema,
@@ -47,10 +53,43 @@ export const createBrainlinkMcpServer = (): McpServer => {
   })
 
   server.registerTool(
+    'brainlink_bootstrap',
+    {
+      title: 'Bootstrap Brainlink For A Task (Default Entrypoint)',
+      description:
+        'Default entrypoint for agents. Run this first to index/check memory state, then optionally retrieve context for the current task query.',
+      inputSchema: bootstrapInputSchema
+    },
+    bootstrapTool
+  )
+
+  server.registerTool(
+    'brainlink_policy',
+    {
+      title: 'Brainlink Bootstrap Policy',
+      description: 'Read or update bootstrap enforcement policy and inspect bootstrap readiness for the current vault/agent.',
+      inputSchema: policyInputSchema
+    },
+    policyTool
+  )
+
+  server.registerTool(
+    'brainlink_recommendations',
+    {
+      title: 'Brainlink Recommended MCP Workflow',
+      description:
+        'Return a plug-and-play action plan for this vault/agent, including policy, bootstrap, context retrieval and durable write guidance.',
+      inputSchema: recommendationsInputSchema
+    },
+    recommendationsTool
+  )
+
+  server.registerTool(
     'brainlink_context',
     {
       title: 'Build Brainlink Context',
-      description: 'Read indexed Brainlink memory for a task or question. This is read-only and does not create graph links.',
+      description:
+        'Read indexed Brainlink memory for a task or question. Usually called after brainlink_bootstrap. This is read-only and does not create graph links.',
       inputSchema: contextInputSchema
     },
     contextTool

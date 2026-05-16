@@ -1,4 +1,4 @@
-import { loadBrainlinkConfig } from '../infrastructure/config.js'
+import { loadBrainlinkConfig, resolveAgentRuntimeDefaults } from '../infrastructure/config.js'
 import { assertVaultAllowed } from '../infrastructure/file-system-vault.js'
 import type { VaultOptions } from './types.js'
 
@@ -12,11 +12,14 @@ export const resolveOptions = async (options: VaultOptions) => {
   const config = await loadBrainlinkConfig()
   const vault = options.vault ?? config.vault
   const allowedVault = assertVaultAllowed(vault, config.allowedVaults)
+  const agent = options.agent ?? config.defaultAgent
+  const defaults = resolveAgentRuntimeDefaults(config, agent)
 
   return {
     config,
     vault: allowedVault,
-    agent: options.agent ?? config.defaultAgent
+    agent,
+    defaults
   }
 }
 

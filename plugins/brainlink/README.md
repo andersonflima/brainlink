@@ -8,6 +8,17 @@ It expects the Brainlink npm package to be installed:
 npm install -g @andespindola/brainlink
 ```
 
+## One-Command Setup
+
+From the Brainlink repository root:
+
+```bash
+blink agent install --plugin-path ./plugins/brainlink --self-test
+blink agent status
+```
+
+This configures Codex MCP and updates local plugin marketplace files automatically.
+
 ## Add To The Local Codex Plugin Gallery
 
 The npm package installs the `brainlink`, `blink` and `brainlink-mcp` commands.
@@ -91,11 +102,12 @@ should appear in the local plugin gallery as `Brainlink`.
 
 The plugin starts the `brainlink-mcp` stdio server and gives Codex a skill that defines the correct memory workflow:
 
-1. Read memory with `brainlink_context` before work.
-2. Write durable memory with `brainlink_add_note`.
-3. Use explicit `[[wiki links]]` and `#tags`.
-4. Add priority markers near important links, for example `priority: high`, `#important` or `#critical`.
-5. Validate graph health with `brainlink_validate`, `brainlink_broken_links` and `brainlink_orphans`.
+1. Bootstrap memory with `brainlink_bootstrap` before work.
+2. Use `brainlink_policy` only when you intentionally need to change bootstrap enforcement behavior.
+3. Write durable memory with `brainlink_add_note`.
+4. Use explicit `[[wiki links]]` and `#tags`.
+5. Add priority markers near important links, for example `priority: high`, `#important` or `#critical`.
+6. Validate graph health with `brainlink_validate`, `brainlink_broken_links` and `brainlink_orphans`.
 
 `brainlink_context` is read-only. It does not create graph links, backlinks or durable memory.
 

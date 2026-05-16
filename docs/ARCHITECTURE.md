@@ -34,6 +34,8 @@ src/
 
   cli/
     commands/
+      agent-commands.ts
+      config-commands.ts
       read-commands.ts
       write-commands.ts
     main.ts
@@ -57,7 +59,13 @@ src/
       schema.ts
       search-reader.ts
     file-system-vault.ts
+    session-state.ts
     sqlite-index.ts
+
+  mcp/
+    main.ts
+    server.ts
+    tools.ts
 ```
 
 ## Domain
@@ -181,6 +189,9 @@ MCP client
 ```
 
 The MCP adapter stays thin. It validates tool inputs, resolves the configured vault and calls the same application use cases used by the CLI.
+At server startup, Brainlink runs a bootstrap pass on the configured default vault/agent, then keeps enforcing bootstrap policy on read tools.
+When `mode`/`limit`/`tokens` are omitted, MCP read tools resolve per-agent defaults from `agentProfiles` and then fallback to global config defaults.
+Session bootstrap state is persisted in `$BRAINLINK_HOME/session-state.json` so read tools can enforce bootstrap policy per vault/agent and auto-bootstrap reads when configured.
 
 ## Link Resolution
 
@@ -287,10 +298,11 @@ Markdown keeps the system portable, inspectable, Git-friendly, and compatible wi
 ### SQLite As Local Index
 
 SQLite gives fast local search, local vector storage and rebuildable retrieval without forcing users to run external infrastructure.
+Hybrid retrieval also uses a short-lived in-memory cache keyed by vault/query/agent and invalidated by index file mtime to reduce repeated query latency.
 
 ### CLI First
 
-The CLI is the smallest useful integration surface for agents. HTTP is a local inspection adapter, and MCP can be implemented outside this package by wrapping the CLI.
+The CLI is the smallest useful integration surface for agents. HTTP is a local inspection adapter, and Brainlink also ships a built-in MCP server (`brainlink-mcp`) that uses the same application use cases.
 
 ### Functional Core
 
