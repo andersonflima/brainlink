@@ -303,6 +303,7 @@ Hybrid retrieval also uses a short-lived in-memory cache keyed by vault/query/ag
 Brainlink also writes a local rollback snapshot (`.brainlink/brainlink.db.backup`) plus rotating point-in-time snapshots (`.brainlink/brainlink.db.backup.snapshots/`) after successful indexing. On corruption detection (`quick_check`/SQLite malformed errors), Brainlink restores the newest valid snapshot automatically before reopening the index.
 Indexing additionally exports private encrypted pack files (`.brainlink/search-packs/*.blpk`) from indexed chunks. Search falls back to these packs when SQLite is unavailable, preserving retrieval continuity in degraded mode.
 Pack encryption keys are resolved from `$BRAINLINK_HOME/keys` or from `BRAINLINK_SEARCH_PACK_KEY` when configured.
+Legacy upgrades are automatic: when a vault has `brainlink.db` but no `.blpk` packs yet, Brainlink extracts indexed context rows from SQLite and writes private packs on first retrieval flow.
 
 ### CLI First
 

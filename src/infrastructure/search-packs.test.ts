@@ -1,10 +1,11 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
+import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { IndexedDocument } from '../domain/types.js'
-import { buildSearchPacks, searchInPacks } from './search-packs.js'
+import { buildSearchPacks, ensurePrivatePacksFromLegacyIndex, searchInPacks } from './search-packs.js'
 
 const createIndexedDocument = (
   id: string,
@@ -102,5 +103,65 @@ describe('search packs', () => {
 
     expect(sharedOnly.every((row) => row.agentId === 'shared')).toBe(true)
     expect(researchOnly.every((row) => row.agentId === 'research-agent')).toBe(true)
+  })
+
+  it('imports legacy sqlite index rows into private packs automatically', async () => {
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-search-packs-legacy-sqlite-'))
+    const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-search-packs-legacy-sqlite-home-'))
+    process.env.BRAINLINK_HOME = brainlinkHome
+    tempPaths.push(vault, brainlinkHome)
+
+    await mkdir(join(vault, '.brainlink'), { recursive: true })
+    const dbPath = join(vault, '.brainlink', 'brainlink.db')
+    const db = new Database(dbPath)
+    try {
+      db.exec(`
+        CREATE TABLE documents (
+          id TEXT PRIMARY KEY,
+          agent_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          path TEXT NOT NULL,
+          content TEXT NOT NULL,
+          tags_json TEXT NOT NULL,
+          frontmatter_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE chunks (
+          id TEXT PRIMARY KEY,
+          document_id TEXT NOT NULL,
+          ordinal INTEGER NOT NULL,
+          content TEXT NOT NULL,
+          token_count INTEGER NOT NULL,
+          embedding_provider TEXT NOT NULL,
+          embedding_json TEXT NOT NULL
+        );
+      `)
+      db.prepare(
+        `
+          INSERT INTO documents (id, agent_id, title, path, content, tags_json, frontmatter_json, created_at, updated_at)
+          VALUES ('doc-1', 'shared', 'Architecture', 'agents/shared/architecture.md', 'JWT auth strategy', '["architecture"]', '{}', '2026-01-01', '2026-01-01')
+        `
+      ).run()
+      db.prepare(
+        `
+          INSERT INTO chunks (id, document_id, ordinal, content, token_count, embedding_provider, embedding_json)
+          VALUES ('chunk-1', 'doc-1', 1, 'JWT auth strategy', 4, 'none', '[]')
+        `
+      ).run()
+    } finally {
+      db.close()
+    }
+
+    const importReport = await ensurePrivatePacksFromLegacyIndex(vault)
+    const results = await searchInPacks(vault, 'jwt auth', 5)
+
+    expect(importReport).toMatchObject({
+      imported: true,
+      source: 'legacy-sqlite'
+    })
+    expect(results[0]).toMatchObject({
+      title: 'Architecture'
+    })
   })
 })
