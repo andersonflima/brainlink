@@ -1,7 +1,5 @@
 import { stat } from 'node:fs/promises'
-import { existsSync, readdirSync } from 'node:fs'
 import { performance } from 'node:perf_hooks'
-import { join } from 'node:path'
 import { validateGraph, getBrokenLinks, getOrphanNodes, getVaultStats } from '../domain/graph-analysis.js'
 import type { BrokenLink, DoctorReport, LinkPriority, OrphanNode, VaultExtendedStats, VaultStats, VaultValidation } from '../domain/types.js'
 import { ensureVault, listVaultFiles, readMarkdownFiles } from '../infrastructure/file-system-vault.js'
@@ -125,27 +123,11 @@ export const doctorVault = async (vaultPath: string): Promise<DoctorReport> => {
   const files = await readMarkdownFiles(absoluteVaultPath)
   const graph = await getGraphSummary(absoluteVaultPath)
   const validation = validateGraph(graph)
-  const backupPath = join(absoluteVaultPath, '.brainlink', 'brainlink.db.backup')
-  const snapshotDirectory = join(absoluteVaultPath, '.brainlink', 'brainlink.db.backup.snapshots')
-  const hasBackup = existsSync(backupPath)
-  const snapshotCount = existsSync(snapshotDirectory)
-    ? readdirSync(snapshotDirectory).filter((name) => name.endsWith('.db')).length
-    : 0
-  const backupReady = graph.nodes.length === 0 || hasBackup
   const checks = [
     createCheck('vault', true, `Vault ready at ${absoluteVaultPath}`),
     createCheck('markdown-files', files.length > 0, `${files.length} markdown files found`),
     createCheck('index', graph.nodes.length > 0, `${graph.nodes.length} indexed documents found`),
-    createCheck('broken-links', validation.brokenLinks.length === 0, `${validation.brokenLinks.length} broken links found`),
-    createCheck(
-      'index-backup',
-      backupReady,
-      backupReady
-        ? (hasBackup
-          ? `SQLite recovery snapshot is available (${snapshotCount} rotating snapshots)`
-          : 'No index yet. Snapshot will be created after first indexing run')
-        : 'Recovery snapshot missing. Run blink index to create a rollback snapshot'
-    )
+    createCheck('broken-links', validation.brokenLinks.length === 0, `${validation.brokenLinks.length} broken links found`)
   ]
   const recommendations =
     files.length === 0 && graph.nodes.length === 0

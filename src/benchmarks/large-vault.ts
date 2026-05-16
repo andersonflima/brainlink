@@ -33,7 +33,7 @@ const readOptions = (args: readonly string[]): BenchmarkOptions => ({
 
 const topics = [
   'authentication jwt token refresh policy',
-  'sqlite graph backlinks markdown vault indexing',
+  'graph backlinks markdown vault indexing',
   'frontend canvas layout graph interaction',
   'agent memory context retrieval summarization',
   'security local server vault path allowlist',
