@@ -675,16 +675,16 @@ const zoomAtPoint = (screenX, screenY, factor) => {
 const wheelZoomFactor = event => {
   const isModifierZoom = event.metaKey || event.ctrlKey
   const deltaModeFactor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 120 : 1
-  const normalizedDelta = Math.min(Math.abs(event.deltaY * deltaModeFactor), 1200) / 220
+  const absoluteDelta = Math.min(Math.abs(event.deltaY * deltaModeFactor), 1600)
 
-  if (normalizedDelta <= 0.0001) {
+  if (absoluteDelta <= 0.0001) {
     return 1
   }
 
-  const sensitivity = isModifierZoom ? 0.2 : 0.14
-  const direction = event.deltaY < 0 ? 1 : -1
+  const baseStep = Math.max(0.06, Math.min(0.45, absoluteDelta / 480))
+  const adjustedStep = baseStep * (isModifierZoom ? 1.4 : 1)
 
-  return Math.exp(direction * normalizedDelta * sensitivity)
+  return event.deltaY < 0 ? 1 + adjustedStep : 1 / (1 + adjustedStep)
 }
 
 const bindEvents = () => {
@@ -707,11 +707,11 @@ const bindEvents = () => {
   })
   elements.zoomIn.addEventListener('click', () => {
     const rect = canvas.getBoundingClientRect()
-    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.18)
+    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.3)
   })
   elements.zoomOut.addEventListener('click', () => {
     const rect = canvas.getBoundingClientRect()
-    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.84)
+    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.77)
   })
   if (elements.fit) {
     elements.fit.addEventListener('click', () => {
@@ -738,6 +738,12 @@ const bindEvents = () => {
     const factor = wheelZoomFactor(event)
     zoomAtPoint(cursorX, cursorY, factor)
   }, { passive: false })
+  canvas.addEventListener('dblclick', event => {
+    const rect = canvas.getBoundingClientRect()
+    const cursorX = event.clientX - rect.left
+    const cursorY = event.clientY - rect.top
+    zoomAtPoint(cursorX, cursorY, 1.25)
+  })
   canvas.addEventListener('pointerdown', event => {
     const point = worldPoint(event)
     const node = hitNode(point)
@@ -773,6 +779,26 @@ const bindEvents = () => {
   })
   canvas.addEventListener('pointercancel', () => {
     state.pointer = { x: 0, y: 0, down: false, dragNode: null, moved: false }
+  })
+  window.addEventListener('keydown', event => {
+    if (event.key === '+' || event.key === '=') {
+      event.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.25)
+      return
+    }
+
+    if (event.key === '-' || event.key === '_') {
+      event.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.8)
+      return
+    }
+
+    if (event.key === '0') {
+      event.preventDefault()
+      resetView()
+    }
   })
 }
 
