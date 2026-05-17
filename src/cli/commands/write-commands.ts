@@ -49,14 +49,18 @@ const nativeGuiLinuxScriptPath = join(tmpdir(), 'brainlink-native-gui-linux.py')
 const nativeGuiSwiftScript = `import Foundation
 import AppKit
 import WebKit
+import Darwin
 
 final class BrainlinkAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   private let targetUrl: URL
+  private let parentPid: Int32
   private var window: NSWindow?
   private var webView: WKWebView?
+  private var monitorTimer: Timer?
 
-  init(targetUrl: URL) {
+  init(targetUrl: URL, parentPid: Int32) {
     self.targetUrl = targetUrl
+    self.parentPid = parentPid
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -80,16 +84,27 @@ final class BrainlinkAppDelegate: NSObject, NSApplicationDelegate, NSWindowDeleg
     self.window = window
     self.webView = webView
 
+    if parentPid > 0 {
+      monitorTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+        if kill(self.parentPid, 0) != 0 {
+          NSApp.terminate(nil)
+        }
+      }
+    }
+
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
   }
 
   func windowWillClose(_ notification: Notification) {
+    monitorTimer?.invalidate()
     NSApp.terminate(nil)
   }
 }
 
-let rawTarget = CommandLine.arguments.dropFirst().first ?? "http://127.0.0.1:4321"
+let args = Array(CommandLine.arguments.dropFirst())
+let rawTarget = args.indices.contains(0) ? args[0] : "http://127.0.0.1:4321"
+let parentPid: Int32 = args.indices.contains(1) ? (Int32(args[1]) ?? 0) : 0
 
 guard let targetUrl = URL(string: rawTarget) else {
   fputs("Invalid URL for Brainlink GUI: \\(rawTarget)\\n", stderr)
@@ -98,13 +113,14 @@ guard let targetUrl = URL(string: rawTarget) else {
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
-let delegate = BrainlinkAppDelegate(targetUrl: targetUrl)
+let delegate = BrainlinkAppDelegate(targetUrl: targetUrl, parentPid: parentPid)
 app.delegate = delegate
 app.run()
 `
 
 const nativeGuiPowershellScript = `param(
-  [string]$TargetUrl = "http://127.0.0.1:4321"
+  [string]$TargetUrl = "http://127.0.0.1:4321",
+  [int]$ParentPid = 0
 )
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -123,6 +139,23 @@ $browser.ScriptErrorsSuppressed = $true
 $browser.Navigate($TargetUrl)
 
 $form.Controls.Add($browser)
+$timer = New-Object System.Windows.Forms.Timer
+$timer.Interval = 1000
+$timer.Add_Tick({
+  if ($ParentPid -le 0) {
+    return
+  }
+  try {
+    Get-Process -Id $ParentPid -ErrorAction Stop | Out-Null
+  } catch {
+    $timer.Stop()
+    $form.Close()
+  }
+})
+$form.Add_FormClosed({
+  $timer.Stop()
+})
+$timer.Start()
 [void]$form.ShowDialog()
 `
 
@@ -137,11 +170,12 @@ def run() -> int:
             gi.require_version("WebKit2", "4.1")
         except ValueError:
             gi.require_version("WebKit2", "4.0")
-        from gi.repository import Gtk, WebKit2
+        from gi.repository import Gtk, WebKit2, GLib
     except Exception:
         return 1
 
     target_url = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:4321"
+    parent_pid = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 
     window = Gtk.Window(title="Brainlink Graph")
     window.set_default_size(1320, 860)
@@ -151,6 +185,19 @@ def run() -> int:
     webview.load_uri(target_url)
     window.add(webview)
     window.show_all()
+
+    if parent_pid > 0:
+        def _watch_parent() -> bool:
+            try:
+                import os
+                os.kill(parent_pid, 0)
+            except Exception:
+                Gtk.main_quit()
+                return False
+            return True
+
+        GLib.timeout_add(1000, _watch_parent)
+
     Gtk.main()
     return 0
 
@@ -187,7 +234,7 @@ const resolveSwiftExecutable = (): string | null => {
   }
 }
 
-const openGraphInMacNativeGui = (url: string): boolean => {
+const openGraphInMacNativeGui = (url: string, parentPid: number): boolean => {
   const swiftBinary = resolveSwiftExecutable()
   if (!swiftBinary) {
     return false
@@ -199,7 +246,7 @@ const openGraphInMacNativeGui = (url: string): boolean => {
     return false
   }
 
-  return spawnDetached(swiftBinary, [nativeGuiSwiftScriptPath, url])
+  return spawnDetached(swiftBinary, [nativeGuiSwiftScriptPath, url, String(parentPid)])
 }
 
 const resolveWindowsPowershellExecutable = (): string | null => {
@@ -214,7 +261,7 @@ const resolveWindowsPowershellExecutable = (): string | null => {
   return null
 }
 
-const openGraphInWindowsNativeGui = (url: string): boolean => {
+const openGraphInWindowsNativeGui = (url: string, parentPid: number): boolean => {
   const powershell = resolveWindowsPowershellExecutable()
   if (!powershell) {
     return false
@@ -226,10 +273,10 @@ const openGraphInWindowsNativeGui = (url: string): boolean => {
     return false
   }
 
-  return spawnDetached(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', nativeGuiPowershellScriptPath, url])
+  return spawnDetached(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', nativeGuiPowershellScriptPath, url, String(parentPid)])
 }
 
-const openGraphInLinuxNativeGui = (url: string): boolean => {
+const openGraphInLinuxNativeGui = (url: string, parentPid: number): boolean => {
   if (!commandExists('python3')) {
     return false
   }
@@ -240,19 +287,19 @@ const openGraphInLinuxNativeGui = (url: string): boolean => {
     return false
   }
 
-  return spawnDetached('python3', [nativeGuiLinuxScriptPath, url])
+  return spawnDetached('python3', [nativeGuiLinuxScriptPath, url, String(parentPid)])
 }
 
-const openGraphInNativeGui = (url: string): boolean => {
+const openGraphInNativeGui = (url: string, parentPid: number): boolean => {
   if (platform() === 'darwin') {
-    return openGraphInMacNativeGui(url)
+    return openGraphInMacNativeGui(url, parentPid)
   }
 
   if (platform() === 'win32') {
-    return openGraphInWindowsNativeGui(url)
+    return openGraphInWindowsNativeGui(url, parentPid)
   }
 
-  return openGraphInLinuxNativeGui(url)
+  return openGraphInLinuxNativeGui(url, parentPid)
 }
 
 const openGraphInAppWindow = (url: string): boolean => {
@@ -295,7 +342,7 @@ const openGraphInAppWindow = (url: string): boolean => {
   )
 }
 
-const openUrlInUi = (url: string): { readonly opened: boolean; readonly mode: 'native-gui' | 'app-window' | 'browser' | 'none' } => {
+const openUrlInUi = (url: string, parentPid: number): { readonly opened: boolean; readonly mode: 'native-gui' | 'app-window' | 'browser' | 'none' } => {
   const openDisabled =
     process.env.BRAINLINK_NO_BROWSER === '1' ||
     process.env.BRAINLINK_NO_BROWSER === 'true' ||
@@ -310,7 +357,7 @@ const openUrlInUi = (url: string): { readonly opened: boolean; readonly mode: 'n
     !envFlagEnabled('BRAINLINK_NO_NATIVE_GUI') &&
     (currentPlatform !== 'linux' || envFlagEnabled('BRAINLINK_LINUX_NATIVE_GUI') || envFlagEnabled('BRAINLINK_FORCE_NATIVE_GUI'))
 
-  if (nativeGuiEnabled && openGraphInNativeGui(url)) {
+  if (nativeGuiEnabled && openGraphInNativeGui(url, parentPid)) {
     return { opened: true, mode: 'native-gui' }
   }
 
@@ -594,7 +641,7 @@ export const registerWriteCommands = (program: Command): void => {
       shouldIndex: options.index,
       shouldWatch: Boolean(options.watch)
     })
-    const openResult = options.open !== false ? openUrlInUi(server.url) : { opened: false, mode: 'none' as const }
+    const openResult = options.open !== false ? openUrlInUi(server.url, process.pid) : { opened: false, mode: 'none' as const }
 
     print(
       options.json,

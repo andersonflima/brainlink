@@ -561,6 +561,7 @@ By default, `blink server` tries to open the graph in a native desktop GUI windo
 On Linux, native GUI is disabled by default for better startup performance. Enable it with `BRAINLINK_LINUX_NATIVE_GUI=1`.
 If native GUI launch is unavailable on your system, it falls back to dedicated app-window mode and then to the default browser.
 Use `--no-open` to keep it headless.
+When native GUI is used, the GUI window automatically closes when the `blink server` process stops.
 
 The graph UI shows:
 
