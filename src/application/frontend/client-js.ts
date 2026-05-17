@@ -573,7 +573,7 @@ const nodeBudgetForScale = (scale) => {
 const layerFocusForScale = (scale) => {
   const normalized = Math.max(0, Math.min(1, (scale - 0.06) / 0.94))
   const shellCenter = Math.max(0.08, 0.96 - normalized * 0.86)
-  const shellWidth = Math.max(0.16, 0.34 - normalized * 0.2)
+  const shellWidth = Math.max(0.24, 0.46 - normalized * 0.16)
   const coreRadius = Math.max(0.06, 0.1 + normalized * 0.22)
   const coreRatio = Math.max(0.2, Math.min(0.72, 0.24 + normalized * 0.48))
 
@@ -604,7 +604,7 @@ const selectLayeredNodesForScale = (sourceNodes, targetCount) => {
     ...item,
     normalized: item.distance / maxDistance
   }))
-  const desired = Math.max(220, Math.min(sourceNodes.length, targetCount * 2))
+  const desired = Math.max(260, Math.min(sourceNodes.length, targetCount * 2))
   const coreTarget = Math.max(36, Math.min(desired - 8, Math.floor(desired * focus.coreRatio)))
   const shellTarget = Math.max(12, desired - coreTarget)
   const shellHalf = focus.shellWidth / 2
@@ -651,6 +651,62 @@ const selectLayeredNodesForScale = (sourceNodes, targetCount) => {
   for (let index = 0; index < shellNodes.length; index += 1) pushUnique(shellNodes[index])
 
   return merged.length > 0 ? merged : sourceNodes
+}
+
+const cursorWorldPoint = () => {
+  if (!state.cursor.inCanvas) {
+    return null
+  }
+
+  const rect = canvas.getBoundingClientRect()
+  const screenX = state.cursor.x - rect.left
+  const screenY = state.cursor.y - rect.top
+  return {
+    x: (screenX - state.transform.x) / state.transform.scale,
+    y: (screenY - state.transform.y) / state.transform.scale
+  }
+}
+
+const mergeUniqueNodes = (leftNodes, rightNodes, limit) => {
+  const merged = []
+  const ids = new Set()
+
+  const push = (node) => {
+    if (!node || ids.has(node.id) || merged.length >= limit) {
+      return
+    }
+    ids.add(node.id)
+    merged.push(node)
+  }
+
+  for (let index = 0; index < leftNodes.length && merged.length < limit; index += 1) {
+    push(leftNodes[index])
+  }
+  for (let index = 0; index < rightNodes.length && merged.length < limit; index += 1) {
+    push(rightNodes[index])
+  }
+
+  return merged
+}
+
+const selectAccessBridgeNodes = (sourceNodes, limit) => {
+  if (limit <= 0 || sourceNodes.length === 0) {
+    return []
+  }
+
+  const cursor = cursorWorldPoint()
+  const anchor = cursor ?? state.primaryHub ?? state.macroCenter ?? { x: 0, y: 0 }
+  return [...sourceNodes]
+    .sort((left, right) => {
+      const leftDistance = Math.hypot(left.x - anchor.x, left.y - anchor.y)
+      const rightDistance = Math.hypot(right.x - anchor.x, right.y - anchor.y)
+      if (leftDistance !== rightDistance) return leftDistance - rightDistance
+      const leftDegree = state.nodeDegrees.get(left.id) ?? 0
+      const rightDegree = state.nodeDegrees.get(right.id) ?? 0
+      if (leftDegree !== rightDegree) return rightDegree - leftDegree
+      return left.id.localeCompare(right.id)
+    })
+    .slice(0, limit)
 }
 
 const edgeIdentityKey = edge => {
@@ -1672,9 +1728,15 @@ const computeRenderVisibility = () => {
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
     const layeredNodes = selectLayeredNodesForScale(sourceNodes, sampleLimit)
-    const sampled = layeredNodes.length > sampleLimit
-      ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget), layeredNodes)
-      : layeredNodes.slice(0, Math.min(layeredNodes.length, renderNodeBudget))
+    const bridgeLimit = Math.max(24, Math.min(180, Math.floor(sampleLimit * 0.26)))
+    const bridgedNodes = mergeUniqueNodes(
+      layeredNodes,
+      selectAccessBridgeNodes(sourceNodes, bridgeLimit),
+      Math.min(renderNodeBudget, sampleLimit + bridgeLimit)
+    )
+    const sampled = bridgedNodes.length > sampleLimit
+      ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget), bridgedNodes)
+      : bridgedNodes.slice(0, Math.min(bridgedNodes.length, renderNodeBudget))
     const sampledIds = new Set(sampled.map((node) => node.id))
     let sampledEdges = state.transform.scale >= 0.035 ? collectVisibleEdgesForNodes(sampledIds) : []
     let sampledNodes = ensureHubNodesInRenderedSet(sampled)
