@@ -38,6 +38,7 @@
 - Improved Linux browser fallback launch stability by auto-applying Chromium compatibility flags (`--ozone-platform=x11`, `--disable-gpu`, `--disable-features=Vulkan,VaapiVideoDecoder`, `--disable-background-networking`) for app-window/browser modes.
 - Improved massive-graph UI responsiveness with stricter render budgets, adaptive heavy-graph frame throttling, reduced interaction hit-test frequency, and URL-first agent selection on initial graph load.
 - Improved 50k+ graph LOD behavior so zoomed-out views render lightweight cluster overviews and progressively reveal nodes/edges only as zoom increases.
+- Added `blink bench` with realtime index phase telemetry and per-run compressed-pack analysis (input/output bytes, ratio, saved space, rebuild reason and duration), including continuous watch mode.
 
 ## 0.1.0-beta.3
 

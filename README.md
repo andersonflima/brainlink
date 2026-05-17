@@ -760,6 +760,25 @@ blink index --vault ./vault
 
 Rebuilds the local index from Markdown files.
 
+### `bench`
+
+```bash
+blink bench --vault ./vault
+blink bench --vault ./vault --watch
+blink bench --vault ./vault --watch --debounce 500
+blink bench --vault ./vault --json
+```
+
+Runs indexing with realtime phase telemetry (`start`, `scan`, `parse`, `embed`, `persist`, `packs`, `complete`) and prints a benchmark summary at the end of each run.
+
+Summary includes compression behavior for `.blpk` packs when rebuild happens:
+- pack rebuild reason
+- pack count and pack build duration
+- uncompressed input bytes vs compressed output bytes
+- saved percentage
+
+Use `--watch` to keep benchmarking incremental reindex runs after Markdown changes (local filesystem vaults only).
+
 ### `agents`
 
 ```bash

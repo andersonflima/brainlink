@@ -477,6 +477,24 @@ This scans Markdown files and rebuilds:
 - links
 - full-text search records
 
+### Benchmark Indexing Realtime
+
+```bash
+blink bench --vault ./vault
+blink bench --vault ./vault --watch
+blink bench --vault ./vault --watch --debounce 500
+blink bench --vault ./vault --json
+```
+
+`bench` runs indexing with realtime phase events and prints a run summary with:
+
+- indexed totals (documents, chunks, links)
+- elapsed time and changed document count
+- pack rebuild status and reason
+- pack compression metrics (`inputBytes`, `outputBytes`, ratio/saved percentage)
+
+Use `--watch` for continuous benchmark runs while editing notes. Watch mode is supported only for local filesystem vaults.
+
 ### Search Knowledge
 
 ```bash

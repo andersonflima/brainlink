@@ -31,6 +31,11 @@ export type ServerOptions = VaultOptions & {
   readonly watch?: boolean
 }
 
+export type BenchOptions = VaultOptions & {
+  readonly watch?: boolean
+  readonly debounce?: string
+}
+
 export type AddOptions = VaultOptions & {
   readonly content?: string
   readonly allowSensitive?: boolean

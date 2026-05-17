@@ -42,6 +42,20 @@ type SearchPackManifestV3 = {
 
 type SearchPackManifest = SearchPackManifestV2 | SearchPackManifestV3
 
+export type SearchPackCompressionMetrics = {
+  readonly inputBytes: number
+  readonly outputBytes: number
+  readonly ratio: number
+  readonly savedBytes: number
+}
+
+export type SearchPackBuildResult = {
+  readonly packCount: number
+  readonly recordCount: number
+  readonly compression: SearchPackCompressionMetrics
+  readonly durationMs: number
+}
+
 const packsDirectoryName = 'search-packs'
 const manifestFileName = 'manifest.json'
 const rowChunkSize = 5_000
@@ -315,7 +329,8 @@ const writeRowsAsPrivatePacks = async (
   vaultPath: string,
   rows: readonly SearchPackRow[],
   clearExisting: boolean
-): Promise<{ readonly packCount: number; readonly recordCount: number }> => {
+): Promise<SearchPackBuildResult> => {
+  const startedAt = process.hrtime.bigint()
   const directory = toPackDirectory(vaultPath)
   await mkdir(directory, { recursive: true })
 
@@ -330,6 +345,8 @@ const writeRowsAsPrivatePacks = async (
 
   const chunks = chunkRows(rows, rowChunkSize)
   const packIndex: SearchPackIndexEntry[] = []
+  let inputBytes = 0
+  let outputBytes = 0
 
   for (let index = 0; index < chunks.length; index += 1) {
     const chunk = chunks[index]
@@ -339,6 +356,8 @@ const writeRowsAsPrivatePacks = async (
     const tokenBloomB64 = bloomToBase64(bloomFromRows(chunk))
 
     await writeFile(join(directory, fileName), compressed)
+    inputBytes += Buffer.byteLength(serialized, 'utf8')
+    outputBytes += compressed.byteLength
     packIndex.push({
       fileName,
       recordCount: chunk.length,
@@ -356,9 +375,19 @@ const writeRowsAsPrivatePacks = async (
     packIndex
   })
 
+  const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000
+  const safeInput = Math.max(inputBytes, 1)
+  const savedBytes = Math.max(inputBytes - outputBytes, 0)
   return {
     packCount: chunks.length,
-    recordCount: rows.length
+    recordCount: rows.length,
+    compression: {
+      inputBytes,
+      outputBytes,
+      ratio: outputBytes / safeInput,
+      savedBytes
+    },
+    durationMs
   }
 }
 
@@ -412,13 +441,20 @@ const selectCandidatePackFiles = async (
 export const buildSearchPacks = async (
   vaultPath: string,
   documents: readonly IndexedDocument[]
-): Promise<{ readonly packCount: number; readonly recordCount: number }> => {
+): Promise<SearchPackBuildResult> => {
   return writeRowsAsPrivatePacks(vaultPath, toRows(documents), true)
 }
 
 export const ensurePrivatePacksFromLegacyIndex = async (
   vaultPath: string
-): Promise<{ readonly imported: boolean; readonly source?: 'legacy-packs'; readonly packCount?: number; readonly recordCount?: number }> => {
+): Promise<{
+  readonly imported: boolean
+  readonly source?: 'legacy-packs'
+  readonly packCount?: number
+  readonly recordCount?: number
+  readonly compression?: SearchPackCompressionMetrics
+  readonly durationMs?: number
+}> => {
   const files = await sortedPackFiles(vaultPath)
   if (files.some((file) => file.endsWith('.blpk'))) {
     return { imported: false }

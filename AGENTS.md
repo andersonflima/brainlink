@@ -83,6 +83,8 @@ Use watch mode while editing notes:
 ```bash
 npm run dev -- server --vault ./vault --watch
 npm run dev -- watch --vault ./vault
+npm run dev -- bench --vault ./vault
+npm run dev -- bench --vault ./vault --watch
 ```
 
 Start MCP over stdio:
