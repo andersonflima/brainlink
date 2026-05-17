@@ -7,6 +7,8 @@ const renderNodeBudget = 900
 const renderEdgeBudget = 2400
 const clusterActivationNodeThreshold = 600
 const clusterZoomThreshold = 0.18
+const macroGalaxyZoomThreshold = 0.012
+const massiveAutoFitMacroScale = 0.006
 const clusterCellPixelSize = 64
 const minNodePixelRadius = 2.3
 const viewportPaddingPx = 280
@@ -45,6 +47,8 @@ const state = {
   visibleNodeSpatial: { cellSize: 220, minX: 0, minY: 0, maxX: 0, maxY: 0, buckets: new Map() },
   visibleEdgeByNode: new Map(),
   overviewClusters: [],
+  macroCenter: { x: 0, y: 0 },
+  macroRepresentative: null,
   filterWorker: null,
   filterReady: false,
   lastHoverHitAt: 0
@@ -245,6 +249,26 @@ const filteredNodes = () => {
   return withPersistentHubNodes(localFilteredNodes(query))
 }
 
+const resolveMacroRepresentative = (nodes) => {
+  if (nodes.length === 0) {
+    return null
+  }
+
+  let best = nodes[0]
+  let bestDegree = state.nodeDegrees.get(best.id) ?? 0
+
+  for (let index = 1; index < nodes.length; index += 1) {
+    const node = nodes[index]
+    const degree = state.nodeDegrees.get(node.id) ?? 0
+    if (degree > bestDegree) {
+      best = node
+      bestDegree = degree
+    }
+  }
+
+  return best
+}
+
 const recomputeVisibility = () => {
   const nodes = filteredNodes()
   const ids = new Set(nodes.map(node => node.id))
@@ -260,6 +284,14 @@ const recomputeVisibility = () => {
   state.visibleNodeSpatial = createSpatialIndex(nodes)
   state.visibleEdgeByNode = createVisibleEdgeLookup(limitedEdges)
   state.overviewClusters = nodes.length > massiveGraphNodeThreshold ? buildOverviewClusters(nodes) : []
+  const bounds = graphBounds(nodes)
+  state.macroCenter = bounds
+    ? {
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2
+    }
+    : { x: 0, y: 0 }
+  state.macroRepresentative = resolveMacroRepresentative(nodes)
   markRenderDirty()
 }
 
@@ -607,7 +639,10 @@ const fitView = (options = { useFiltered: true }) => {
   const fitScale = Math.min(scaleX, scaleY)
   const biasedScale = clampScale(fitScale * fitScaleBiasByNodeCount(nodes.length))
   const scaleRange = autoFitScaleRangeByNodeCount(nodes.length)
-  const scale = clampScale(Math.min(scaleRange.max, Math.max(scaleRange.min, biasedScale)))
+  const baselineScale = clampScale(Math.min(scaleRange.max, Math.max(scaleRange.min, biasedScale)))
+  const scale = nodes.length > massiveGraphNodeThreshold
+    ? clampScale(Math.min(baselineScale, massiveAutoFitMacroScale))
+    : baselineScale
   const centerX = (bounds.minX + bounds.maxX) / 2
   const centerY = (bounds.minY + bounds.maxY) / 2
 
@@ -981,6 +1016,26 @@ const computeRenderVisibility = () => {
   if (state.visibleNodes.length > massiveGraphNodeThreshold) {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
+    if (state.transform.scale <= macroGalaxyZoomThreshold) {
+      const representative = state.macroRepresentative ?? sourceNodes[0] ?? null
+      if (representative) {
+        state.renderClusters = [
+          {
+            id: 'macro-galaxy',
+            x: state.macroCenter.x,
+            y: state.macroCenter.y,
+            count: sourceNodes.length,
+            representative
+          }
+        ]
+        state.renderNodes = [representative]
+      } else {
+        state.renderClusters = []
+        state.renderNodes = []
+      }
+      state.renderEdges = []
+      return
+    }
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
     const sampled = sourceNodes.length > sampleLimit
       ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget), sourceNodes)
@@ -1167,19 +1222,22 @@ const render = now => {
   if (state.renderClusters.length > 0) {
     const safeScale = Math.max(state.transform.scale, 0.0001)
     state.renderClusters.forEach(cluster => {
-      const radiusPx = Math.max(8, Math.min(28, 8 + Math.log2(cluster.count + 1) * 3))
+      const isMacro = cluster.id === 'macro-galaxy'
+      const radiusPx = isMacro
+        ? 10
+        : Math.max(8, Math.min(28, 8 + Math.log2(cluster.count + 1) * 3))
       const radius = radiusPx / safeScale
-      const haloRadius = (radiusPx + 4) / safeScale
+      const haloRadius = (radiusPx + (isMacro ? 8 : 4)) / safeScale
       ctx.beginPath()
       ctx.arc(cluster.x, cluster.y, haloRadius, 0, Math.PI * 2)
-      ctx.fillStyle = graphTheme.nodeHalo
+      ctx.fillStyle = isMacro ? 'rgba(243, 247, 251, 0.28)' : graphTheme.nodeHalo
       ctx.fill()
       ctx.beginPath()
       ctx.arc(cluster.x, cluster.y, radius, 0, Math.PI * 2)
-      ctx.fillStyle = graphTheme.node
+      ctx.fillStyle = isMacro ? '#f3f7fb' : graphTheme.node
       ctx.fill()
       ctx.lineWidth = 1.4 / safeScale
-      ctx.strokeStyle = graphTheme.nodeStroke
+      ctx.strokeStyle = isMacro ? '#ffffff' : graphTheme.nodeStroke
       ctx.stroke()
       // Keep cluster markers minimal and faster to draw on large graphs.
     })
