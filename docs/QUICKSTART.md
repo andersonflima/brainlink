@@ -102,3 +102,10 @@ S3 target:
 ```bash
 blink migrate-vault --from ~/.brainlink/vault --to "s3://my-memory-bucket/brainlink" --dry-run
 ```
+
+Legacy SQLite import:
+
+```bash
+blink db-import --vault ./team-vault
+blink db-import --vault ./team-vault --db ./legacy/brainlink.db --dry-run
+```
