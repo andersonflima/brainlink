@@ -25,6 +25,18 @@ const cli = async (args: readonly string[], cwd: string, env: Readonly<Record<st
   return stdout.trim()
 }
 
+const sqliteAvailable = async (): Promise<boolean> => {
+  try {
+    await execFileAsync('sqlite3', ['-version'])
+    return true
+  } catch {
+    return false
+  }
+}
+
+const sqliteEscape = (value: string): string =>
+  value.replaceAll("'", "''")
+
 const parseJson = <T>(value: string): T => JSON.parse(value) as T
 
 describe('brainlink cli integration', () => {
@@ -719,6 +731,50 @@ describe('brainlink cli integration', () => {
         })
       ])
     )
+  }, 20000)
+
+  it('imports legacy sqlite memory with db-import and writes markdown notes', async () => {
+    if (!(await sqliteAvailable())) {
+      return
+    }
+
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-legacy-import-vault-'))
+    const workspace = await mkdtemp(join(tmpdir(), 'brainlink-legacy-import-workspace-'))
+    const dbDirectory = join(vault, '.brainlink')
+    const dbPath = join(dbDirectory, 'brainlink.db')
+    tempPaths.push(vault, workspace)
+
+    await mkdir(dbDirectory, { recursive: true })
+    const sql = [
+      'CREATE TABLE legacy_notes (id INTEGER PRIMARY KEY, title TEXT, content TEXT, agent TEXT, tags TEXT, path TEXT);',
+      `INSERT INTO legacy_notes (title, content, agent, tags, path) VALUES ('${sqliteEscape('API Architecture')}', '${sqliteEscape('Legacy context from sqlite. #legacy')}', '${sqliteEscape('shared')}', '${sqliteEscape('architecture,legacy')}', '${sqliteEscape('legacy/api-architecture.md')}');`,
+      `INSERT INTO legacy_notes (title, content, agent, tags, path) VALUES ('${sqliteEscape('Ops Runbook')}', '${sqliteEscape('Operational playbook with [[API Architecture]].')}', '${sqliteEscape('ops-agent')}', '${sqliteEscape('ops,runbook')}', '${sqliteEscape('legacy/ops-runbook.md')}');`
+    ].join(' ')
+    await execFileAsync('sqlite3', [dbPath, sql], { cwd: workspace })
+
+    const imported = parseJson<{
+      table: string
+      rowsRead: number
+      imported: number
+      skipped: number
+      createdSystemNotes: number
+      importedFiles: readonly string[]
+      index: { documentCount: number; linkCount: number }
+    }>(await cli(['db-import', '--vault', vault, '--db', dbPath, '--json'], workspace))
+
+    expect(imported.table).toBe('legacy_notes')
+    expect(imported.rowsRead).toBe(2)
+    expect(imported.imported).toBe(2)
+    expect(imported.skipped).toBe(0)
+    expect(imported.importedFiles.length).toBe(2)
+    expect(imported.index.documentCount).toBeGreaterThanOrEqual(2)
+    expect(imported.index.linkCount).toBeGreaterThan(0)
+
+    const files = await readdir(join(vault, 'agents', 'shared'))
+    expect(files).toEqual(expect.arrayContaining([expect.stringMatching(/^api-architecture.*\.md$/)]))
+
+    const importedContent = await readFile(join(vault, imported.importedFiles[0]), 'utf8')
+    expect(importedContent).toContain('Legacy context from sqlite')
   }, 20000)
 
   it('prints the package version', async () => {

@@ -377,6 +377,18 @@ blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --report ./migra
 
 Use `--dry-run` to preview `copied`, `conflicted`, `unchanged` before writing files.
 
+### Import Legacy SQLite DB
+
+```bash
+blink db-import --vault ./team-vault
+blink db-import --vault ./team-vault --db ./legacy/brainlink.db
+blink db-import --vault ./team-vault --db ./legacy/brainlink.db --table legacy_notes --dry-run
+```
+
+`db-import` migrates rows from legacy SQLite memory into Markdown notes in the current vault and indexes the result by default.
+Without `--db`, Brainlink auto-detects common legacy database paths.
+Use `--agent` to force namespace, `--limit` for staged migration, `--dry-run` to preview writes, and `--no-index` to postpone indexing.
+
 ### Install Agent Integration
 
 ```bash

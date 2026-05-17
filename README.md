@@ -668,6 +668,18 @@ blink migrate-vault --from ~/.brainlink/vault --to ./team-vault --report ./migra
 Runs explicit markdown migration between vaults while preserving conflicts as `.conflict-<timestamp>` files.  
 Use `--dry-run` to preview `copied`, `conflicted` and `unchanged` counts before writing.
 
+### `db-import`
+
+```bash
+blink db-import --vault ./team-vault
+blink db-import --vault ./team-vault --db ./legacy/brainlink.db
+blink db-import --vault ./team-vault --db ./legacy/brainlink.db --table legacy_notes --dry-run
+```
+
+Imports durable memory from a legacy SQLite database into Markdown notes (`agents/<agent-id>/*.md`) and reindexes by default.
+When `--db` is omitted, Brainlink auto-detects common legacy paths such as `<vault>/.brainlink/brainlink.db`.
+Use `--agent <id>` to force all imported rows into one namespace, `--limit` for incremental imports, `--dry-run` to preview without writing files, and `--no-index` to defer reindexing.
+
 ### `init`
 
 ```bash
