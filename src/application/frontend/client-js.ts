@@ -26,7 +26,9 @@ const state = {
   cursor: { x: 0, y: 0, inCanvas: false },
   graphSignature: '',
   graphStatus: '',
-  last: performance.now()
+  last: performance.now(),
+  offscreenFrameCount: 0,
+  recoveringViewport: false
 }
 
 const byId = id => document.getElementById(id)
@@ -130,6 +132,7 @@ const recomputeVisibility = () => {
 const edgeWeight = edge => Number.isFinite(edge.weight) ? Math.max(1, edge.weight) : 1
 
 const clampScale = value => Math.max(zoomRange.min, Math.min(zoomRange.max, value))
+const isFiniteNumber = value => Number.isFinite(value)
 
 const graphBounds = nodes => {
   if (nodes.length === 0) return null
@@ -157,14 +160,25 @@ const graphBounds = nodes => {
 }
 
 const fitScaleBiasByNodeCount = nodeCount => {
-  if (nodeCount <= 6) return 2.8
-  if (nodeCount <= 20) return 2.2
-  if (nodeCount <= 60) return 1.72
-  if (nodeCount <= 180) return 1.34
-  if (nodeCount <= 600) return 1.08
-  if (nodeCount <= 2000) return 0.9
-  if (nodeCount <= 6000) return 0.72
-  return 0.58
+  if (nodeCount <= 6) return 1.22
+  if (nodeCount <= 20) return 1.12
+  if (nodeCount <= 60) return 1.04
+  if (nodeCount <= 180) return 1
+  if (nodeCount <= 600) return 0.94
+  if (nodeCount <= 2000) return 0.82
+  if (nodeCount <= 6000) return 0.68
+  return 0.56
+}
+
+const autoFitScaleRangeByNodeCount = nodeCount => {
+  if (nodeCount <= 6) return { min: 0.4, max: 2.2 }
+  if (nodeCount <= 20) return { min: 0.34, max: 1.65 }
+  if (nodeCount <= 60) return { min: 0.25, max: 1.22 }
+  if (nodeCount <= 180) return { min: 0.18, max: 0.92 }
+  if (nodeCount <= 600) return { min: 0.12, max: 0.72 }
+  if (nodeCount <= 2000) return { min: 0.08, max: 0.52 }
+  if (nodeCount <= 6000) return { min: 0.06, max: 0.32 }
+  return { min: zoomRange.min, max: 0.24 }
 }
 
 const fitView = (options = { useFiltered: true }) => {
@@ -188,25 +202,13 @@ const fitView = (options = { useFiltered: true }) => {
     if (nodeCount <= 2000) return 140
     return 180
   }
-  const minFitScaleByNodeCount = nodeCount => {
-    if (nodeCount <= 6) return 2.4
-    if (nodeCount <= 20) return 1.8
-    if (nodeCount <= 60) return 1.2
-    if (nodeCount <= 180) return 0.86
-    if (nodeCount <= 600) return 0.58
-    if (nodeCount <= 2000) return 0.34
-    if (nodeCount <= 6000) return 0.2
-    return 0.13
-  }
-
   const padding = paddingByNodeCount(nodes.length)
   const scaleX = width / (bounds.width + padding * 2)
   const scaleY = height / (bounds.height + padding * 2)
-  const fitScale = clampScale(Math.min(scaleX, scaleY))
+  const fitScale = Math.min(scaleX, scaleY)
   const biasedScale = clampScale(fitScale * fitScaleBiasByNodeCount(nodes.length))
-  const minimumScale = minFitScaleByNodeCount(nodes.length)
-  const minimumLargeGraphScale = nodes.length > largeGraphNodeThreshold ? 0.13 : zoomRange.min
-  const scale = Math.max(biasedScale, minimumScale, minimumLargeGraphScale)
+  const scaleRange = autoFitScaleRangeByNodeCount(nodes.length)
+  const scale = clampScale(Math.min(scaleRange.max, Math.max(scaleRange.min, biasedScale)))
   const centerX = (bounds.minX + bounds.maxX) / 2
   const centerY = (bounds.minY + bounds.maxY) / 2
 
@@ -328,8 +330,8 @@ const tick = delta => {
     const dy = target.y - source.y
     const distance = Math.max(Math.hypot(dx, dy), 1)
     const force = (distance - 150) * 0.002 * strength
-    const fx = dx * force
-    const fy = dy * force
+    const fx = (dx / distance) * force
+    const fy = (dy / distance) * force
     source.vx += fx
     source.vy += fy
     target.vx -= fx
@@ -502,6 +504,38 @@ const computeRenderVisibility = () => {
   state.renderEdges = edges
 }
 
+const isNodeVisibleOnScreen = (node, width, height) => {
+  const radius = nodeRadius(node) * state.transform.scale
+  const screenX = node.x * state.transform.scale + state.transform.x
+  const screenY = node.y * state.transform.scale + state.transform.y
+
+  return (
+    screenX + radius >= 0 &&
+    screenX - radius <= width &&
+    screenY + radius >= 0 &&
+    screenY - radius <= height
+  )
+}
+
+const hasValidTransform = () =>
+  isFiniteNumber(state.transform.x) &&
+  isFiniteNumber(state.transform.y) &&
+  isFiniteNumber(state.transform.scale) &&
+  state.transform.scale > 0
+
+const sanitizeNodePosition = node => {
+  if (!isFiniteNumber(node.x)) node.x = 0
+  if (!isFiniteNumber(node.y)) node.y = 0
+  if (!isFiniteNumber(node.vx)) node.vx = 0
+  if (!isFiniteNumber(node.vy)) node.vy = 0
+}
+
+const sanitizeGraphState = () => {
+  state.nodes.forEach(sanitizeNodePosition)
+  state.visibleNodes.forEach(sanitizeNodePosition)
+  state.renderNodes.forEach(sanitizeNodePosition)
+}
+
 const render = now => {
   const delta = now - state.last
   state.last = now
@@ -513,6 +547,10 @@ const render = now => {
   const rect = canvas.getBoundingClientRect()
   const width = Math.max(rect.width, 320)
   const height = Math.max(rect.height, 320)
+  sanitizeGraphState()
+  if (!hasValidTransform()) {
+    resetView()
+  }
   ctx.clearRect(0, 0, width, height)
   if (state.nodes.length === 0) {
     ctx.fillStyle = '#99a5b5'
@@ -528,6 +566,20 @@ const render = now => {
 
   computeRenderVisibility()
   tick(delta)
+  const hasVisibleNodeOnScreen = state.renderNodes.some((node) => isNodeVisibleOnScreen(node, width, height))
+  if (!hasVisibleNodeOnScreen && state.renderNodes.length > 0) {
+    state.offscreenFrameCount += 1
+    if (state.offscreenFrameCount >= 6 && !state.recoveringViewport) {
+      state.recoveringViewport = true
+      fitView({ useFiltered: true })
+      state.offscreenFrameCount = 0
+      requestAnimationFrame(() => {
+        state.recoveringViewport = false
+      })
+    }
+  } else {
+    state.offscreenFrameCount = 0
+  }
   const drawEdges = !(state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.22)
   if (drawEdges) {
     state.renderEdges.forEach(edge => {
@@ -695,6 +747,10 @@ const isScreenPointInsideCanvas = (screenX, screenY) => {
 }
 
 const handleWheelZoom = event => {
+  if (elements.contentDialog?.open) {
+    return
+  }
+
   if (!isScreenPointInsideCanvas(event.clientX, event.clientY)) {
     return
   }

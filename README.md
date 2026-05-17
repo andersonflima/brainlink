@@ -553,8 +553,13 @@ blink server --host 127.0.0.1 --port 4321 --watch
 ```
 
 By default, the server uses `$HOME/.brainlink/vault`. Pass `--vault ./vault` only when you want to inspect a custom vault.
-By default, `blink server` tries to open the graph in a dedicated app window (`--app=<url>` on compatible browsers).  
-If app-window launch is unavailable, it falls back to the default browser. Use `--no-open` to keep it headless.
+By default, `blink server` tries to open the graph in a native desktop GUI window:
+- macOS: Swift + WebKit
+- Windows: PowerShell WinForms WebBrowser
+- Linux: Python GTK + WebKit2 (requires `python3` + `gi` + `WebKit2`)
+
+If native GUI launch is unavailable on your system, it falls back to dedicated app-window mode and then to the default browser.
+Use `--no-open` to keep it headless.
 
 The graph UI shows:
 
@@ -844,7 +849,8 @@ blink server --vault ./vault --watch --no-open
 ```
 
 Starts the local read-only graph UI and HTTP API.
-By default, it tries to open a dedicated app window for the graph URL and falls back to browser open when app-window mode is unavailable.
+By default, it tries to open a native desktop GUI window for the graph URL.
+If native GUI launch is unavailable, it falls back to dedicated app-window mode and then browser open.
 Use `--no-open` to skip that behavior.
 
 The HTTP server only binds to loopback hosts such as `127.0.0.1`, `localhost` or `::1`.
