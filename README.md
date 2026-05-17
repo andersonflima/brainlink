@@ -565,6 +565,8 @@ The graph UI shows:
 - realtime refresh while `--watch` is enabled
 - graph controls for zoom in, zoom out, fit visible nodes and reset-to-fit-all
 - wheel zoom (including `cmd+scroll` and `ctrl+scroll`) anchored to cursor position for faster navigation in large graphs
+- keyboard shortcuts: `+` zoom in, `-` zoom out, `0` reset fit
+- double-click on canvas zooms in at cursor position
 - floating graph totals (notes, links, tags) below the Brainlink title
 - large-graph rendering safeguards (edge draw caps, lower redraw rate, zoom-aware interaction)
 
