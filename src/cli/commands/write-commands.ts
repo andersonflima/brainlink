@@ -169,6 +169,9 @@ const commandExists = (command: string): boolean => {
   }
 }
 
+const envFlagEnabled = (name: string): boolean =>
+  process.env[name] === '1' || process.env[name] === 'true'
+
 const resolveSwiftExecutable = (): string | null => {
   const directSwift = '/usr/bin/swift'
   if (existsSync(directSwift)) {
@@ -302,7 +305,12 @@ const openUrlInUi = (url: string): { readonly opened: boolean; readonly mode: 'n
     return { opened: false, mode: 'none' }
   }
 
-  if (openGraphInNativeGui(url)) {
+  const currentPlatform = platform()
+  const nativeGuiEnabled =
+    !envFlagEnabled('BRAINLINK_NO_NATIVE_GUI') &&
+    (currentPlatform !== 'linux' || envFlagEnabled('BRAINLINK_LINUX_NATIVE_GUI') || envFlagEnabled('BRAINLINK_FORCE_NATIVE_GUI'))
+
+  if (nativeGuiEnabled && openGraphInNativeGui(url)) {
     return { opened: true, mode: 'native-gui' }
   }
 
