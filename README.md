@@ -560,11 +560,11 @@ The graph UI shows:
 - `[[wiki links]]` as weighted edges
 - details opened on node click (tags, outgoing links, backlinks, full Markdown content)
 - neutral graph nodes with segment/group metadata
-- agent selector for isolated views
+- agent selector (id-only labels) for isolated views
 - graph filter matches title, path, tags and note content
 - realtime refresh while `--watch` is enabled
 - graph controls for zoom in, zoom out, fit visible nodes and reset-to-fit-all
-- wheel zoom anchored to cursor position for faster navigation in large graphs
+- wheel zoom (including `cmd+scroll` and `ctrl+scroll`) anchored to cursor position for faster navigation in large graphs
 - floating graph totals (notes, links, tags) below the Brainlink title
 - large-graph rendering safeguards (edge draw caps, lower redraw rate, zoom-aware interaction)
 
