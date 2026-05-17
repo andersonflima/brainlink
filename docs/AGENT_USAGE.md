@@ -548,6 +548,7 @@ By default it tries to open the graph in a native desktop GUI window:
 On Linux, native GUI is disabled by default for better startup performance. Enable it with `BRAINLINK_LINUX_NATIVE_GUI=1`.
 If native GUI launch is unavailable, it falls back to dedicated app-window mode and then to the default browser.
 Use `--no-open` to keep the server headless.
+When native GUI is active, the GUI window closes automatically when the `blink server` process stops.
 
 Without `--vault`, the graph UI serves `$HOME/.brainlink/vault`.
 
