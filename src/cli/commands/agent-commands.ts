@@ -14,6 +14,7 @@ import {
 } from '../../infrastructure/session-state.js'
 import { print } from '../runtime.js'
 import type { AgentInstallOptions, AgentPolicyOptions, AgentStatusOptions } from '../types.js'
+import type { BootstrapPolicy } from '../../infrastructure/session-state.js'
 
 type MarketplacePluginEntry = {
   readonly name: string
@@ -215,6 +216,7 @@ type InstallAgentIntegrationResult = {
   readonly codexConfigPath: string
   readonly mcpServer: 'brainlink'
   readonly command: 'brainlink-mcp'
+  readonly bootstrapPolicy: BootstrapPolicy
   readonly pluginSourcePath?: string
   readonly pluginSymlinkPath?: string
   readonly marketplacePath?: string
@@ -232,6 +234,13 @@ type InstallAgentIntegrationResult = {
 export const installAgentIntegration = async (input: InstallAgentIntegrationInput): Promise<InstallAgentIntegrationResult> => {
   const codexConfigPath = getCodexConfigPath()
   const allowedVaults = parseAllowedVaults(input.allowedVaults)
+  const bootstrapPolicy = await setBootstrapPolicy({
+    enforceBootstrap: true,
+    enforceContextFirst: true,
+    autoBootstrapOnRead: true,
+    autoBootstrapOnStartup: true
+  })
+
   await upsertCodexMcpConfig(codexConfigPath, {
     allowedVaults,
     brainlinkHome: input.brainlinkHome
@@ -294,6 +303,7 @@ export const installAgentIntegration = async (input: InstallAgentIntegrationInpu
     codexConfigPath,
     mcpServer: 'brainlink',
     command: 'brainlink-mcp',
+    bootstrapPolicy,
     ...(input.mcpOnly !== true ? { pluginSourcePath, pluginSymlinkPath, marketplacePath } : {}),
     ...(selfTestResult ? { selfTest: selfTestResult } : {}),
     ...(warnings.length > 0 ? { warnings } : {})
