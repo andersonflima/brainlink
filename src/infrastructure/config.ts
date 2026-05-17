@@ -17,6 +17,13 @@ export const defaultBrainlinkConfig: BrainlinkConfig = {
   embeddingProvider: 'local',
   defaultSearchMode: 'hybrid',
   chunkSize: 1200,
+  searchPack: {
+    rowChunkSize: 5_000,
+    compressionLevel: 5,
+    useDictionary: true,
+    guardrailMinSavingsPercent: 8,
+    guardrailMaxLatencyRegressionPercent: 5
+  },
   agentProfiles: {}
 }
 
@@ -54,6 +61,43 @@ const sanitizeAllowedVaults = (value: unknown): readonly string[] =>
 
 const sanitizePositiveNumber = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
+
+const sanitizeIntegerInRange = (value: unknown, fallback: number, minimum: number, maximum: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback
+  }
+
+  const rounded = Math.round(value)
+  if (rounded < minimum) {
+    return minimum
+  }
+  if (rounded > maximum) {
+    return maximum
+  }
+
+  return rounded
+}
+
+const sanitizeSearchPackConfig = (value: unknown): BrainlinkConfig['searchPack'] => {
+  const fallback = defaultBrainlinkConfig.searchPack
+  if (!isRecord(value)) {
+    return fallback
+  }
+
+  return {
+    rowChunkSize: sanitizeIntegerInRange(value.rowChunkSize, fallback.rowChunkSize, 100, 100_000),
+    compressionLevel: sanitizeIntegerInRange(value.compressionLevel, fallback.compressionLevel, 0, 11),
+    useDictionary: typeof value.useDictionary === 'boolean' ? value.useDictionary : fallback.useDictionary,
+    guardrailMinSavingsPercent:
+      typeof value.guardrailMinSavingsPercent === 'number' && Number.isFinite(value.guardrailMinSavingsPercent)
+        ? Math.max(0, Math.min(95, value.guardrailMinSavingsPercent))
+        : fallback.guardrailMinSavingsPercent,
+    guardrailMaxLatencyRegressionPercent:
+      typeof value.guardrailMaxLatencyRegressionPercent === 'number' && Number.isFinite(value.guardrailMaxLatencyRegressionPercent)
+        ? Math.max(0, Math.min(300, value.guardrailMaxLatencyRegressionPercent))
+        : fallback.guardrailMaxLatencyRegressionPercent
+  }
+}
 
 const sanitizeAgentProfile = (value: unknown): AgentProfileConfig | null => {
   if (!isRecord(value)) {
@@ -181,6 +225,7 @@ const sanitizeConfig = (value: Partial<BrainlinkConfig>): BrainlinkConfig => ({
       : defaultBrainlinkConfig.defaultContextTokens,
   allowedVaults: [...sanitizeAllowedVaults(value.allowedVaults), ...readAllowedVaultsFromEnv()],
   chunkSize: typeof value.chunkSize === 'number' && value.chunkSize > 0 ? value.chunkSize : defaultBrainlinkConfig.chunkSize,
+  searchPack: sanitizeSearchPackConfig(value.searchPack),
   embeddingProvider: sanitizeEmbeddingProvider(value.embeddingProvider),
   defaultSearchMode: sanitizeSearchMode(value.defaultSearchMode),
   agentProfiles: sanitizeAgentProfiles(value.agentProfiles)

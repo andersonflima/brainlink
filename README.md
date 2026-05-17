@@ -58,6 +58,7 @@ LLMs do not have infinite context. Brainlink gives agents an external memory lay
 
 Markdown is the source of truth. `.brainlink/index.json` is a rebuildable index artifact.
 After each index run, Brainlink also writes private encrypted search packs at `.brainlink/search-packs/*.blpk` to preserve fast retrieval and portable recovery.
+Online retrieval always uses a single compression stage per pack; optional second-stage compression is reserved for offline backup artifacts only.
 Pack decryption uses a Brainlink key from `$BRAINLINK_HOME/keys` or from `BRAINLINK_SEARCH_PACK_KEY` when explicitly configured.
 Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/context access.
 
@@ -776,8 +777,20 @@ Summary includes compression behavior for `.blpk` packs when rebuild happens:
 - pack count and pack build duration
 - uncompressed input bytes vs compressed output bytes
 - saved percentage
+- objective guardrails (minimum savings and maximum latency regression thresholds)
 
 Use `--watch` to keep benchmarking incremental reindex runs after Markdown changes (local filesystem vaults only).
+
+### `pack-backup`
+
+```bash
+blink pack-backup --vault ./vault
+blink pack-backup --vault ./vault --output ./vault/.brainlink/backups/custom.blpkbak.gz
+blink pack-backup --vault ./vault --json
+```
+
+Creates an offline backup artifact of encrypted search packs with a second compression pass.
+This is intentionally outside the online retrieval path (`index`, `search`, `context`).
 
 ### `agents`
 
@@ -951,6 +964,13 @@ If no `vault` is configured and no `--vault` flag is passed, Brainlink uses `$HO
   "embeddingProvider": "local",
   "defaultSearchMode": "hybrid",
   "chunkSize": 1200,
+  "searchPack": {
+    "rowChunkSize": 5000,
+    "compressionLevel": 5,
+    "useDictionary": true,
+    "guardrailMinSavingsPercent": 8,
+    "guardrailMaxLatencyRegressionPercent": 5
+  },
   "agentProfiles": {
     "coding-agent": {
       "defaultSearchMode": "semantic",

@@ -9,7 +9,7 @@ import { ensureVault, readMarkdownFileSummaries } from '../infrastructure/file-s
 import type { IndexedFileSnapshot } from '../infrastructure/index-state.js'
 import { readIndexState, writeIndexState } from '../infrastructure/index-state.js'
 import type { SearchPackBuildResult } from '../infrastructure/search-packs.js'
-import { buildSearchPacks } from '../infrastructure/search-packs.js'
+import { buildSearchPacks, toSearchPackBuildOptions } from '../infrastructure/search-packs.js'
 import { openFileIndex } from '../infrastructure/file-index.js'
 
 export type IndexVaultResult = {
@@ -247,6 +247,11 @@ export const indexVaultWithOptions = async (vaultPath: string, options: IndexVau
       previousState == null ||
       previousState.chunkSize !== config.chunkSize ||
       previousState.embeddingProvider !== config.embeddingProvider
+    const packSettingsChanged =
+      previousState == null ||
+      previousState.searchPackRowChunkSize !== config.searchPack.rowChunkSize ||
+      previousState.searchPackCompressionLevel !== config.searchPack.compressionLevel ||
+      previousState.searchPackUseDictionary !== config.searchPack.useDictionary
     const changedPaths = new Set<string>()
 
     for (let index = 0; index < summaries.length; index += 1) {
@@ -352,6 +357,7 @@ export const indexVaultWithOptions = async (vaultPath: string, options: IndexVau
     const shouldRebuildPacks =
       !existingPackManifest ||
       settingsChanged ||
+      packSettingsChanged ||
       hasDeletes ||
       changedCount >= 400 ||
       changeRatio >= 0.04 ||
@@ -362,6 +368,8 @@ export const indexVaultWithOptions = async (vaultPath: string, options: IndexVau
       ? 'Missing pack manifest'
       : settingsChanged
         ? 'Index settings changed'
+        : packSettingsChanged
+          ? 'Search pack settings changed'
         : hasDeletes
           ? 'Document deletions detected'
           : changedCount >= 400
@@ -376,7 +384,7 @@ export const indexVaultWithOptions = async (vaultPath: string, options: IndexVau
         reason: packReason
       })
       try {
-        packResult = await buildSearchPacks(absoluteVaultPath, indexedDocuments)
+        packResult = await buildSearchPacks(absoluteVaultPath, indexedDocuments, toSearchPackBuildOptions(config))
         emit('packs', 'finish', 'Compressed packs rebuilt', {
           reason: packReason,
           packCount: packResult.packCount,
@@ -402,6 +410,9 @@ export const indexVaultWithOptions = async (vaultPath: string, options: IndexVau
     await writeIndexState(absoluteVaultPath, {
       chunkSize: config.chunkSize,
       embeddingProvider: config.embeddingProvider,
+      searchPackRowChunkSize: config.searchPack.rowChunkSize,
+      searchPackCompressionLevel: config.searchPack.compressionLevel,
+      searchPackUseDictionary: config.searchPack.useDictionary,
       files: currentSnapshot,
       pendingPackChanges: packsRebuilt ? 0 : pendingPackChanges
     })
