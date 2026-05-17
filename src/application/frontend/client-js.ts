@@ -570,16 +570,17 @@ const nodeBudgetForScale = (scale) => {
   return renderNodeBudget
 }
 
-const layerWindowForScale = (scale) => {
+const layerFocusForScale = (scale) => {
   const normalized = Math.max(0, Math.min(1, (scale - 0.06) / 0.94))
-  const outer = Math.max(0.14, 1 - normalized * 0.86)
-  const band = Math.max(0.14, 0.26 - normalized * 0.12)
-  const inner = Math.max(0, outer - band)
+  const shellCenter = Math.max(0.08, 0.96 - normalized * 0.86)
+  const shellWidth = Math.max(0.16, 0.34 - normalized * 0.2)
+  const coreRadius = Math.max(0.06, 0.1 + normalized * 0.22)
+  const coreRatio = Math.max(0.2, Math.min(0.72, 0.24 + normalized * 0.48))
 
-  return { inner, outer }
+  return { shellCenter, shellWidth, coreRadius, coreRatio }
 }
 
-const selectLayeredNodesForScale = (sourceNodes) => {
+const selectLayeredNodesForScale = (sourceNodes, targetCount) => {
   const hub = state.primaryHub
   if (!hub || sourceNodes.length <= 1200 || state.visibleNodes.length <= massiveGraphNodeThreshold) {
     return sourceNodes
@@ -598,39 +599,58 @@ const selectLayeredNodesForScale = (sourceNodes) => {
     return sourceNodes
   }
 
-  const window = layerWindowForScale(state.transform.scale)
-  const inner = window.inner * maxDistance
-  const outer = window.outer * maxDistance
-  const layered = distances
-    .filter((item) => item.distance >= inner && item.distance <= outer)
-    .map((item) => item.node)
+  const focus = layerFocusForScale(state.transform.scale)
+  const normalizedRows = distances.map((item) => ({
+    ...item,
+    normalized: item.distance / maxDistance
+  }))
+  const desired = Math.max(220, Math.min(sourceNodes.length, targetCount * 2))
+  const coreTarget = Math.max(36, Math.min(desired - 8, Math.floor(desired * focus.coreRatio)))
+  const shellTarget = Math.max(12, desired - coreTarget)
+  const shellHalf = focus.shellWidth / 2
 
-  if (state.transform.scale >= layeredCoreScaleThreshold && !layered.some((node) => node.id === hub.id)) {
-    layered.push(hub)
-  }
-
-  if (layered.length > 0) {
-    return layered
-  }
-
-  const midpoint = (window.inner + window.outer) / 2
-  const fallback = [...distances]
+  const coreNodes = normalizedRows
+    .filter((item) => item.normalized <= focus.coreRadius)
     .sort((left, right) => {
-      const leftNorm = left.distance / maxDistance
-      const rightNorm = right.distance / maxDistance
-      const leftDelta = Math.abs(leftNorm - midpoint)
-      const rightDelta = Math.abs(rightNorm - midpoint)
-      if (leftDelta !== rightDelta) return leftDelta - rightDelta
+      const leftScore = state.nodeDegrees.get(left.node.id) ?? 0
+      const rightScore = state.nodeDegrees.get(right.node.id) ?? 0
+      if (leftScore !== rightScore) return rightScore - leftScore
       return left.node.id.localeCompare(right.node.id)
     })
-    .slice(0, Math.min(900, sourceNodes.length))
+    .slice(0, coreTarget)
     .map((item) => item.node)
 
-  if (state.transform.scale >= layeredCoreScaleThreshold && !fallback.some((node) => node.id === hub.id)) {
-    fallback.push(hub)
+  const shellNodes = normalizedRows
+    .sort((left, right) => {
+      const leftDelta = Math.abs(left.normalized - focus.shellCenter)
+      const rightDelta = Math.abs(right.normalized - focus.shellCenter)
+      const leftInside = leftDelta <= shellHalf ? 0 : 1
+      const rightInside = rightDelta <= shellHalf ? 0 : 1
+      if (leftInside !== rightInside) return leftInside - rightInside
+      if (leftDelta !== rightDelta) return leftDelta - rightDelta
+      const leftScore = state.nodeDegrees.get(left.node.id) ?? 0
+      const rightScore = state.nodeDegrees.get(right.node.id) ?? 0
+      if (leftScore !== rightScore) return rightScore - leftScore
+      return left.node.id.localeCompare(right.node.id)
+    })
+    .slice(0, shellTarget)
+    .map((item) => item.node)
+
+  const merged = []
+  const ids = new Set()
+  const pushUnique = (node) => {
+    if (!node || ids.has(node.id)) return
+    ids.add(node.id)
+    merged.push(node)
   }
 
-  return fallback
+  if (state.transform.scale >= layeredCoreScaleThreshold) {
+    pushUnique(hub)
+  }
+  for (let index = 0; index < coreNodes.length; index += 1) pushUnique(coreNodes[index])
+  for (let index = 0; index < shellNodes.length; index += 1) pushUnique(shellNodes[index])
+
+  return merged.length > 0 ? merged : sourceNodes
 }
 
 const edgeIdentityKey = edge => {
@@ -1650,8 +1670,8 @@ const computeRenderVisibility = () => {
   if (state.visibleNodes.length > massiveGraphNodeThreshold) {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
-    const layeredNodes = selectLayeredNodesForScale(sourceNodes)
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
+    const layeredNodes = selectLayeredNodesForScale(sourceNodes, sampleLimit)
     const sampled = layeredNodes.length > sampleLimit
       ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget), layeredNodes)
       : layeredNodes.slice(0, Math.min(layeredNodes.length, renderNodeBudget))
