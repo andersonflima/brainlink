@@ -1,13 +1,19 @@
 export const createClientJs = (): string => `const canvas = document.getElementById('graph')
 const ctx = canvas.getContext('2d')
 const largeGraphNodeThreshold = 4000
+const massiveGraphNodeThreshold = 20000
 const largeGraphEdgeRenderLimit = 16000
-const renderNodeBudget = 1800
-const renderEdgeBudget = 5200
-const minNodePixelRadius = 1.8
+const renderNodeBudget = 900
+const renderEdgeBudget = 2400
+const clusterActivationNodeThreshold = 600
+const clusterZoomThreshold = 0.18
+const clusterCellPixelSize = 64
+const minNodePixelRadius = 2.3
 const viewportPaddingPx = 280
 const worldCoordinateLimit = 5_000_000
 const transformCoordinateLimit = 20_000_000
+const hoverHitTestIntervalMs = 64
+const overviewClusterMaxCount = 1400
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
@@ -16,6 +22,7 @@ const state = {
   visibleEdges: [],
   renderNodes: [],
   renderEdges: [],
+  renderClusters: [],
   nodeDegrees: new Map(),
   selected: null,
   hovered: null,
@@ -29,13 +36,18 @@ const state = {
   cursor: { x: 0, y: 0, inCanvas: false },
   graphSignature: '',
   graphStatus: '',
+  graphTotals: { nodes: 0, edges: 0 },
   last: performance.now(),
   offscreenFrameCount: 0,
   recoveringViewport: false,
   renderVisibilityDirty: true,
   lastViewportKey: '',
   visibleNodeSpatial: { cellSize: 220, minX: 0, minY: 0, maxX: 0, maxY: 0, buckets: new Map() },
-  visibleEdgeByNode: new Map()
+  visibleEdgeByNode: new Map(),
+  overviewClusters: [],
+  filterWorker: null,
+  filterReady: false,
+  lastHoverHitAt: 0
 }
 
 const byId = id => document.getElementById(id)
@@ -66,9 +78,19 @@ const elements = {
 }
 
 const zoomRange = {
-  min: 0.05,
+  min: 0.0002,
   max: 4.5
 }
+
+const initialAgentFromUrl = (() => {
+  try {
+    const raw = new URL(window.location.href).searchParams.get('agent')
+    const value = raw?.trim() ?? ''
+    return value.length > 0 ? value : ''
+  } catch {
+    return ''
+  }
+})()
 
 const agentQuery = (separator = '?') => state.agentId ? separator + 'agent=' + encodeURIComponent(state.agentId) : ''
 
@@ -93,6 +115,67 @@ const graphTheme = {
   label: '#edf2f7'
 }
 
+const initFilterWorker = () => {
+  if (typeof Worker === 'undefined') {
+    return
+  }
+  try {
+    const worker = new Worker('/app-worker.js')
+    worker.onmessage = event => {
+      const payload = event.data
+      if (!payload || typeof payload !== 'object') return
+
+      if (payload.type === 'ready') {
+        state.filterReady = true
+        if (state.nodes.length > 0) {
+          worker.postMessage({
+            type: 'load-nodes',
+            nodes: state.nodes.map(node => ({
+              id: node.id,
+              title: node.title,
+              path: node.path || '',
+              tags: Array.isArray(node.tags) ? node.tags : []
+            }))
+          })
+        }
+        return
+      }
+
+      if (payload.type === 'filter-result') {
+        const token = payload.token
+        if (token !== state.contentFilter.token) {
+          return
+        }
+
+        const ids = Array.isArray(payload.ids) ? payload.ids.filter(id => typeof id === 'string') : []
+        state.contentFilter.query = normalizeQuery(state.query)
+        state.contentFilter.ids = new Set(ids)
+        recomputeVisibility()
+      }
+    }
+    state.filterWorker = worker
+  } catch {
+    state.filterWorker = null
+    state.filterReady = false
+  }
+}
+
+const pushNodesToFilterWorker = () => {
+  if (!state.filterWorker || !state.filterReady) {
+    return
+  }
+
+  state.filterWorker.postMessage({
+    type: 'load-nodes',
+    nodes: state.nodes.map(node => ({
+      id: node.id,
+      title: node.title,
+      path: node.path || '',
+      tags: Array.isArray(node.tags) ? node.tags : []
+    }))
+  })
+}
+
 const resize = () => {
   const rect = canvas.getBoundingClientRect()
   const width = Math.max(rect.width, 320)
@@ -111,7 +194,7 @@ const hubNodePattern = /\b(memory\s*hub|knowledge\s*hub|hub|moc|map|memory\s*map
 const localFilteredNodes = query =>
   state.nodes.filter(node =>
     node.title.toLowerCase().includes(query) ||
-    node.path.toLowerCase().includes(query) ||
+    (node.path || '').toLowerCase().includes(query) ||
     node.tags.some(tag => tag.toLowerCase().includes(query))
   )
 
@@ -176,6 +259,7 @@ const recomputeVisibility = () => {
   state.visibleEdges = limitedEdges
   state.visibleNodeSpatial = createSpatialIndex(nodes)
   state.visibleEdgeByNode = createVisibleEdgeLookup(limitedEdges)
+  state.overviewClusters = nodes.length > massiveGraphNodeThreshold ? buildOverviewClusters(nodes) : []
   markRenderDirty()
 }
 
@@ -280,6 +364,94 @@ const createVisibleEdgeLookup = edges => {
   return lookup
 }
 
+const buildOverviewClusters = nodes => {
+  if (nodes.length === 0) {
+    return []
+  }
+
+  const bounds = graphBounds(nodes)
+  if (!bounds) {
+    return []
+  }
+
+  const longest = Math.max(bounds.width, bounds.height, 1)
+  const cellSize = Math.max(longest / 56, 900)
+  const buckets = new Map()
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index]
+    const keyX = Math.floor((node.x - bounds.minX) / cellSize)
+    const keyY = Math.floor((node.y - bounds.minY) / cellSize)
+    const key = keyX + ':' + keyY
+    const degree = state.nodeDegrees.get(node.id) ?? 0
+    const current = buckets.get(key)
+    if (current) {
+      current.count += 1
+      current.sumX += node.x
+      current.sumY += node.y
+      if (degree > current.degree) {
+        current.representative = node
+        current.degree = degree
+      }
+      continue
+    }
+
+    buckets.set(key, {
+      id: key,
+      count: 1,
+      sumX: node.x,
+      sumY: node.y,
+      representative: node,
+      degree
+    })
+  }
+
+  return Array.from(buckets.values())
+    .sort((left, right) => right.count - left.count)
+    .slice(0, overviewClusterMaxCount)
+    .map((cluster) => ({
+      id: cluster.id,
+      x: cluster.sumX / Math.max(cluster.count, 1),
+      y: cluster.sumY / Math.max(cluster.count, 1),
+      count: cluster.count,
+      representative: cluster.representative
+    }))
+}
+
+const filterOverviewClustersByViewport = viewport =>
+  state.overviewClusters.filter((cluster) =>
+    cluster.x >= viewport.minX &&
+    cluster.x <= viewport.maxX &&
+    cluster.y >= viewport.minY &&
+    cluster.y <= viewport.maxY
+  )
+
+const edgeBudgetForCurrentFrame = () => {
+  const zoom = state.transform.scale
+  if (zoom < 0.12) return 380
+  if (zoom < 0.18) return 700
+  if (zoom < 0.28) return 1100
+  if (zoom < 0.45) return 1600
+  if (zoom < 0.7) return 2100
+  return renderEdgeBudget
+}
+
+const clusterBudgetForScale = (scale) => {
+  if (scale < 0.008) return 90
+  if (scale < 0.014) return 150
+  if (scale < 0.022) return 240
+  if (scale < 0.035) return 360
+  return 520
+}
+
+const nodeBudgetForScale = (scale) => {
+  if (scale < 0.035) return 220
+  if (scale < 0.06) return 360
+  if (scale < 0.09) return 520
+  if (scale < 0.14) return 720
+  return renderNodeBudget
+}
+
 const collectVisibleEdgesForNodes = nodeIds => {
   if (nodeIds.size === 0) {
     return []
@@ -287,6 +459,7 @@ const collectVisibleEdgesForNodes = nodeIds => {
 
   const seen = new Set()
   const collected = []
+  const limit = edgeBudgetForCurrentFrame()
 
   nodeIds.forEach(nodeId => {
     const candidateEdges = state.visibleEdgeByNode.get(nodeId) ?? []
@@ -302,7 +475,7 @@ const collectVisibleEdgesForNodes = nodeIds => {
 
       seen.add(key)
       collected.push(edge)
-      if (collected.length >= renderEdgeBudget) {
+      if (collected.length >= limit) {
         return
       }
     }
@@ -327,9 +500,35 @@ const fallbackViewportNodes = () => {
   return nodes
 }
 
+const sampleVisibleNodes = (limit = renderNodeBudget) => {
+  if (state.visibleNodes.length === 0 || limit <= 0) {
+    return []
+  }
+
+  const nodes = []
+  const maxNodes = Math.min(Math.max(limit, 1), state.visibleNodes.length)
+  const step = Math.max(1, Math.ceil(state.visibleNodes.length / maxNodes))
+
+  for (let index = 0; index < state.visibleNodes.length && nodes.length < maxNodes; index += step) {
+    nodes.push(state.visibleNodes[index])
+  }
+
+  if (state.selected && !nodes.find(node => node.id === state.selected.id)) {
+    nodes.push(state.selected)
+  }
+
+  return nodes
+}
+
 const clampScale = value => Math.max(zoomRange.min, Math.min(zoomRange.max, value))
 const isFiniteNumber = value => Number.isFinite(value)
 const isReasonableCoordinate = value => isFiniteNumber(value) && Math.abs(value) <= worldCoordinateLimit
+const clampTransformCoordinate = value => {
+  if (!isFiniteNumber(value)) return 0
+  if (value > transformCoordinateLimit) return transformCoordinateLimit
+  if (value < -transformCoordinateLimit) return -transformCoordinateLimit
+  return value
+}
 
 const graphBounds = nodes => {
   if (nodes.length === 0) return null
@@ -375,7 +574,7 @@ const autoFitScaleRangeByNodeCount = nodeCount => {
   if (nodeCount <= 600) return { min: 0.12, max: 0.72 }
   if (nodeCount <= 2000) return { min: 0.08, max: 0.52 }
   if (nodeCount <= 6000) return { min: 0.06, max: 0.32 }
-  return { min: zoomRange.min, max: 0.24 }
+  return { min: 0.0008, max: 0.24 }
 }
 
 const fitView = (options = { useFiltered: true }) => {
@@ -387,6 +586,8 @@ const fitView = (options = { useFiltered: true }) => {
 
   if (!bounds) {
     state.transform = { x: width / 2, y: height / 2, scale: 1 }
+    state.offscreenFrameCount = 0
+    state.recoveringViewport = false
     markRenderDirty()
     return
   }
@@ -411,25 +612,62 @@ const fitView = (options = { useFiltered: true }) => {
   const centerY = (bounds.minY + bounds.maxY) / 2
 
   state.transform = {
-    x: width / 2 - centerX * scale,
-    y: height / 2 - centerY * scale,
-    scale
+    x: clampTransformCoordinate(width / 2 - centerX * scale),
+    y: clampTransformCoordinate(height / 2 - centerY * scale),
+    scale: clampScale(scale)
   }
+  state.offscreenFrameCount = 0
+  state.recoveringViewport = false
   markRenderDirty()
 }
 
 const resetView = () => fitView({ useFiltered: false })
 
 const createLayout = graph => {
-  const nodes = graph.nodes.map(node => ({
-    ...node,
-    x: Number.isFinite(node.x) ? node.x : 0,
-    y: Number.isFinite(node.y) ? node.y : 0,
-    vx: Number.isFinite(node.vx) ? node.vx : 0,
-    vy: Number.isFinite(node.vy) ? node.vy : 0
-  }))
+  const nodeRows = Array.isArray(graph.nodes) ? graph.nodes : []
+  const edgeRows = Array.isArray(graph.edges) ? graph.edges : []
+  const nodes = nodeRows.map(node => {
+    if (Array.isArray(node)) {
+      const [id, title, x, y, group, segment] = node
+      return {
+        id: typeof id === 'string' ? id : '',
+        title: typeof title === 'string' ? title : 'Untitled',
+        path: '',
+        tags: [],
+        group: typeof group === 'string' ? group : 'root',
+        segment: typeof segment === 'string' ? segment : 'root',
+        x: Number.isFinite(x) ? x : 0,
+        y: Number.isFinite(y) ? y : 0,
+        vx: 0,
+        vy: 0
+      }
+    }
+
+    return {
+      ...node,
+      path: typeof node.path === 'string' ? node.path : '',
+      tags: Array.isArray(node.tags) ? node.tags : [],
+      x: Number.isFinite(node.x) ? node.x : 0,
+      y: Number.isFinite(node.y) ? node.y : 0,
+      vx: Number.isFinite(node.vx) ? node.vx : 0,
+      vy: Number.isFinite(node.vy) ? node.vy : 0
+    }
+  })
   const nodeMap = new Map(nodes.map(node => [node.id, node]))
-  const edges = graph.edges
+  const edges = edgeRows
+    .map(edge => {
+      if (Array.isArray(edge)) {
+        const [source, target, weight, priority] = edge
+        return {
+          source: typeof source === 'string' ? source : '',
+          target: typeof target === 'string' ? target : null,
+          targetTitle: '',
+          weight: Number.isFinite(weight) ? weight : 1,
+          priority: typeof priority === 'string' ? priority : 'normal'
+        }
+      }
+      return edge
+    })
     .filter(edge => edge.target && nodeMap.has(edge.source) && nodeMap.has(edge.target))
     .map(edge => ({ ...edge, sourceNode: nodeMap.get(edge.source), targetNode: nodeMap.get(edge.target) }))
   return { nodes, edges }
@@ -484,7 +722,8 @@ const syncContentFilter = async (query, token) => {
   }
 
   state.contentFilter.query = query
-  state.contentFilter.ids = new Set(nodeIds)
+  const merged = new Set([...(state.contentFilter.ids instanceof Set ? state.contentFilter.ids : []), ...nodeIds])
+  state.contentFilter.ids = merged
   recomputeVisibility()
 }
 
@@ -505,6 +744,14 @@ const scheduleContentFilterSync = () => {
     ids: state.contentFilter.ids,
     token,
     timer: setTimeout(() => {
+      if (state.filterWorker && state.filterReady) {
+        state.filterWorker.postMessage({
+          type: 'filter',
+          query,
+          token,
+          limit: Math.max(state.nodes.length, 1)
+        })
+      }
       syncContentFilter(query, token).catch(() => {})
     }, 180)
   }
@@ -513,7 +760,11 @@ const scheduleContentFilterSync = () => {
 const tick = delta => {
   const nodes = state.renderNodes.length > 0 ? state.renderNodes : state.visibleNodes
   const edges = state.renderEdges.length > 0 ? state.renderEdges : state.visibleEdges
-  if (nodes.length > 1200) {
+  const shouldRunPhysics =
+    state.nodes.length <= 8000 &&
+    nodes.length <= 320 &&
+    state.transform.scale >= 0.08
+  if (!shouldRunPhysics) {
     return
   }
   const strength = Math.min(delta / 16, 2)
@@ -587,7 +838,10 @@ const worldPoint = event => {
 
 const hitNode = point => {
   computeRenderVisibility()
-  if (state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.55) {
+  if (state.renderClusters.length > 0) {
+    return null
+  }
+  if (state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.9) {
     return null
   }
 
@@ -648,7 +902,60 @@ const viewportNodeStride = () => {
   return 8
 }
 
+const shouldRenderClusters = viewportNodes =>
+  state.transform.scale <= clusterZoomThreshold && viewportNodes.length >= clusterActivationNodeThreshold
+
+const clusterViewportNodes = viewportNodes => {
+  if (!shouldRenderClusters(viewportNodes)) {
+    return []
+  }
+
+  const worldCellSize = Math.max(clusterCellPixelSize / Math.max(state.transform.scale, 0.0001), 1)
+  const buckets = new Map()
+
+  for (let index = 0; index < viewportNodes.length; index += 1) {
+    const node = viewportNodes[index]
+    const keyX = Math.floor(node.x / worldCellSize)
+    const keyY = Math.floor(node.y / worldCellSize)
+    const key = keyX + ':' + keyY
+    const current = buckets.get(key)
+    if (current) {
+      current.count += 1
+      current.sumX += node.x
+      current.sumY += node.y
+      if ((state.nodeDegrees.get(node.id) ?? 0) > current.degree) {
+        current.representative = node
+        current.degree = state.nodeDegrees.get(node.id) ?? 0
+      }
+      continue
+    }
+
+    buckets.set(key, {
+      id: key,
+      count: 1,
+      sumX: node.x,
+      sumY: node.y,
+      representative: node,
+      degree: state.nodeDegrees.get(node.id) ?? 0
+    })
+  }
+
+  return Array.from(buckets.values())
+    .sort((left, right) => right.count - left.count)
+    .slice(0, Math.min(renderNodeBudget, 900))
+    .map((cluster) => ({
+      id: cluster.id,
+      x: cluster.sumX / Math.max(cluster.count, 1),
+      y: cluster.sumY / Math.max(cluster.count, 1),
+      count: cluster.count,
+      representative: cluster.representative
+    }))
+}
+
 const computeRenderVisibility = () => {
+  if (!hasValidTransform()) {
+    fitView({ useFiltered: true })
+  }
   const viewport = worldViewportBounds()
   const viewportKey =
     Math.round(viewport.minX * 10) + ':' +
@@ -665,12 +972,70 @@ const computeRenderVisibility = () => {
 
   if (state.visibleNodes.length <= 2000) {
     state.renderNodes = state.visibleNodes
+    state.renderClusters = []
     const ids = new Set(state.renderNodes.map((node) => node.id))
     state.renderEdges = collectVisibleEdgesForNodes(ids)
     return
   }
 
+  if (state.visibleNodes.length > massiveGraphNodeThreshold && state.transform.scale <= 0.035) {
+    const viewportClusters = filterOverviewClustersByViewport(viewport)
+    const clusters = viewportClusters.length > 0
+      ? viewportClusters
+      : state.overviewClusters.slice(0, Math.min(220, state.overviewClusters.length))
+    const clusterLimit = clusterBudgetForScale(state.transform.scale)
+    const limitedClusters = clusters.slice(0, Math.min(clusterLimit, clusters.length))
+    if (limitedClusters.length > 0) {
+      state.renderClusters = limitedClusters
+      state.renderNodes = limitedClusters.map((cluster) => cluster.representative)
+      state.renderEdges = []
+      return
+    }
+  }
+
+  if (state.visibleNodes.length > massiveGraphNodeThreshold && state.transform.scale <= 0.06) {
+    const viewportClusters = filterOverviewClustersByViewport(viewport)
+    const clusters = viewportClusters.length > 0
+      ? viewportClusters
+      : state.overviewClusters.slice(0, Math.min(400, state.overviewClusters.length))
+    const clusterLimit = clusterBudgetForScale(state.transform.scale)
+    const limitedClusters = clusters.slice(0, Math.min(clusterLimit, clusters.length))
+    if (limitedClusters.length > 0) {
+      state.renderClusters = limitedClusters
+      state.renderNodes = limitedClusters.map((cluster) => cluster.representative)
+      state.renderEdges = []
+      return
+    }
+  }
+
+  if (state.visibleNodes.length > massiveGraphNodeThreshold) {
+    const sampleLimit = nodeBudgetForScale(state.transform.scale)
+    const sampled = sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget))
+    const sampledIds = new Set(sampled.map((node) => node.id))
+    state.renderClusters = []
+    state.renderNodes = sampled
+    state.renderEdges = state.transform.scale >= 0.12 ? collectVisibleEdgesForNodes(sampledIds) : []
+    return
+  }
+
+  if (state.transform.scale <= 0.0015) {
+    const sampled = sampleVisibleNodes(Math.min(renderNodeBudget, 900))
+    const sampledIds = new Set(sampled.map((node) => node.id))
+    state.renderClusters = []
+    state.renderNodes = sampled
+    state.renderEdges = collectVisibleEdgesForNodes(sampledIds)
+    return
+  }
+
   const viewportNodes = viewportNodesFromSpatialIndex(viewport)
+  const clusters = clusterViewportNodes(viewportNodes)
+  if (clusters.length > 0) {
+    state.renderClusters = clusters
+    state.renderNodes = clusters.map(cluster => cluster.representative)
+    state.renderEdges = []
+    return
+  }
+  state.renderClusters = []
   const stride = viewportNodeStride()
   const picked = []
 
@@ -693,6 +1058,7 @@ const computeRenderVisibility = () => {
     const fallbackNodes = fallbackViewportNodes()
     const fallbackIds = new Set(fallbackNodes.map((node) => node.id))
     state.renderNodes = fallbackNodes
+    state.renderClusters = []
     state.renderEdges = collectVisibleEdgesForNodes(fallbackIds)
     return
   }
@@ -702,6 +1068,14 @@ const computeRenderVisibility = () => {
 
   state.renderNodes = nodes
   state.renderEdges = edges
+
+  if (state.renderNodes.length === 0 && state.visibleNodes.length > 0) {
+    const fallbackNodes = sampleVisibleNodes(Math.min(renderNodeBudget, 260))
+    const fallbackIds = new Set(fallbackNodes.map((node) => node.id))
+    state.renderClusters = []
+    state.renderNodes = fallbackNodes
+    state.renderEdges = collectVisibleEdgesForNodes(fallbackIds)
+  }
 }
 
 const isNodeVisibleOnScreen = (node, width, height) => {
@@ -732,16 +1106,29 @@ const sanitizeNodePosition = node => {
   if (!isFiniteNumber(node.vy) || Math.abs(node.vy) > worldCoordinateLimit) node.vy = 0
 }
 
-const sanitizeGraphState = () => {
+const sanitizeAllNodePositions = () => {
   state.nodes.forEach(sanitizeNodePosition)
   state.visibleNodes.forEach(sanitizeNodePosition)
+}
+
+const sanitizeGraphState = () => {
   state.renderNodes.forEach(sanitizeNodePosition)
 }
 
 const render = now => {
   const delta = now - state.last
   state.last = now
-  const minFrameIntervalMs = state.nodes.length > largeGraphNodeThreshold ? 48 : 16
+  const backgroundFrameIntervalMs =
+    state.nodes.length > massiveGraphNodeThreshold
+      ? (state.transform.scale < 0.035 ? 130 : state.transform.scale < 0.08 ? 110 : 86)
+      : state.nodes.length > largeGraphNodeThreshold
+        ? 64
+        : 16
+  const isInteracting =
+    state.pointer.down ||
+    state.renderVisibilityDirty ||
+    state.recoveringViewport
+  const minFrameIntervalMs = isInteracting ? 16 : backgroundFrameIntervalMs
   if (delta < minFrameIntervalMs) {
     requestAnimationFrame(render)
     return
@@ -782,7 +1169,9 @@ const render = now => {
   } else {
     state.offscreenFrameCount = 0
   }
-  const drawEdges = !(state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.22)
+  const drawEdges =
+    state.renderClusters.length === 0 &&
+    !(state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.22)
   if (drawEdges) {
     state.renderEdges.forEach(edge => {
     const selectedEdge = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
@@ -795,7 +1184,27 @@ const render = now => {
     })
   }
 
-  state.renderNodes.forEach(node => {
+  if (state.renderClusters.length > 0) {
+    const safeScale = Math.max(state.transform.scale, 0.0001)
+    state.renderClusters.forEach(cluster => {
+      const radiusPx = Math.max(8, Math.min(28, 8 + Math.log2(cluster.count + 1) * 3))
+      const radius = radiusPx / safeScale
+      const haloRadius = (radiusPx + 4) / safeScale
+      ctx.beginPath()
+      ctx.arc(cluster.x, cluster.y, haloRadius, 0, Math.PI * 2)
+      ctx.fillStyle = graphTheme.nodeHalo
+      ctx.fill()
+      ctx.beginPath()
+      ctx.arc(cluster.x, cluster.y, radius, 0, Math.PI * 2)
+      ctx.fillStyle = graphTheme.node
+      ctx.fill()
+      ctx.lineWidth = 1.4 / safeScale
+      ctx.strokeStyle = graphTheme.nodeStroke
+      ctx.stroke()
+      // Keep cluster markers minimal and faster to draw on large graphs.
+    })
+  } else {
+    state.renderNodes.forEach(node => {
     const radius = nodeRadius(node)
     const isSelected = state.selected?.id === node.id
     const isHovered = state.hovered?.id === node.id
@@ -822,10 +1231,11 @@ const render = now => {
       ctx.textBaseline = 'top'
       ctx.fillText(node.title.slice(0, 34), node.x, node.y + radius + 8)
     }
-  })
+    })
+  }
 
   ctx.restore()
-  if (state.renderNodes.length === 0) {
+  if (state.renderNodes.length === 0 && state.renderClusters.length === 0) {
     ctx.fillStyle = '#99a5b5'
     ctx.font = '12px Inter, system-ui, sans-serif'
     ctx.textAlign = 'center'
@@ -845,11 +1255,11 @@ const linkedNodes = node => {
     weight: edge.weight,
     priority: edge.priority
   } : null
-  const outgoing = state.graph.edges
+  const outgoing = state.edges
     .filter(edge => edge.source === node.id)
-    .map(edge => withEdgeMeta(edge.target ? nodeById.get(edge.target) : { title: edge.targetTitle + ' (unresolved)', path: 'Missing note' }, edge))
+    .map(edge => withEdgeMeta(edge.target ? nodeById.get(edge.target) : { title: (edge.targetTitle || 'Unknown') + ' (unresolved)', path: 'Missing note' }, edge))
     .filter(Boolean)
-  const incoming = state.graph.edges
+  const incoming = state.edges
     .filter(edge => edge.target === node.id)
     .map(edge => withEdgeMeta(nodeById.get(edge.source), edge))
     .filter(Boolean)
@@ -879,14 +1289,14 @@ const fetchNodeDetails = async node => {
 
 const openContentDialog = async node => {
   if (!node) return
-  const { outgoing, incoming } = linkedNodes(node)
-  elements.contentTitle.textContent = node.title
-  elements.contentPath.textContent = node.path
-  elements.contentTags.innerHTML = node.tags.length
+  elements.contentTitle.textContent = node.title || 'Loading...'
+  elements.contentPath.textContent = node.path || 'Loading...'
+  elements.contentTags.innerHTML = Array.isArray(node.tags) && node.tags.length
     ? node.tags.map(tag => '<span>#' + escapeHtml(tag) + '</span>').join('')
     : '<span>No tags</span>'
-  elements.contentOutgoing.innerHTML = list(outgoing)
-  elements.contentIncoming.innerHTML = list(incoming)
+  const initialLinks = linkedNodes(node)
+  elements.contentOutgoing.innerHTML = list(initialLinks.outgoing)
+  elements.contentIncoming.innerHTML = list(initialLinks.incoming)
   elements.contentBody.textContent = 'Loading note content...'
   if (!elements.contentDialog.open) {
     elements.contentDialog.showModal()
@@ -897,6 +1307,11 @@ const openContentDialog = async node => {
     if (state.selected?.id !== node.id) {
       return
     }
+    elements.contentTitle.textContent = detailedNode.title
+    elements.contentPath.textContent = detailedNode.path
+    elements.contentTags.innerHTML = detailedNode.tags.length
+      ? detailedNode.tags.map(tag => '<span>#' + escapeHtml(tag) + '</span>').join('')
+      : '<span>No tags</span>'
     elements.contentBody.textContent = detailedNode.content
   } catch {
     elements.contentBody.textContent = 'Unable to load note content.'
@@ -922,9 +1337,10 @@ const zoomAtPoint = (screenX, screenY, factor) => {
   if (nextScale === state.transform.scale) return
   const worldX = (screenX - state.transform.x) / state.transform.scale
   const worldY = (screenY - state.transform.y) / state.transform.scale
-  state.transform.scale = nextScale
-  state.transform.x = screenX - worldX * nextScale
-  state.transform.y = screenY - worldY * nextScale
+  state.transform.scale = clampScale(nextScale)
+  state.transform.x = clampTransformCoordinate(screenX - worldX * nextScale)
+  state.transform.y = clampTransformCoordinate(screenY - worldY * nextScale)
+  state.offscreenFrameCount = 0
   markRenderDirty()
 }
 
@@ -1034,7 +1450,17 @@ const bindEvents = () => {
   })
   canvas.addEventListener('pointermove', event => {
     const point = worldPoint(event)
-    state.hovered = hitNode(point)
+    const now = performance.now()
+    const canHoverHitTest =
+      !(state.nodes.length > massiveGraphNodeThreshold && state.transform.scale < 0.12)
+    const shouldHitTest = canHoverHitTest &&
+      (state.pointer.down || now - state.lastHoverHitAt >= hoverHitTestIntervalMs)
+    if (shouldHitTest) {
+      state.hovered = hitNode(point)
+      state.lastHoverHitAt = now
+    } else if (!canHoverHitTest) {
+      state.hovered = null
+    }
     state.cursor = { x: event.clientX, y: event.clientY, inCanvas: true }
     if (!state.pointer.down) return
     const dx = event.clientX - state.pointer.x
@@ -1050,6 +1476,9 @@ const bindEvents = () => {
     }
     state.transform.x += dx
     state.transform.y += dy
+    state.transform.x = clampTransformCoordinate(state.transform.x)
+    state.transform.y = clampTransformCoordinate(state.transform.y)
+    state.offscreenFrameCount = 0
     markRenderDirty()
   })
   canvas.addEventListener('pointerup', event => {
@@ -1093,9 +1522,10 @@ const loadAgents = async () => {
   const response = await fetch('/api/agents')
   const payload = await response.json()
   const agents = Array.isArray(payload.agents) ? payload.agents : []
-  const currentExists = agents.some(agent => agent.id === state.agentId)
+  const preferredAgent = state.agentId || initialAgentFromUrl
+  const currentExists = agents.some(agent => agent.id === preferredAgent)
   const selected = currentExists
-    ? state.agentId
+    ? preferredAgent
     : (agents.find(agent => agent.id === 'shared')?.id ?? agents[0]?.id ?? 'shared')
   const signature = JSON.stringify(agents.map(agent => [agent.id, agent.documentCount]))
 
@@ -1125,6 +1555,10 @@ const loadGraph = async (options = { reset: false }) => {
 
   const payload = await response.json()
   const graph = payload?.layout ?? payload
+  state.graphTotals = {
+    nodes: Number.isFinite(payload?.totals?.nodes) ? payload.totals.nodes : (Array.isArray(graph.nodes) ? graph.nodes.length : 0),
+    edges: Number.isFinite(payload?.totals?.edges) ? payload.totals.edges : (Array.isArray(graph.edges) ? graph.edges.length : 0)
+  }
   const signature = payload?.signature ?? graphSignature(graph)
   if (!options.reset && signature === state.graphSignature) return
   const selectedId = state.selected?.id
@@ -1141,13 +1575,15 @@ const loadGraph = async (options = { reset: false }) => {
     return degrees
   }, new Map())
   state.nodeDetails = new Map()
+  pushNodesToFilterWorker()
   resetContentFilter()
+  sanitizeAllNodePositions()
   recomputeVisibility()
   scheduleContentFilterSync()
-  const tags = new Set(graph.nodes.flatMap(node => node.tags))
-  setGraphStatus(state.agentId + ' · ' + graph.nodes.length + ' notes · ' + graph.edges.length + ' links · live')
-  elements.nodeCount.textContent = graph.nodes.length
-  elements.edgeCount.textContent = graph.edges.length
+  const tags = new Set(state.nodes.flatMap(node => node.tags))
+  setGraphStatus(state.agentId + ' · ' + state.graphTotals.nodes + ' notes · ' + state.graphTotals.edges + ' links · live')
+  elements.nodeCount.textContent = state.graphTotals.nodes
+  elements.edgeCount.textContent = state.graphTotals.edges
   elements.tagCount.textContent = tags.size
   resize()
   if (options.reset) resetView()
@@ -1159,6 +1595,7 @@ const loadGraph = async (options = { reset: false }) => {
 }
 
 bindEvents()
+initFilterWorker()
 requestAnimationFrame(() => {
   resize()
   resetView()
