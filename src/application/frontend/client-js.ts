@@ -2133,6 +2133,13 @@ const bindEvents = () => {
   })
   canvas.addEventListener('wheel', handleWheelZoom, { passive: false })
   canvas.addEventListener('dblclick', event => {
+    const point = worldPoint(event)
+    const node = hitNode(point)
+    if (node) {
+      selectNode(node, { openContent: true })
+      return
+    }
+
     const rect = canvas.getBoundingClientRect()
     const cursorX = event.clientX - rect.left
     const cursorY = event.clientY - rect.top
@@ -2192,8 +2199,8 @@ const bindEvents = () => {
       settleNeighborhoodAroundNode(draggedNode)
       markRenderDirty()
     }
-    if (draggedNode && !state.pointer.moved) selectNode(draggedNode, { openContent: true })
-    if (!draggedNode && !state.pointer.moved) selectNode(state.hovered, { openContent: true })
+    if (draggedNode && !state.pointer.moved) selectNode(draggedNode, { openContent: false })
+    if (!draggedNode && !state.pointer.moved) selectNode(state.hovered, { openContent: false })
     state.pointer = { x: 0, y: 0, down: false, dragNode: null, moved: false }
     canvas.releasePointerCapture(event.pointerId)
   })
