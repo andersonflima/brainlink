@@ -245,8 +245,8 @@ li small {
 }
 
 .content-dialog {
-  width: min(920px, calc(100vw - 32px));
-  max-height: calc(100svh - 32px);
+  width: min(1240px, calc(100vw - 24px));
+  max-height: calc(100svh - 20px);
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -263,7 +263,7 @@ li small {
 .content-dialog article {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  max-height: calc(100svh - 34px);
+  max-height: calc(100svh - 22px);
 }
 
 .content-dialog header {
@@ -339,7 +339,7 @@ li small {
 
 .content-meta-section ul,
 .content-meta-section .tags {
-  max-height: 140px;
+  max-height: 220px;
   overflow: auto;
   align-content: flex-start;
   padding-right: 4px;

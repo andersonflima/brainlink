@@ -747,6 +747,10 @@ const isScreenPointInsideCanvas = (screenX, screenY) => {
 }
 
 const handleWheelZoom = event => {
+  if (elements.contentDialog?.open) {
+    return
+  }
+
   if (!isScreenPointInsideCanvas(event.clientX, event.clientY)) {
     return
   }
