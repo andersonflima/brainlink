@@ -24,6 +24,8 @@ const segmentAngles: Readonly<Record<string, number>> = {
   Security: 2.82
 }
 
+const hubTitlePattern = /\b(memory\s*hub|knowledge\s*root|moc|map)\b/i
+
 const hashText = (value: string): number =>
   Array.from(value).reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 0)
 
@@ -93,6 +95,45 @@ const byDegreeThenTitle = (degrees: ReadonlyMap<string, number>) => (left: Graph
   const degreeDelta = (degrees.get(right.id) ?? 0) - (degrees.get(left.id) ?? 0)
 
   return degreeDelta === 0 ? byTitle(left, right) : degreeDelta
+}
+
+const hubScore = (node: GraphNode): number => {
+  const title = node.title.trim().toLowerCase()
+  if (title === 'memory hub') return 5
+  if (title === 'knowledge root') return 4
+  if (/\bmoc\b/i.test(node.title)) return 3
+  return hubTitlePattern.test(node.title) ? 2 : 0
+}
+
+const selectPrimaryHubId = (nodes: readonly GraphNode[], degrees: ReadonlyMap<string, number>): string | null => {
+  const ranked = [...nodes]
+    .filter((node) => hubScore(node) > 0)
+    .sort((left, right) => {
+      const scoreDelta = hubScore(right) - hubScore(left)
+      if (scoreDelta !== 0) return scoreDelta
+      const degreeDelta = (degrees.get(right.id) ?? 0) - (degrees.get(left.id) ?? 0)
+      if (degreeDelta !== 0) return degreeDelta
+      return left.title.localeCompare(right.title)
+    })
+
+  return ranked[0]?.id ?? null
+}
+
+const centerLayoutByNode = (nodes: readonly GraphLayoutNode[], nodeId: string | null): readonly GraphLayoutNode[] => {
+  if (!nodeId) {
+    return nodes
+  }
+
+  const anchor = nodes.find((node) => node.id === nodeId)
+  if (!anchor) {
+    return nodes
+  }
+
+  return nodes.map((node) => ({
+    ...node,
+    x: node.x - anchor.x,
+    y: node.y - anchor.y
+  }))
 }
 
 const naturalSegmentSeed = (node: GraphNode): boolean =>
@@ -364,9 +405,11 @@ export const createCauliflowerGraphLayout = (graph: KnowledgeGraph): KnowledgeGr
   const segmentGroups = Array.from(groupNodesBySegment(graph.nodes, segments).entries())
     .sort(([left], [right]) => left.localeCompare(right))
   const nodes = relaxCollisions(segmentGroups.flatMap(createSegmentNodes(segments, degrees, segmentGroups.length)))
+  const primaryHubId = selectPrimaryHubId(graph.nodes, degrees)
+  const centeredNodes = centerLayoutByNode(nodes, primaryHubId)
 
   return {
-    nodes,
+    nodes: centeredNodes,
     edges: graph.edges
   }
 }

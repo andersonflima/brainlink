@@ -52,6 +52,7 @@ const state = {
   overviewClusters: [],
   macroCenter: { x: 0, y: 0 },
   macroRepresentative: null,
+  primaryHub: null,
   filterWorker: null,
   filterReady: false,
   lastHoverHitAt: 0,
@@ -296,6 +297,7 @@ const recomputeVisibility = () => {
     }
     : { x: 0, y: 0 }
   state.macroRepresentative = resolveMacroRepresentative(nodes)
+  state.primaryHub = rankedHubNodes()[0] ?? null
   markRenderDirty()
 }
 
@@ -679,7 +681,7 @@ const autoFitScaleRangeByNodeCount = nodeCount => {
   return { min: 0.0008, max: 0.24 }
 }
 
-const fitView = (options = { useFiltered: true, macro: false }) => {
+const fitView = (options = { useFiltered: true, macro: false, preferHubCenter: true }) => {
   const rect = canvas.getBoundingClientRect()
   const width = Math.max(rect.width, 320)
   const height = Math.max(rect.height, 320)
@@ -716,8 +718,12 @@ const fitView = (options = { useFiltered: true, macro: false }) => {
     : nodes.length > massiveGraphNodeThreshold
       ? clampScale(Math.min(baselineScale, massiveAutoFitMacroScale))
       : baselineScale
-  const centerX = (bounds.minX + bounds.maxX) / 2
-  const centerY = (bounds.minY + bounds.maxY) / 2
+  const hubCenter =
+    options.preferHubCenter && state.primaryHub && nodes.some((node) => node.id === state.primaryHub.id)
+      ? state.primaryHub
+      : null
+  const centerX = hubCenter ? hubCenter.x : (bounds.minX + bounds.maxX) / 2
+  const centerY = hubCenter ? hubCenter.y : (bounds.minY + bounds.maxY) / 2
 
   state.transform = {
     x: clampTransformCoordinate(width / 2 - centerX * scale),
@@ -729,7 +735,7 @@ const fitView = (options = { useFiltered: true, macro: false }) => {
   markRenderDirty()
 }
 
-const resetView = () => fitView({ useFiltered: false, macro: true })
+const resetView = () => fitView({ useFiltered: false, macro: true, preferHubCenter: true })
 
 const createLayout = graph => {
   const nodeRows = Array.isArray(graph.nodes) ? graph.nodes : []
