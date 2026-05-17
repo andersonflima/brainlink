@@ -535,6 +535,12 @@ describe('brainlink cli integration', () => {
       codexConfigPath: string
       mcpServer: string
       command: string
+      bootstrapPolicy: {
+        enforceBootstrap: boolean
+        enforceContextFirst: boolean
+        autoBootstrapOnRead: boolean
+        autoBootstrapOnStartup: boolean
+      }
       pluginSymlinkPath: string
       marketplacePath: string
       warnings?: readonly string[]
@@ -543,7 +549,13 @@ describe('brainlink cli integration', () => {
     expect(install).toMatchObject({
       installed: true,
       mcpServer: 'brainlink',
-      command: 'brainlink-mcp'
+      command: 'brainlink-mcp',
+      bootstrapPolicy: {
+        enforceBootstrap: true,
+        enforceContextFirst: true,
+        autoBootstrapOnRead: true,
+        autoBootstrapOnStartup: true
+      }
     })
     await expect(readFile(install.codexConfigPath, 'utf8')).resolves.toContain('[mcp_servers.brainlink]')
     await expect(readFile(install.codexConfigPath, 'utf8')).resolves.toContain('command = "brainlink-mcp"')
@@ -693,6 +705,12 @@ describe('brainlink cli integration', () => {
     const upgrade = parseJson<{
       upgraded: boolean
       installed: boolean
+      bootstrapPolicy: {
+        enforceBootstrap: boolean
+        enforceContextFirst: boolean
+        autoBootstrapOnRead: boolean
+        autoBootstrapOnStartup: boolean
+      }
       selfTest: {
         ok: boolean
         hasMcpSection: boolean
@@ -702,6 +720,12 @@ describe('brainlink cli integration', () => {
 
     expect(upgrade.upgraded).toBe(true)
     expect(upgrade.installed).toBe(true)
+    expect(upgrade.bootstrapPolicy).toMatchObject({
+      enforceBootstrap: true,
+      enforceContextFirst: true,
+      autoBootstrapOnRead: true,
+      autoBootstrapOnStartup: true
+    })
     expect(upgrade.selfTest).toMatchObject({
       hasMcpSection: true,
       hasCommand: true

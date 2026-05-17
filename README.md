@@ -406,6 +406,7 @@ blink agent upgrade
 ```
 
 This configures `~/.codex/config.toml` with Brainlink MCP (`brainlink-mcp`) so Brainlink is available by default in agent sessions.
+`agent install` and `agent upgrade` also apply the MCP `fully-auto` bootstrap policy by default (`enforceBootstrap`, `enforceContextFirst`, `autoBootstrapOnRead`, `autoBootstrapOnStartup` all enabled).
 
 If you are inside this repository and want plugin gallery setup too:
 
