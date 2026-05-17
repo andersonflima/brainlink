@@ -127,7 +127,16 @@ export type BrainlinkConfig = {
   readonly embeddingProvider: EmbeddingProviderName
   readonly defaultSearchMode: SearchMode
   readonly chunkSize: number
+  readonly searchPack: SearchPackConfig
   readonly agentProfiles: Readonly<Record<string, AgentProfileConfig>>
+}
+
+export type SearchPackConfig = {
+  readonly rowChunkSize: number
+  readonly compressionLevel: number
+  readonly useDictionary: boolean
+  readonly guardrailMinSavingsPercent: number
+  readonly guardrailMaxLatencyRegressionPercent: number
 }
 
 export type AgentProfileConfig = {

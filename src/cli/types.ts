@@ -36,6 +36,10 @@ export type BenchOptions = VaultOptions & {
   readonly debounce?: string
 }
 
+export type PackBackupOptions = VaultOptions & {
+  readonly output?: string
+}
+
 export type AddOptions = VaultOptions & {
   readonly content?: string
   readonly allowSensitive?: boolean

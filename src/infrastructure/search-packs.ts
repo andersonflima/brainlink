@@ -2,7 +2,7 @@ import { gunzipSync } from 'node:zlib'
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { middleOutIndices } from '../domain/middle-out.js'
-import type { IndexedDocument, SearchResult } from '../domain/types.js'
+import type { BrainlinkConfig, IndexedDocument, SearchResult } from '../domain/types.js'
 import { decodePrivatePack, encodePrivatePack, isPrivatePackPayload } from './private-pack-codec.js'
 
 type SearchPackRow = {
@@ -38,6 +38,12 @@ type SearchPackManifestV3 = {
   readonly recordCount: number
   readonly format: 'private-v2'
   readonly packIndex: readonly SearchPackIndexEntry[]
+  readonly packConfig?: {
+    readonly rowChunkSize: number
+    readonly compressionLevel: number
+    readonly useDictionary: boolean
+  }
+  readonly compression?: SearchPackCompressionMetrics
 }
 
 type SearchPackManifest = SearchPackManifestV2 | SearchPackManifestV3
@@ -56,9 +62,19 @@ export type SearchPackBuildResult = {
   readonly durationMs: number
 }
 
+export type SearchPackBuildOptions = {
+  readonly rowChunkSize: number
+  readonly compressionLevel: number
+  readonly useDictionary: boolean
+}
+
 const packsDirectoryName = 'search-packs'
 const manifestFileName = 'manifest.json'
-const rowChunkSize = 5_000
+const defaultBuildOptions: SearchPackBuildOptions = {
+  rowChunkSize: 5_000,
+  compressionLevel: 5,
+  useDictionary: true
+}
 const queryTokenPattern = /[\p{L}\p{N}_-]+/gu
 const bloomBytes = 256
 const bloomBitSize = bloomBytes * 8
@@ -166,7 +182,40 @@ const readManifest = async (vaultPath: string): Promise<SearchPackManifest | nul
         packCount: typeof parsed.packCount === 'number' ? parsed.packCount : packIndex.length,
         recordCount: typeof parsed.recordCount === 'number' ? parsed.recordCount : 0,
         format: 'private-v2',
-        packIndex
+        packIndex,
+        ...(parsed.packConfig && typeof parsed.packConfig === 'object'
+          ? {
+              packConfig: {
+                rowChunkSize:
+                  typeof (parsed.packConfig as { rowChunkSize?: unknown }).rowChunkSize === 'number'
+                    ? (parsed.packConfig as { rowChunkSize: number }).rowChunkSize
+                    : defaultBuildOptions.rowChunkSize,
+                compressionLevel:
+                  typeof (parsed.packConfig as { compressionLevel?: unknown }).compressionLevel === 'number'
+                    ? (parsed.packConfig as { compressionLevel: number }).compressionLevel
+                    : defaultBuildOptions.compressionLevel,
+                useDictionary:
+                  typeof (parsed.packConfig as { useDictionary?: unknown }).useDictionary === 'boolean'
+                    ? (parsed.packConfig as { useDictionary: boolean }).useDictionary
+                    : defaultBuildOptions.useDictionary
+              }
+            }
+          : {}),
+        ...(parsed.compression &&
+        typeof parsed.compression === 'object' &&
+        typeof (parsed.compression as { inputBytes?: unknown }).inputBytes === 'number' &&
+        typeof (parsed.compression as { outputBytes?: unknown }).outputBytes === 'number' &&
+        typeof (parsed.compression as { ratio?: unknown }).ratio === 'number' &&
+        typeof (parsed.compression as { savedBytes?: unknown }).savedBytes === 'number'
+          ? {
+              compression: {
+                inputBytes: (parsed.compression as { inputBytes: number }).inputBytes,
+                outputBytes: (parsed.compression as { outputBytes: number }).outputBytes,
+                ratio: (parsed.compression as { ratio: number }).ratio,
+                savedBytes: (parsed.compression as { savedBytes: number }).savedBytes
+              }
+            }
+          : {})
       }
     }
 
@@ -328,7 +377,8 @@ const sortedPackFiles = async (vaultPath: string): Promise<readonly string[]> =>
 const writeRowsAsPrivatePacks = async (
   vaultPath: string,
   rows: readonly SearchPackRow[],
-  clearExisting: boolean
+  clearExisting: boolean,
+  options: SearchPackBuildOptions
 ): Promise<SearchPackBuildResult> => {
   const startedAt = process.hrtime.bigint()
   const directory = toPackDirectory(vaultPath)
@@ -343,7 +393,7 @@ const writeRowsAsPrivatePacks = async (
     )
   }
 
-  const chunks = chunkRows(rows, rowChunkSize)
+  const chunks = chunkRows(rows, options.rowChunkSize)
   const packIndex: SearchPackIndexEntry[] = []
   let inputBytes = 0
   let outputBytes = 0
@@ -352,7 +402,10 @@ const writeRowsAsPrivatePacks = async (
     const chunk = chunks[index]
     const fileName = `pack-${String(index + 1).padStart(4, '0')}.blpk`
     const serialized = `${chunk.map((row) => JSON.stringify(row)).join('\n')}\n`
-    const compressed = await encodePrivatePack(vaultPath, Buffer.from(serialized, 'utf8'))
+    const compressed = await encodePrivatePack(vaultPath, Buffer.from(serialized, 'utf8'), {
+      compressionLevel: options.compressionLevel,
+      useDictionary: options.useDictionary
+    })
     const tokenBloomB64 = bloomToBase64(bloomFromRows(chunk))
 
     await writeFile(join(directory, fileName), compressed)
@@ -372,7 +425,18 @@ const writeRowsAsPrivatePacks = async (
     packCount: chunks.length,
     recordCount: rows.length,
     format: 'private-v2',
-    packIndex
+    packIndex,
+    packConfig: {
+      rowChunkSize: options.rowChunkSize,
+      compressionLevel: options.compressionLevel,
+      useDictionary: options.useDictionary
+    },
+    compression: {
+      inputBytes,
+      outputBytes,
+      ratio: outputBytes / Math.max(inputBytes, 1),
+      savedBytes: Math.max(inputBytes - outputBytes, 0)
+    }
   })
 
   const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000
@@ -440,9 +504,16 @@ const selectCandidatePackFiles = async (
 
 export const buildSearchPacks = async (
   vaultPath: string,
-  documents: readonly IndexedDocument[]
+  documents: readonly IndexedDocument[],
+  options?: Partial<SearchPackBuildOptions>
 ): Promise<SearchPackBuildResult> => {
-  return writeRowsAsPrivatePacks(vaultPath, toRows(documents), true)
+  const resolvedOptions: SearchPackBuildOptions = {
+    rowChunkSize: options?.rowChunkSize ?? defaultBuildOptions.rowChunkSize,
+    compressionLevel: options?.compressionLevel ?? defaultBuildOptions.compressionLevel,
+    useDictionary: options?.useDictionary ?? defaultBuildOptions.useDictionary
+  }
+
+  return writeRowsAsPrivatePacks(vaultPath, toRows(documents), true, resolvedOptions)
 }
 
 export const ensurePrivatePacksFromLegacyIndex = async (
@@ -469,7 +540,7 @@ export const ensurePrivatePacksFromLegacyIndex = async (
       rows.push(...parsed)
     }
 
-    const report = await writeRowsAsPrivatePacks(vaultPath, rows, true)
+    const report = await writeRowsAsPrivatePacks(vaultPath, rows, true, defaultBuildOptions)
 
     return {
       imported: true,
@@ -480,6 +551,12 @@ export const ensurePrivatePacksFromLegacyIndex = async (
 
   return { imported: false }
 }
+
+export const toSearchPackBuildOptions = (config: BrainlinkConfig): SearchPackBuildOptions => ({
+  rowChunkSize: config.searchPack.rowChunkSize,
+  compressionLevel: config.searchPack.compressionLevel,
+  useDictionary: config.searchPack.useDictionary
+})
 
 export const searchInPacks = async (
   vaultPath: string,

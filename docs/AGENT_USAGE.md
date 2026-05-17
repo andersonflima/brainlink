@@ -52,6 +52,8 @@ Use `blink config where` and `blink config doctor` to inspect active paths and e
 
 You can also set `defaultAgent` in `brainlink.config.json` / `.brainlink.json` (for example `"defaultAgent": "coding-agent"`). When set, CLI commands and MCP calls reuse it when `--agent`/`agent` is not passed.
 You can set `agentProfiles` to define per-agent defaults for `defaultSearchMode`, `defaultSearchLimit` and `defaultContextTokens`.
+You can tune search-pack compression with `searchPack.rowChunkSize`, `searchPack.compressionLevel` and `searchPack.useDictionary`.
+Guardrails for benchmark acceptance are configured with `searchPack.guardrailMinSavingsPercent` and `searchPack.guardrailMaxLatencyRegressionPercent`.
 
 `autoIndexOnWrite` (default: `true`) controls whether `add` and MCP write tools index right after writing.
 
@@ -492,8 +494,20 @@ blink bench --vault ./vault --json
 - elapsed time and changed document count
 - pack rebuild status and reason
 - pack compression metrics (`inputBytes`, `outputBytes`, ratio/saved percentage)
+- objective guardrails (`guardrailMinSavingsPercent`, `guardrailMaxLatencyRegressionPercent`)
 
 Use `--watch` for continuous benchmark runs while editing notes. Watch mode is supported only for local filesystem vaults.
+
+### Create Offline Pack Backup
+
+```bash
+blink pack-backup --vault ./vault
+blink pack-backup --vault ./vault --output ./vault/.brainlink/backups/custom.blpkbak.gz
+blink pack-backup --vault ./vault --json
+```
+
+`pack-backup` creates an offline artifact with second-stage compression on top of encrypted `.blpk` packs.
+This is outside the online retrieval path (`index`, `search`, `context`), which keeps a single compression stage.
 
 ### Search Knowledge
 
