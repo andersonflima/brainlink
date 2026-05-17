@@ -571,7 +571,7 @@ By default, `blink server` tries to open the graph in a native desktop GUI windo
 
 On Linux, native GUI is disabled by default for better startup performance. Enable it with `BRAINLINK_LINUX_NATIVE_GUI=1`.
 If native GUI launch is unavailable on your system, it falls back to dedicated app-window mode and then to the default browser.
-For Chromium-family browsers on Linux (`chromium`, `chromium-browser`, `google-chrome`, `microsoft-edge`, `brave-browser`), Brainlink now auto-applies compatibility flags during launch (`--ozone-platform=x11`, `--disable-gpu`, `--disable-features=Vulkan,VaapiVideoDecoder`, `--disable-background-networking`) to avoid common Wayland/Vulkan/VAAPI startup issues.
+For Chromium-family browsers on Linux (`chromium`, `chromium-browser`, `google-chrome`, `microsoft-edge`, `brave-browser`), Brainlink now auto-applies compatibility flags during launch (`--ozone-platform=x11`, `--ozone-platform-hint=x11`, `--disable-gpu`, `--disable-vulkan`, `--use-gl=swiftshader`, `--disable-features=Vulkan,VaapiVideoDecoder`, `--disable-background-networking`) to avoid common Wayland/Vulkan/VAAPI startup issues.
 Use `--no-open` to keep it headless.
 When native GUI is used, the GUI window automatically closes when the `blink server` process stops.
 
@@ -780,6 +780,7 @@ Summary includes compression behavior for `.blpk` packs when rebuild happens:
 - objective guardrails (minimum savings and maximum latency regression thresholds)
 
 Use `--watch` to keep benchmarking incremental reindex runs after Markdown changes (local filesystem vaults only).
+When `.brainlink/search-packs/manifest.json` is missing but `.blpk` files exist, Brainlink repairs the manifest first and avoids unnecessary full pack rebuild on small edits.
 
 ### `pack-backup`
 

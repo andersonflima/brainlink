@@ -42,6 +42,8 @@
 - Added tunable single-stage search-pack compression settings (`searchPack.rowChunkSize`, `searchPack.compressionLevel`, `searchPack.useDictionary`).
 - Added benchmark guardrails for compression savings and latency regression (`searchPack.guardrailMinSavingsPercent`, `searchPack.guardrailMaxLatencyRegressionPercent`), reported in `blink bench`.
 - Added `blink pack-backup` for offline second-stage compression backups of encrypted `.blpk` packs, outside the online query path.
+- Hardened Linux browser launch flags for Ubuntu 26 Chromium/Wayland compatibility (`--disable-vulkan`, `--use-gl=swiftshader`, `--ozone-platform-hint=x11`).
+- Improved pack resilience by auto-repairing missing search-pack manifests from existing `.blpk` files, avoiding unnecessary full repacks on small incremental updates.
 
 ## 0.1.0-beta.3
 

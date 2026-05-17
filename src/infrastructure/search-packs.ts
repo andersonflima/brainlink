@@ -68,6 +68,12 @@ export type SearchPackBuildOptions = {
   readonly useDictionary: boolean
 }
 
+export type SearchPackManifestRecovery = {
+  readonly repaired: boolean
+  readonly source: 'existing-packs' | 'not-needed' | 'no-packs'
+  readonly packCount: number
+}
+
 const packsDirectoryName = 'search-packs'
 const manifestFileName = 'manifest.json'
 const defaultBuildOptions: SearchPackBuildOptions = {
@@ -222,6 +228,41 @@ const readManifest = async (vaultPath: string): Promise<SearchPackManifest | nul
     return null
   } catch {
     return null
+  }
+}
+
+export const ensureSearchPackManifest = async (vaultPath: string): Promise<SearchPackManifestRecovery> => {
+  const manifest = await readManifest(vaultPath)
+  if (manifest) {
+    return {
+      repaired: false,
+      source: 'not-needed',
+      packCount: manifest.packCount
+    }
+  }
+
+  const files = await sortedPackFiles(vaultPath)
+  const packFiles = files.filter((file) => file.endsWith('.blpk'))
+  if (packFiles.length === 0) {
+    return {
+      repaired: false,
+      source: 'no-packs',
+      packCount: 0
+    }
+  }
+
+  await writeManifest(vaultPath, {
+    version: 2,
+    createdAt: new Date().toISOString(),
+    packCount: packFiles.length,
+    recordCount: 0,
+    format: 'private-v2'
+  })
+
+  return {
+    repaired: true,
+    source: 'existing-packs',
+    packCount: packFiles.length
   }
 }
 
