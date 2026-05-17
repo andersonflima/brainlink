@@ -571,13 +571,12 @@ const nodeBudgetForScale = (scale) => {
 }
 
 const layerWindowForScale = (scale) => {
-  if (scale < 0.08) return { inner: 0.78, outer: 1 }
-  if (scale < 0.14) return { inner: 0.62, outer: 0.9 }
-  if (scale < 0.24) return { inner: 0.46, outer: 0.74 }
-  if (scale < 0.36) return { inner: 0.3, outer: 0.58 }
-  if (scale < layeredCoreScaleThreshold) return { inner: 0.16, outer: 0.42 }
-  if (scale < 0.9) return { inner: 0.06, outer: 0.26 }
-  return { inner: 0, outer: 0.14 }
+  const normalized = Math.max(0, Math.min(1, (scale - 0.06) / 0.94))
+  const outer = Math.max(0.14, 1 - normalized * 0.86)
+  const band = Math.max(0.14, 0.26 - normalized * 0.12)
+  const inner = Math.max(0, outer - band)
+
+  return { inner, outer }
 }
 
 const selectLayeredNodesForScale = (sourceNodes) => {
@@ -1142,6 +1141,27 @@ const fitView = (options = { useFiltered: true, macro: false, preferHubCenter: t
 }
 
 const resetView = () => fitView({ useFiltered: false, macro: true, preferHubCenter: true })
+
+const focusPrimaryHub = () => {
+  const hub = state.primaryHub
+  if (!hub) {
+    fitView({ useFiltered: true, macro: false, preferHubCenter: true })
+    return
+  }
+
+  const rect = canvas.getBoundingClientRect()
+  const width = Math.max(rect.width, 320)
+  const height = Math.max(rect.height, 320)
+  const targetScale = clampScale(Math.max(0.78, state.transform.scale))
+
+  state.transform = {
+    x: clampTransformCoordinate(width / 2 - hub.x * targetScale),
+    y: clampTransformCoordinate(height / 2 - hub.y * targetScale),
+    scale: targetScale
+  }
+  state.offscreenFrameCount = 0
+  markRenderDirty()
+}
 
 const createLayout = graph => {
   const nodeRows = Array.isArray(graph.nodes) ? graph.nodes : []
@@ -2020,8 +2040,8 @@ const wheelZoomFactor = event => {
     return 1
   }
 
-  const baseStep = Math.max(0.06, Math.min(0.45, absoluteDelta / 480))
-  const adjustedStep = baseStep * (isModifierZoom ? 1.4 : 1)
+  const baseStep = Math.max(0.03, Math.min(0.2, absoluteDelta / 680))
+  const adjustedStep = baseStep * (isModifierZoom ? 1.24 : 1)
 
   return event.deltaY < 0 ? 1 + adjustedStep : 1 / (1 + adjustedStep)
 }
@@ -2068,15 +2088,15 @@ const bindEvents = () => {
   })
   elements.zoomIn.addEventListener('click', () => {
     const rect = canvas.getBoundingClientRect()
-    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.3)
+    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.14)
   })
   elements.zoomOut.addEventListener('click', () => {
     const rect = canvas.getBoundingClientRect()
-    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.77)
+    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.88)
   })
   if (elements.fit) {
     elements.fit.addEventListener('click', () => {
-      fitView({ useFiltered: true })
+      focusPrimaryHub()
     })
   }
   elements.reset.addEventListener('click', () => {
@@ -2096,7 +2116,7 @@ const bindEvents = () => {
     const rect = canvas.getBoundingClientRect()
     const cursorX = event.clientX - rect.left
     const cursorY = event.clientY - rect.top
-    zoomAtPoint(cursorX, cursorY, 1.25)
+    zoomAtPoint(cursorX, cursorY, 1.12)
   })
   canvas.addEventListener('pointerdown', event => {
     const point = worldPoint(event)
@@ -2170,14 +2190,14 @@ const bindEvents = () => {
     if (event.key === '+' || event.key === '=') {
       event.preventDefault()
       const rect = canvas.getBoundingClientRect()
-      zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.25)
+      zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.12)
       return
     }
 
     if (event.key === '-' || event.key === '_') {
       event.preventDefault()
       const rect = canvas.getBoundingClientRect()
-      zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.8)
+      zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.89)
       return
     }
 
