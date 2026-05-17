@@ -60,6 +60,14 @@ export type MigrateVaultOptions = {
   readonly report?: string
 }
 
+export type DbImportOptions = VaultOptions & {
+  readonly db?: string
+  readonly table?: string
+  readonly limit?: string
+  readonly dryRun?: boolean
+  readonly index?: boolean
+}
+
 export type AgentInstallOptions = {
   readonly json?: boolean
   readonly mcpOnly?: boolean

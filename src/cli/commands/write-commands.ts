@@ -4,6 +4,7 @@ import { dirname, relative, resolve } from 'node:path'
 import type { Command } from 'commander'
 import { addNote } from '../../application/add-note.js'
 import { buildContextPackage } from '../../application/build-context.js'
+import { importLegacySqliteDatabase } from '../../application/import-legacy-sqlite.js'
 import { indexVault } from '../../application/index-vault.js'
 import { migrateVaultContent, planVaultMigration, previewVaultMigration, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
 import { startServer } from '../../application/start-server.js'
@@ -15,7 +16,7 @@ import { assertVaultAllowed, ensureVault } from '../../infrastructure/file-syste
 import { getBootstrapPolicy, getBootstrapSessionStatus, touchBootstrapSession } from '../../infrastructure/session-state.js'
 import { installAgentIntegration } from './agent-commands.js'
 import { parsePositiveInteger, print, resolveOptions } from '../runtime.js'
-import type { AddOptions, InitOptions, MigrateVaultOptions, QuickstartOptions, ServerOptions, VaultOptions } from '../types.js'
+import type { AddOptions, DbImportOptions, InitOptions, MigrateVaultOptions, QuickstartOptions, ServerOptions, VaultOptions } from '../types.js'
 
 const resolveAddContent = (options: AddOptions): string => {
   if (options.content != null && options.content.trim().length > 0) {
@@ -132,6 +133,44 @@ export const registerWriteCommands = (program: Command): void => {
           const reportMessage = reportPath ? ` Report written to ${reportPath}.` : ''
 
           return `${summary}${indexMessage}${reportMessage}`
+        }
+      )
+    })
+
+  program
+    .command('db-import')
+    .option('-v, --vault <vault>', 'vault directory')
+    .option('--db <path>', 'legacy SQLite database path (default: <vault>/.brainlink/brainlink.db)')
+    .option('--table <name>', 'legacy table name override')
+    .option('-a, --agent <agent>', 'force imported notes into a target agent namespace')
+    .option('-l, --limit <limit>', 'maximum number of rows to import')
+    .option('--dry-run', 'preview import without writing Markdown files')
+    .option('--no-index', 'skip reindexing after import')
+    .option('--json', 'print machine-readable JSON')
+    .description('import legacy SQLite memory into Markdown vault and current index model')
+    .action(async (options: DbImportOptions) => {
+      const resolved = await resolveOptions(options)
+      const result = await importLegacySqliteDatabase(resolved.vault, {
+        dbPath: options.db,
+        table: options.table,
+        agentOverride: options.agent ? resolved.agent : undefined,
+        limit: options.limit ? parsePositiveInteger(options.limit, 100_000) : undefined,
+        dryRun: Boolean(options.dryRun)
+      })
+      const shouldIndex = options.index !== false && !result.dryRun && result.imported > 0
+      const index = shouldIndex ? await indexVault(resolved.vault) : undefined
+
+      print(
+        options.json,
+        { ...result, ...(index ? { index } : {}) },
+        () => {
+          const summary = `Imported ${result.imported}/${result.rowsRead} rows from ${result.table} (skipped ${result.skipped}).`
+          const indexMessage = index
+            ? ` Indexed ${index.documentCount} documents, ${index.chunkCount} chunks and ${index.linkCount} links.`
+            : ''
+          const dryRunMessage = result.dryRun ? ' Dry run only; no files were written.' : ''
+
+          return `${summary}${indexMessage}${dryRunMessage}`
         }
       )
     })
