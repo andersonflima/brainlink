@@ -26,6 +26,7 @@
 - Added compressed-space pack prefiltering (token bloom index) before `.blpk` decryption and scan.
 - Improved graph UI auto-fit and viewport recovery so loaded nodes are re-centered when zoom/pan drifts to empty canvas.
 - Added cross-platform native desktop GUI auto-open for `blink server` (macOS Swift/WebKit, Windows PowerShell WinForms, Linux Python GTK/WebKit2), with app-window/browser fallback.
+- Changed Linux default UI launch to app-window/browser for lighter startup; Linux native GUI is now opt-in via `BRAINLINK_LINUX_NATIVE_GUI=1`.
 
 ## 0.1.0-beta.3
 

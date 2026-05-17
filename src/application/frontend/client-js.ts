@@ -5,6 +5,8 @@ const largeGraphEdgeRenderLimit = 16000
 const renderNodeBudget = 1800
 const minNodePixelRadius = 1.8
 const viewportPaddingPx = 280
+const worldCoordinateLimit = 5_000_000
+const transformCoordinateLimit = 20_000_000
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
@@ -133,6 +135,7 @@ const edgeWeight = edge => Number.isFinite(edge.weight) ? Math.max(1, edge.weigh
 
 const clampScale = value => Math.max(zoomRange.min, Math.min(zoomRange.max, value))
 const isFiniteNumber = value => Number.isFinite(value)
+const isReasonableCoordinate = value => isFiniteNumber(value) && Math.abs(value) <= worldCoordinateLimit
 
 const graphBounds = nodes => {
   if (nodes.length === 0) return null
@@ -521,13 +524,15 @@ const hasValidTransform = () =>
   isFiniteNumber(state.transform.x) &&
   isFiniteNumber(state.transform.y) &&
   isFiniteNumber(state.transform.scale) &&
+  Math.abs(state.transform.x) <= transformCoordinateLimit &&
+  Math.abs(state.transform.y) <= transformCoordinateLimit &&
   state.transform.scale > 0
 
 const sanitizeNodePosition = node => {
-  if (!isFiniteNumber(node.x)) node.x = 0
-  if (!isFiniteNumber(node.y)) node.y = 0
-  if (!isFiniteNumber(node.vx)) node.vx = 0
-  if (!isFiniteNumber(node.vy)) node.vy = 0
+  if (!isReasonableCoordinate(node.x)) node.x = 0
+  if (!isReasonableCoordinate(node.y)) node.y = 0
+  if (!isFiniteNumber(node.vx) || Math.abs(node.vx) > worldCoordinateLimit) node.vx = 0
+  if (!isFiniteNumber(node.vy) || Math.abs(node.vy) > worldCoordinateLimit) node.vy = 0
 }
 
 const sanitizeGraphState = () => {
