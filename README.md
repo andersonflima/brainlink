@@ -516,6 +516,8 @@ Available tools:
 - `brainlink_recommendations`: return an automatic action plan so agents can run Brainlink in the recommended order.
 - `brainlink_context`: read indexed context for a task or question.
 - `brainlink_search`: search indexed notes.
+- `brainlink_dedupe`: detect duplicate candidates using exact hash + semantic similarity scores.
+- `brainlink_resolve_duplicate`: resolve duplicate pairs (`merge`, `link`, `ignore`) with connectivity-safe fallback edges.
 - `brainlink_add_note`: write durable Markdown memory and reindex.
 - `brainlink_add_file`: ingest a local file as a note and reindex.
 - `brainlink_index`: rebuild the vault index.
@@ -717,6 +719,28 @@ blink add "Note Title" --vault ./vault --content-file ./notes.md --no-auto-index
 
 Creates a Markdown note under `agents/<agent-id>/`. Common secret patterns are blocked by default; use `--allow-sensitive` only for an intentionally protected vault.
 To avoid disconnected memory, Brainlink auto-adds a fallback wiki edge when a note is written without links, creating agent hub notes when needed.
+`add` also returns `possibleDuplicates` (exact hash + semantic candidates) so agents can resolve duplicate memory right after writes.
+
+### `dedupe`
+
+```bash
+blink dedupe --vault ./vault --json
+blink dedupe --vault ./vault --agent coding-agent --limit 20 --min-score 0.92 --json
+blink dedupe --vault ./vault --no-semantic --json
+```
+
+Detects `possibleDuplicate` pairs using exact content hashes and optional semantic similarity.
+
+### `dedupe-resolve`
+
+```bash
+blink dedupe-resolve --vault ./vault --left agents/shared/a.md --right agents/shared/b.md --action merge --json
+blink dedupe-resolve --vault ./vault --left agents/shared/a.md --right agents/shared/b.md --action link --json
+blink dedupe-resolve --vault ./vault --left agents/shared/a.md --right agents/shared/b.md --action ignore --json
+```
+
+Resolves a duplicate pair with `merge`, `link` or `ignore`.
+When action is not `merge`, Brainlink still creates a low-priority related edge (`#related-to`) so notes remain connected.
 
 ### `index`
 

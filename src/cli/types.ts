@@ -38,6 +38,19 @@ export type AddOptions = VaultOptions & {
   readonly autoIndex?: boolean
 }
 
+export type DedupeOptions = VaultOptions & {
+  readonly limit?: string
+  readonly minScore?: string
+  readonly semantic?: boolean
+}
+
+export type DedupeResolveOptions = VaultOptions & {
+  readonly left?: string
+  readonly right?: string
+  readonly action?: 'merge' | 'link' | 'ignore'
+  readonly autoIndex?: boolean
+}
+
 export type ConfigGetOptions = {
   readonly json?: boolean
   readonly fix?: boolean
