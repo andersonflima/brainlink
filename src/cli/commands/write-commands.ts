@@ -43,6 +43,8 @@ const spawnDetached = (command: string, args: readonly string[]): boolean => {
 }
 
 const nativeGuiSwiftScriptPath = join(tmpdir(), 'brainlink-native-gui.swift')
+const nativeGuiPowershellScriptPath = join(tmpdir(), 'brainlink-native-gui.ps1')
+const nativeGuiLinuxScriptPath = join(tmpdir(), 'brainlink-native-gui-linux.py')
 
 const nativeGuiSwiftScript = `import Foundation
 import AppKit
@@ -101,6 +103,72 @@ app.delegate = delegate
 app.run()
 `
 
+const nativeGuiPowershellScript = `param(
+  [string]$TargetUrl = "http://127.0.0.1:4321"
+)
+
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "Brainlink Graph"
+$form.Width = 1320
+$form.Height = 860
+$form.StartPosition = "CenterScreen"
+
+$browser = New-Object System.Windows.Forms.WebBrowser
+$browser.Dock = [System.Windows.Forms.DockStyle]::Fill
+$browser.ScriptErrorsSuppressed = $true
+$browser.Navigate($TargetUrl)
+
+$form.Controls.Add($browser)
+[void]$form.ShowDialog()
+`
+
+const nativeGuiLinuxPythonScript = `#!/usr/bin/env python3
+import sys
+
+def run() -> int:
+    try:
+        import gi
+        gi.require_version("Gtk", "3.0")
+        try:
+            gi.require_version("WebKit2", "4.1")
+        except ValueError:
+            gi.require_version("WebKit2", "4.0")
+        from gi.repository import Gtk, WebKit2
+    except Exception:
+        return 1
+
+    target_url = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:4321"
+
+    window = Gtk.Window(title="Brainlink Graph")
+    window.set_default_size(1320, 860)
+    window.connect("destroy", Gtk.main_quit)
+
+    webview = WebKit2.WebView()
+    webview.load_uri(target_url)
+    window.add(webview)
+    window.show_all()
+    Gtk.main()
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(run())
+`
+
+const commandExists = (command: string): boolean => {
+  try {
+    const probe = platform() === 'win32'
+      ? spawnSync('where', [command], { stdio: 'ignore' })
+      : spawnSync('which', [command], { stdio: 'ignore' })
+    return probe.status === 0
+  } catch {
+    return false
+  }
+}
+
 const resolveSwiftExecutable = (): string | null => {
   const directSwift = '/usr/bin/swift'
   if (existsSync(directSwift)) {
@@ -116,11 +184,7 @@ const resolveSwiftExecutable = (): string | null => {
   }
 }
 
-const openGraphInNativeGui = (url: string): boolean => {
-  if (platform() !== 'darwin') {
-    return false
-  }
-
+const openGraphInMacNativeGui = (url: string): boolean => {
   const swiftBinary = resolveSwiftExecutable()
   if (!swiftBinary) {
     return false
@@ -133,6 +197,59 @@ const openGraphInNativeGui = (url: string): boolean => {
   }
 
   return spawnDetached(swiftBinary, [nativeGuiSwiftScriptPath, url])
+}
+
+const resolveWindowsPowershellExecutable = (): string | null => {
+  if (commandExists('powershell')) {
+    return 'powershell'
+  }
+
+  if (commandExists('pwsh')) {
+    return 'pwsh'
+  }
+
+  return null
+}
+
+const openGraphInWindowsNativeGui = (url: string): boolean => {
+  const powershell = resolveWindowsPowershellExecutable()
+  if (!powershell) {
+    return false
+  }
+
+  try {
+    writeFileSync(nativeGuiPowershellScriptPath, nativeGuiPowershellScript, 'utf8')
+  } catch {
+    return false
+  }
+
+  return spawnDetached(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', nativeGuiPowershellScriptPath, url])
+}
+
+const openGraphInLinuxNativeGui = (url: string): boolean => {
+  if (!commandExists('python3')) {
+    return false
+  }
+
+  try {
+    writeFileSync(nativeGuiLinuxScriptPath, nativeGuiLinuxPythonScript, 'utf8')
+  } catch {
+    return false
+  }
+
+  return spawnDetached('python3', [nativeGuiLinuxScriptPath, url])
+}
+
+const openGraphInNativeGui = (url: string): boolean => {
+  if (platform() === 'darwin') {
+    return openGraphInMacNativeGui(url)
+  }
+
+  if (platform() === 'win32') {
+    return openGraphInWindowsNativeGui(url)
+  }
+
+  return openGraphInLinuxNativeGui(url)
 }
 
 const openGraphInAppWindow = (url: string): boolean => {

@@ -540,7 +540,11 @@ blink server --vault ./vault --host 127.0.0.1 --port 4321 --no-open
 ```
 
 This starts a local frontend for inspecting the knowledge graph.
-By default on macOS it opens the graph in a native desktop GUI window.
+By default it tries to open the graph in a native desktop GUI window:
+- macOS: Swift + WebKit
+- Windows: PowerShell WinForms WebBrowser
+- Linux: Python GTK + WebKit2 (requires `python3` + `gi` + `WebKit2`)
+
 If native GUI launch is unavailable, it falls back to dedicated app-window mode and then to the default browser.
 Use `--no-open` to keep the server headless.
 

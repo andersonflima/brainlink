@@ -25,7 +25,7 @@
 - Added middle-out context assembly so chunk selection expands around the strongest note chunk.
 - Added compressed-space pack prefiltering (token bloom index) before `.blpk` decryption and scan.
 - Improved graph UI auto-fit and viewport recovery so loaded nodes are re-centered when zoom/pan drifts to empty canvas.
-- Added native desktop GUI auto-open on macOS for `blink server` (Swift + WebKit), with app-window/browser fallback.
+- Added cross-platform native desktop GUI auto-open for `blink server` (macOS Swift/WebKit, Windows PowerShell WinForms, Linux Python GTK/WebKit2), with app-window/browser fallback.
 
 ## 0.1.0-beta.3
 
