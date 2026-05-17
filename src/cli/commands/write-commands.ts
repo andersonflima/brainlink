@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, relative, resolve } from 'node:path'
+import { platform } from 'node:os'
+import { spawn } from 'node:child_process'
 import type { Command } from 'commander'
 import { addNote } from '../../application/add-note.js'
 import { buildContextPackage } from '../../application/build-context.js'
@@ -28,6 +30,34 @@ const resolveAddContent = (options: AddOptions): string => {
   }
 
   return readFileSync(options.contentFile, 'utf8')
+}
+
+const openUrlInBrowser = (url: string): void => {
+  const openDisabled =
+    process.env.BRAINLINK_NO_BROWSER === '1' ||
+    process.env.BRAINLINK_NO_BROWSER === 'true' ||
+    process.env.CI === 'true'
+
+  if (openDisabled) {
+    return
+  }
+
+  try {
+    if (platform() === 'darwin') {
+      const child = spawn('open', [url], { detached: true, stdio: 'ignore' })
+      child.unref()
+      return
+    }
+
+    if (platform() === 'win32') {
+      const child = spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' })
+      child.unref()
+      return
+    }
+
+    const child = spawn('xdg-open', [url], { detached: true, stdio: 'ignore' })
+    child.unref()
+  } catch {}
 }
 
 export const registerWriteCommands = (program: Command): void => {
@@ -278,6 +308,7 @@ export const registerWriteCommands = (program: Command): void => {
   .option('-h, --host <host>', 'server host', '127.0.0.1')
   .option('-p, --port <port>', 'server port', '4321')
   .option('--no-index', 'skip indexing before starting the server')
+  .option('--no-open', 'do not open the graph UI in the default browser')
   .option('-w, --watch', 'watch markdown files and reindex on changes')
   .option('--json', 'print machine-readable JSON')
   .description('start a local web UI for the knowledge graph')
@@ -290,8 +321,15 @@ export const registerWriteCommands = (program: Command): void => {
       shouldIndex: options.index,
       shouldWatch: Boolean(options.watch)
     })
+    if (options.open !== false) {
+      openUrlInBrowser(server.url)
+    }
 
-    print(options.json, { url: server.url, watch: Boolean(options.watch), readonly: true }, () => `Brainlink graph server running at ${server.url}`)
+    print(
+      options.json,
+      { url: server.url, watch: Boolean(options.watch), readonly: true, openedInBrowser: options.open !== false },
+      () => `Brainlink graph server running at ${server.url}${options.open !== false ? ' (opened in browser)' : ''}`
+    )
   })
 
   program
