@@ -31,6 +31,8 @@
 - Improved non-mac browser detection fallback to try installed Edge/Chrome/Firefox/Chromium candidates before system default open.
 - Improved graph filter rendering to keep hub anchor nodes visible (`Memory Hub`/`MOC`/high-degree fallback) for coherent relationship context.
 - Fixed graph modal content loading by correcting agent query parameter composition for `/api/graph-node` and `/api/graph-filter` requests.
+- Improved 50k+ graph rendering performance with viewport-aware spatial node culling, cached render visibility, and node-adjacent edge selection to avoid full graph scans every frame.
+- Added incremental vault indexing with file snapshots to reuse unchanged documents/chunks/embeddings, plus adaptive search-pack rebuild thresholds to avoid full re-compression on small edits.
 
 ## 0.1.0-beta.3
 

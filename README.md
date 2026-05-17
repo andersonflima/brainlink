@@ -71,6 +71,8 @@ Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/c
 - Middle-out context assembly around the strongest chunk per document.
 - In-process index and context caching with automatic invalidation on index updates.
 - Compressed-space prefiltering for `.blpk` packs before decryption and scan.
+- Incremental indexing that reprocesses only changed markdown files and reuses existing chunks/embeddings for unchanged notes.
+- Adaptive compressed-pack rebuild policy to keep indexing fast during small edit batches.
 - Agent namespaces under `agents/<agent-id>/`.
 - S3-compatible bucket vaults through `s3://bucket/prefix` URIs.
 - CLI with machine-readable `--json` output.
@@ -78,6 +80,7 @@ Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/c
 - Built-in MCP stdio server for agent tool integration.
 - Local HTTP API.
 - Realtime graph UI with agent selector and colored knowledge groups.
+- Graph renderer optimized for large datasets with viewport-driven node culling and edge lookup by visible nodes.
 
 ## Install
 

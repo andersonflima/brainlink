@@ -225,6 +225,37 @@ export const openFileIndex = (vaultPath: string) => {
         links
       })
     },
+    getIndexedDocuments: async (agentId?: string): Promise<readonly IndexedDocument[]> => {
+      const index = await load()
+      const documents = agentId ? index.documents.filter((document) => document.agentId === agentId) : index.documents
+      const selectedDocumentIds = new Set(documents.map((document) => document.id))
+      const chunksByDocumentId = index.chunks.reduce<Map<string, StoredIndex['chunks'][number][]>>((state, chunk) => {
+        if (!selectedDocumentIds.has(chunk.documentId)) {
+          return state
+        }
+        const current = state.get(chunk.documentId) ?? []
+        current.push(chunk)
+        state.set(chunk.documentId, current)
+        return state
+      }, new Map())
+      const linksByDocumentId = index.links.reduce<Map<string, StoredIndex['links'][number][]>>((state, link) => {
+        if (!selectedDocumentIds.has(link.fromDocumentId)) {
+          return state
+        }
+        const current = state.get(link.fromDocumentId) ?? []
+        current.push(link)
+        state.set(link.fromDocumentId, current)
+        return state
+      }, new Map())
+
+      return documents
+        .map((document) => ({
+          document,
+          chunks: [...(chunksByDocumentId.get(document.id) ?? [])].sort((left, right) => left.ordinal - right.ordinal),
+          links: linksByDocumentId.get(document.id) ?? []
+        }))
+        .sort((left, right) => left.document.path.localeCompare(right.document.path))
+    },
     search: async (
       query: string,
       limit: number,

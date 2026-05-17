@@ -10,6 +10,14 @@ export type MarkdownFile = {
   readonly updatedAt: Date
 }
 
+export type MarkdownFileSummary = {
+  readonly absolutePath: string
+  readonly relativePath: string
+  readonly createdAt: Date
+  readonly updatedAt: Date
+  readonly size: number
+}
+
 const excludedDirectories = new Set(['.brainlink', '.git', 'node_modules', 'dist'])
 const directoryMode = 0o700
 const fileMode = 0o600
@@ -123,6 +131,27 @@ export const readMarkdownFiles = async (vaultPath: string): Promise<readonly Mar
       }
     })
   )
+}
+
+export const readMarkdownFileSummaries = async (vaultPath: string): Promise<readonly MarkdownFileSummary[]> => {
+  const absoluteVaultPath = await ensureVault(vaultPath)
+  const paths = await walkMarkdownFiles(absoluteVaultPath)
+
+  const summaries = await Promise.all(
+    paths.map(async (absolutePath) => {
+      const fileStats = await stat(absolutePath)
+
+      return {
+        absolutePath,
+        relativePath: relative(absoluteVaultPath, absolutePath),
+        createdAt: fileStats.birthtime,
+        updatedAt: fileStats.mtime,
+        size: fileStats.size
+      }
+    })
+  )
+
+  return summaries.sort((left, right) => left.relativePath.localeCompare(right.relativePath))
 }
 
 export const listVaultFiles = async (vaultPath: string): Promise<readonly string[]> => {

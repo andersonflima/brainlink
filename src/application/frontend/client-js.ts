@@ -3,6 +3,7 @@ const ctx = canvas.getContext('2d')
 const largeGraphNodeThreshold = 4000
 const largeGraphEdgeRenderLimit = 16000
 const renderNodeBudget = 1800
+const renderEdgeBudget = 5200
 const minNodePixelRadius = 1.8
 const viewportPaddingPx = 280
 const worldCoordinateLimit = 5_000_000
@@ -30,7 +31,11 @@ const state = {
   graphStatus: '',
   last: performance.now(),
   offscreenFrameCount: 0,
-  recoveringViewport: false
+  recoveringViewport: false,
+  renderVisibilityDirty: true,
+  lastViewportKey: '',
+  visibleNodeSpatial: { cellSize: 220, minX: 0, minY: 0, maxX: 0, maxY: 0, buckets: new Map() },
+  visibleEdgeByNode: new Map()
 }
 
 const byId = id => document.getElementById(id)
@@ -96,6 +101,7 @@ const resize = () => {
   canvas.width = Math.floor(width * ratio)
   canvas.height = Math.floor(height * ratio)
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
+  markRenderDirty()
 }
 
 const normalizeQuery = value => value.trim().toLowerCase()
@@ -168,9 +174,158 @@ const recomputeVisibility = () => {
 
   state.visibleNodes = nodes
   state.visibleEdges = limitedEdges
+  state.visibleNodeSpatial = createSpatialIndex(nodes)
+  state.visibleEdgeByNode = createVisibleEdgeLookup(limitedEdges)
+  markRenderDirty()
 }
 
 const edgeWeight = edge => Number.isFinite(edge.weight) ? Math.max(1, edge.weight) : 1
+const markRenderDirty = () => {
+  state.renderVisibilityDirty = true
+}
+
+const createSpatialIndex = nodes => {
+  if (nodes.length === 0) {
+    return { cellSize: 220, minX: 0, minY: 0, maxX: 0, maxY: 0, buckets: new Map() }
+  }
+
+  const bounds = graphBounds(nodes)
+  if (!bounds) {
+    return { cellSize: 220, minX: 0, minY: 0, maxX: 0, maxY: 0, buckets: new Map() }
+  }
+
+  const targetNodesPerCell = 18
+  const approximateCellArea = Math.max((bounds.width * bounds.height) / Math.max(nodes.length / targetNodesPerCell, 1), 1)
+  const cellSize = Math.max(90, Math.min(2200, Math.sqrt(approximateCellArea)))
+  const buckets = new Map()
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index]
+    const cellX = Math.floor((node.x - bounds.minX) / cellSize)
+    const cellY = Math.floor((node.y - bounds.minY) / cellSize)
+    const key = cellX + ':' + cellY
+    const bucket = buckets.get(key)
+    if (bucket) {
+      bucket.push(node)
+      continue
+    }
+    buckets.set(key, [node])
+  }
+
+  return {
+    cellSize,
+    minX: bounds.minX,
+    minY: bounds.minY,
+    maxX: bounds.maxX,
+    maxY: bounds.maxY,
+    buckets
+  }
+}
+
+const viewportNodesFromSpatialIndex = viewport => {
+  if (state.visibleNodes.length <= 2500) {
+    return state.visibleNodes.filter(node => isNodeInViewport(node, viewport))
+  }
+
+  const spatial = state.visibleNodeSpatial
+  if (!spatial || spatial.buckets.size === 0) {
+    return state.visibleNodes.filter(node => isNodeInViewport(node, viewport))
+  }
+
+  const minCellX = Math.floor((viewport.minX - spatial.minX) / spatial.cellSize)
+  const maxCellX = Math.floor((viewport.maxX - spatial.minX) / spatial.cellSize)
+  const minCellY = Math.floor((viewport.minY - spatial.minY) / spatial.cellSize)
+  const maxCellY = Math.floor((viewport.maxY - spatial.minY) / spatial.cellSize)
+  const nodes = []
+
+  for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
+    for (let cellY = minCellY; cellY <= maxCellY; cellY += 1) {
+      const bucket = spatial.buckets.get(cellX + ':' + cellY)
+      if (!bucket) continue
+
+      for (let index = 0; index < bucket.length; index += 1) {
+        const node = bucket[index]
+        if (isNodeInViewport(node, viewport)) {
+          nodes.push(node)
+        }
+      }
+    }
+  }
+
+  return nodes
+}
+
+const createVisibleEdgeLookup = edges => {
+  const lookup = new Map()
+
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index]
+    if (!edge.target) continue
+
+    const sourceList = lookup.get(edge.source)
+    if (sourceList) {
+      sourceList.push(edge)
+    } else {
+      lookup.set(edge.source, [edge])
+    }
+
+    const targetList = lookup.get(edge.target)
+    if (targetList) {
+      targetList.push(edge)
+    } else {
+      lookup.set(edge.target, [edge])
+    }
+  }
+
+  return lookup
+}
+
+const collectVisibleEdgesForNodes = nodeIds => {
+  if (nodeIds.size === 0) {
+    return []
+  }
+
+  const seen = new Set()
+  const collected = []
+
+  nodeIds.forEach(nodeId => {
+    const candidateEdges = state.visibleEdgeByNode.get(nodeId) ?? []
+    for (let index = 0; index < candidateEdges.length; index += 1) {
+      const edge = candidateEdges[index]
+      if (!edge.target || !nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+        continue
+      }
+      const key = edge.source < edge.target
+        ? edge.source + '|' + edge.target + '|' + edge.targetTitle
+        : edge.target + '|' + edge.source + '|' + edge.targetTitle
+      if (seen.has(key)) continue
+
+      seen.add(key)
+      collected.push(edge)
+      if (collected.length >= renderEdgeBudget) {
+        return
+      }
+    }
+  })
+
+  return collected
+}
+
+const fallbackViewportNodes = () => {
+  const nodes = []
+  const maxNodes = Math.min(renderNodeBudget, 220)
+  const step = Math.max(1, Math.ceil(state.visibleNodes.length / maxNodes))
+
+  for (let index = 0; index < state.visibleNodes.length && nodes.length < maxNodes; index += step) {
+    nodes.push(state.visibleNodes[index])
+  }
+
+  if (state.selected && !nodes.find(node => node.id === state.selected.id)) {
+    nodes.push(state.selected)
+  }
+
+  return nodes
+}
 
 const clampScale = value => Math.max(zoomRange.min, Math.min(zoomRange.max, value))
 const isFiniteNumber = value => Number.isFinite(value)
@@ -232,6 +387,7 @@ const fitView = (options = { useFiltered: true }) => {
 
   if (!bounds) {
     state.transform = { x: width / 2, y: height / 2, scale: 1 }
+    markRenderDirty()
     return
   }
 
@@ -259,6 +415,7 @@ const fitView = (options = { useFiltered: true }) => {
     y: height / 2 - centerY * scale,
     scale
   }
+  markRenderDirty()
 }
 
 const resetView = () => fitView({ useFiltered: false })
@@ -429,6 +586,7 @@ const worldPoint = event => {
 }
 
 const hitNode = point => {
+  computeRenderVisibility()
   if (state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.55) {
     return null
   }
@@ -491,22 +649,33 @@ const viewportNodeStride = () => {
 }
 
 const computeRenderVisibility = () => {
+  const viewport = worldViewportBounds()
+  const viewportKey =
+    Math.round(viewport.minX * 10) + ':' +
+    Math.round(viewport.maxX * 10) + ':' +
+    Math.round(viewport.minY * 10) + ':' +
+    Math.round(viewport.maxY * 10) + ':' +
+    Math.round(state.transform.scale * 1000)
+
+  if (!state.renderVisibilityDirty && viewportKey === state.lastViewportKey) {
+    return
+  }
+  state.lastViewportKey = viewportKey
+  state.renderVisibilityDirty = false
+
   if (state.visibleNodes.length <= 2000) {
     state.renderNodes = state.visibleNodes
     const ids = new Set(state.renderNodes.map((node) => node.id))
-    state.renderEdges = state.visibleEdges.filter((edge) => ids.has(edge.source) && edge.target && ids.has(edge.target))
+    state.renderEdges = collectVisibleEdgesForNodes(ids)
     return
   }
 
-  const viewport = worldViewportBounds()
+  const viewportNodes = viewportNodesFromSpatialIndex(viewport)
   const stride = viewportNodeStride()
   const picked = []
 
-  for (let index = 0; index < state.visibleNodes.length; index += 1) {
-    const node = state.visibleNodes[index]
-    if (!isNodeInViewport(node, viewport)) {
-      continue
-    }
+  for (let index = 0; index < viewportNodes.length; index += 1) {
+    const node = viewportNodes[index]
 
     const isPriority =
       node.id === state.selected?.id ||
@@ -521,26 +690,15 @@ const computeRenderVisibility = () => {
     ? picked.slice(0, renderNodeBudget)
     : picked
   if (nodes.length === 0 && state.visibleNodes.length > 0) {
-    const centerX = (viewport.minX + viewport.maxX) / 2
-    const centerY = (viewport.minY + viewport.maxY) / 2
-    const closest = [...state.visibleNodes]
-      .sort((left, right) => {
-        const leftDistance = (left.x - centerX) ** 2 + (left.y - centerY) ** 2
-        const rightDistance = (right.x - centerX) ** 2 + (right.y - centerY) ** 2
-        return leftDistance - rightDistance
-      })
-      .slice(0, Math.min(renderNodeBudget, 180))
-    const closestIds = new Set(closest.map((node) => node.id))
-
-    state.renderNodes = closest
-    state.renderEdges = state.visibleEdges.filter(
-      (edge) => closestIds.has(edge.source) && edge.target && closestIds.has(edge.target)
-    )
+    const fallbackNodes = fallbackViewportNodes()
+    const fallbackIds = new Set(fallbackNodes.map((node) => node.id))
+    state.renderNodes = fallbackNodes
+    state.renderEdges = collectVisibleEdgesForNodes(fallbackIds)
     return
   }
 
   const nodeIds = new Set(nodes.map((node) => node.id))
-  const edges = state.visibleEdges.filter((edge) => nodeIds.has(edge.source) && edge.target && nodeIds.has(edge.target))
+  const edges = collectVisibleEdgesForNodes(nodeIds)
 
   state.renderNodes = nodes
   state.renderEdges = edges
@@ -767,6 +925,7 @@ const zoomAtPoint = (screenX, screenY, factor) => {
   state.transform.scale = nextScale
   state.transform.x = screenX - worldX * nextScale
   state.transform.y = screenY - worldY * nextScale
+  markRenderDirty()
 }
 
 const wheelZoomFactor = event => {
@@ -869,6 +1028,7 @@ const bindEvents = () => {
     if (node) {
       node.x = point.x
       node.y = point.y
+      markRenderDirty()
     }
     canvas.setPointerCapture(event.pointerId)
   })
@@ -885,10 +1045,12 @@ const bindEvents = () => {
     if (state.pointer.dragNode) {
       state.pointer.dragNode.x = point.x
       state.pointer.dragNode.y = point.y
+      markRenderDirty()
       return
     }
     state.transform.x += dx
     state.transform.y += dy
+    markRenderDirty()
   })
   canvas.addEventListener('pointerup', event => {
     if (state.pointer.dragNode && !state.pointer.moved) selectNode(state.pointer.dragNode, { openContent: true })
