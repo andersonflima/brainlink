@@ -132,6 +132,7 @@ const recomputeVisibility = () => {
 const edgeWeight = edge => Number.isFinite(edge.weight) ? Math.max(1, edge.weight) : 1
 
 const clampScale = value => Math.max(zoomRange.min, Math.min(zoomRange.max, value))
+const isFiniteNumber = value => Number.isFinite(value)
 
 const graphBounds = nodes => {
   if (nodes.length === 0) return null
@@ -516,6 +517,25 @@ const isNodeVisibleOnScreen = (node, width, height) => {
   )
 }
 
+const hasValidTransform = () =>
+  isFiniteNumber(state.transform.x) &&
+  isFiniteNumber(state.transform.y) &&
+  isFiniteNumber(state.transform.scale) &&
+  state.transform.scale > 0
+
+const sanitizeNodePosition = node => {
+  if (!isFiniteNumber(node.x)) node.x = 0
+  if (!isFiniteNumber(node.y)) node.y = 0
+  if (!isFiniteNumber(node.vx)) node.vx = 0
+  if (!isFiniteNumber(node.vy)) node.vy = 0
+}
+
+const sanitizeGraphState = () => {
+  state.nodes.forEach(sanitizeNodePosition)
+  state.visibleNodes.forEach(sanitizeNodePosition)
+  state.renderNodes.forEach(sanitizeNodePosition)
+}
+
 const render = now => {
   const delta = now - state.last
   state.last = now
@@ -527,6 +547,10 @@ const render = now => {
   const rect = canvas.getBoundingClientRect()
   const width = Math.max(rect.width, 320)
   const height = Math.max(rect.height, 320)
+  sanitizeGraphState()
+  if (!hasValidTransform()) {
+    resetView()
+  }
   ctx.clearRect(0, 0, width, height)
   if (state.nodes.length === 0) {
     ctx.fillStyle = '#99a5b5'
