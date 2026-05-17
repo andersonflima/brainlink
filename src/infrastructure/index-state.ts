@@ -12,6 +12,9 @@ export type IndexState = {
   readonly updatedAt: string
   readonly chunkSize: number
   readonly embeddingProvider: string
+  readonly searchPackRowChunkSize: number
+  readonly searchPackCompressionLevel: number
+  readonly searchPackUseDictionary: boolean
   readonly files: readonly IndexedFileSnapshot[]
   readonly pendingPackChanges: number
 }
@@ -53,6 +56,9 @@ export const readIndexState = async (vaultPath: string): Promise<IndexState | nu
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
       chunkSize: typeof parsed.chunkSize === 'number' ? parsed.chunkSize : 1200,
       embeddingProvider: typeof parsed.embeddingProvider === 'string' ? parsed.embeddingProvider : 'none',
+      searchPackRowChunkSize: typeof parsed.searchPackRowChunkSize === 'number' ? parsed.searchPackRowChunkSize : 5_000,
+      searchPackCompressionLevel: typeof parsed.searchPackCompressionLevel === 'number' ? parsed.searchPackCompressionLevel : 5,
+      searchPackUseDictionary: typeof parsed.searchPackUseDictionary === 'boolean' ? parsed.searchPackUseDictionary : true,
       files,
       pendingPackChanges: typeof parsed.pendingPackChanges === 'number' && parsed.pendingPackChanges >= 0 ? parsed.pendingPackChanges : 0
     }
@@ -67,6 +73,9 @@ export const writeIndexState = async (vaultPath: string, state: Omit<IndexState,
     updatedAt: new Date().toISOString(),
     chunkSize: state.chunkSize,
     embeddingProvider: state.embeddingProvider,
+    searchPackRowChunkSize: state.searchPackRowChunkSize,
+    searchPackCompressionLevel: state.searchPackCompressionLevel,
+    searchPackUseDictionary: state.searchPackUseDictionary,
     files: [...state.files].sort((left, right) => left.path.localeCompare(right.path)),
     pendingPackChanges: Math.max(0, Math.floor(state.pendingPackChanges))
   }

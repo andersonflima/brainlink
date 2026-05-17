@@ -39,6 +39,9 @@
 - Improved massive-graph UI responsiveness with stricter render budgets, adaptive heavy-graph frame throttling, reduced interaction hit-test frequency, and URL-first agent selection on initial graph load.
 - Improved 50k+ graph LOD behavior so zoomed-out views render lightweight cluster overviews and progressively reveal nodes/edges only as zoom increases.
 - Added `blink bench` with realtime index phase telemetry and per-run compressed-pack analysis (input/output bytes, ratio, saved space, rebuild reason and duration), including continuous watch mode.
+- Added tunable single-stage search-pack compression settings (`searchPack.rowChunkSize`, `searchPack.compressionLevel`, `searchPack.useDictionary`).
+- Added benchmark guardrails for compression savings and latency regression (`searchPack.guardrailMinSavingsPercent`, `searchPack.guardrailMaxLatencyRegressionPercent`), reported in `blink bench`.
+- Added `blink pack-backup` for offline second-stage compression backups of encrypted `.blpk` packs, outside the online query path.
 
 ## 0.1.0-beta.3
 

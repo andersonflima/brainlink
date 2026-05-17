@@ -85,6 +85,7 @@ npm run dev -- server --vault ./vault --watch
 npm run dev -- watch --vault ./vault
 npm run dev -- bench --vault ./vault
 npm run dev -- bench --vault ./vault --watch
+npm run dev -- pack-backup --vault ./vault
 ```
 
 Start MCP over stdio:

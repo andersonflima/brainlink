@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { platform, tmpdir } from 'node:os'
 import { spawn, spawnSync } from 'node:child_process'
@@ -11,6 +11,7 @@ import { importLegacySqliteDatabase } from '../../application/import-legacy-sqli
 import type { IndexVaultProgressEvent, IndexVaultResult } from '../../application/index-vault.js'
 import { indexVault, indexVaultWithOptions } from '../../application/index-vault.js'
 import { migrateVaultContent, planVaultMigration, previewVaultMigration, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
+import { createOfflinePackBackup } from '../../application/offline-pack-backup.js'
 import { startServer } from '../../application/start-server.js'
 import { startVaultWatcher } from '../../application/watch-vault.js'
 import { doctorVault, getStats, validateVault } from '../../application/analyze-vault.js'
@@ -27,6 +28,7 @@ import type {
   DedupeOptions,
   DedupeResolveOptions,
   InitOptions,
+  PackBackupOptions,
   MigrateVaultOptions,
   QuickstartOptions,
   ServerOptions,
@@ -120,6 +122,108 @@ const printBenchSummary = (
         packs?.rebuilt
           ? `packCount=${packs.packCount ?? 0} packDuration=${formatMs(packs.durationMs)} input=${formatBytes(compression?.inputBytes)} output=${formatBytes(compression?.outputBytes)} saved=${savedPercent}`
           : 'packCompression=n/a'
+      ].join('\n')
+    }
+  )
+}
+
+type BenchHistoryEntry = {
+  readonly elapsedMs: number
+  readonly compressionRatio?: number
+  readonly timestamp: string
+}
+
+type BenchGuardrailResult = {
+  readonly compressionSavingsPercent?: number
+  readonly compressionPass?: boolean
+  readonly latencyRegressionPercent?: number
+  readonly latencyPass?: boolean
+}
+
+const benchHistoryPath = (vaultPath: string): string =>
+  join(vaultPath, '.brainlink', 'benchmarks', 'latest.json')
+
+const readBenchHistory = async (vaultPath: string): Promise<BenchHistoryEntry | null> => {
+  try {
+    const parsed = JSON.parse(await readFile(benchHistoryPath(vaultPath), 'utf8')) as Partial<BenchHistoryEntry>
+    if (typeof parsed.elapsedMs !== 'number' || typeof parsed.timestamp !== 'string') {
+      return null
+    }
+
+    return {
+      elapsedMs: parsed.elapsedMs,
+      timestamp: parsed.timestamp,
+      ...(typeof parsed.compressionRatio === 'number' ? { compressionRatio: parsed.compressionRatio } : {})
+    }
+  } catch {
+    return null
+  }
+}
+
+const writeBenchHistory = async (vaultPath: string, result: IndexVaultResult): Promise<void> => {
+  await mkdir(dirname(benchHistoryPath(vaultPath)), { recursive: true })
+  const payload: BenchHistoryEntry = {
+    elapsedMs: result.elapsedMs ?? 0,
+    timestamp: new Date().toISOString(),
+    ...(typeof result.packs?.compression?.ratio === 'number' ? { compressionRatio: result.packs.compression.ratio } : {})
+  }
+  await writeFile(benchHistoryPath(vaultPath), `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+}
+
+const evaluateBenchGuardrails = (
+  config: Awaited<ReturnType<typeof loadBrainlinkConfig>>,
+  result: IndexVaultResult,
+  baseline: BenchHistoryEntry | null
+): BenchGuardrailResult => {
+  const compressionRatio = result.packs?.compression?.ratio
+  const compressionSavingsPercent =
+    typeof compressionRatio === 'number' ? Math.max(0, (1 - compressionRatio) * 100) : undefined
+  const compressionPass =
+    compressionSavingsPercent != null
+      ? compressionSavingsPercent >= config.searchPack.guardrailMinSavingsPercent
+      : undefined
+  const latencyRegressionPercent =
+    baseline && baseline.elapsedMs > 0 && typeof result.elapsedMs === 'number'
+      ? ((result.elapsedMs - baseline.elapsedMs) / baseline.elapsedMs) * 100
+      : undefined
+  const latencyPass =
+    latencyRegressionPercent != null
+      ? latencyRegressionPercent <= config.searchPack.guardrailMaxLatencyRegressionPercent
+      : undefined
+
+  return {
+    ...(compressionSavingsPercent != null ? { compressionSavingsPercent } : {}),
+    ...(compressionPass != null ? { compressionPass } : {}),
+    ...(latencyRegressionPercent != null ? { latencyRegressionPercent } : {}),
+    ...(latencyPass != null ? { latencyPass } : {})
+  }
+}
+
+const printBenchGuardrails = (
+  json: boolean | undefined,
+  vault: string,
+  config: Awaited<ReturnType<typeof loadBrainlinkConfig>>,
+  guardrails: BenchGuardrailResult
+): void => {
+  print(
+    json,
+    {
+      event: 'bench-guardrails',
+      vault,
+      thresholds: {
+        minSavingsPercent: config.searchPack.guardrailMinSavingsPercent,
+        maxLatencyRegressionPercent: config.searchPack.guardrailMaxLatencyRegressionPercent
+      },
+      guardrails
+    },
+    () => {
+      const savings = guardrails.compressionSavingsPercent
+      const latency = guardrails.latencyRegressionPercent
+      return [
+        '[bench] guardrails',
+        `minSavings=${config.searchPack.guardrailMinSavingsPercent.toFixed(1)}% maxLatencyRegression=${config.searchPack.guardrailMaxLatencyRegressionPercent.toFixed(1)}%`,
+        `compressionSavings=${savings != null ? `${savings.toFixed(2)}%` : 'n/a'} pass=${guardrails.compressionPass != null ? (guardrails.compressionPass ? 'yes' : 'no') : 'n/a'}`,
+        `latencyRegression=${latency != null ? `${latency.toFixed(2)}%` : 'n/a'} pass=${guardrails.latencyPass != null ? (guardrails.latencyPass ? 'yes' : 'no') : 'n/a'}`
       ].join('\n')
     }
   )
@@ -841,6 +945,7 @@ export const registerWriteCommands = (program: Command): void => {
     .description('benchmark indexing in realtime, including compressed pack behavior')
     .action(async (options: BenchOptions) => {
       const resolved = await resolveOptions(options)
+      const config = await loadBrainlinkConfig()
       const emitProgress = (event: IndexVaultProgressEvent): void => {
         printBenchRealtimeEvent(options.json, event)
       }
@@ -851,10 +956,14 @@ export const registerWriteCommands = (program: Command): void => {
       }
 
       const runAndPrint = async (trigger: 'manual' | 'watch'): Promise<IndexVaultResult> => {
+        const baseline = await readBenchHistory(resolved.vault)
         const result = await indexVaultWithOptions(resolved.vault, {
           onProgress: emitProgress
         })
         printBenchSummary(options.json, trigger, resolved.vault, result)
+        const guardrails = evaluateBenchGuardrails(config, result, baseline)
+        printBenchGuardrails(options.json, resolved.vault, config, guardrails)
+        await writeBenchHistory(resolved.vault, result)
         return result
       }
 
@@ -916,7 +1025,45 @@ export const registerWriteCommands = (program: Command): void => {
       return `${checks}${recommendations}`
     })
     process.exitCode = report.ok ? 0 : 1
-  })
+    })
+
+  program
+    .command('pack-backup')
+    .option('-v, --vault <vault>', 'vault directory')
+    .option('-o, --output <path>', 'output file path (.blpkbak.gz)')
+    .option('--json', 'print machine-readable JSON')
+    .description('create offline backup with second-stage compression for encrypted search packs')
+    .action(async (options: PackBackupOptions) => {
+      const resolved = await resolveOptions(options)
+      const outputPath =
+        options.output?.trim().length
+          ? resolve(options.output)
+          : join(
+              resolved.vault,
+              '.brainlink',
+              'backups',
+              `search-packs-${new Date().toISOString().replace(/[:.]/g, '-')}.blpkbak.gz`
+            )
+
+      const backup = await createOfflinePackBackup({
+        vaultPath: resolved.vault,
+        outputPath
+      })
+
+      print(
+        options.json,
+        {
+          vault: resolved.vault,
+          backup
+        },
+        () =>
+          [
+            `Offline backup created: ${backup.outputPath}`,
+            `files=${backup.fileCount}`,
+            `input=${formatBytes(backup.inputBytes)} output=${formatBytes(backup.outputBytes)} saved=${((1 - backup.ratio) * 100).toFixed(2)}%`
+          ].join('\n')
+      )
+    })
 
   program
     .command('watch')
