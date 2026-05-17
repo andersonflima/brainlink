@@ -46,8 +46,8 @@ export const createClientHtml = (): string => `<!doctype html>
         <canvas id="graph" aria-label="Brainlink knowledge graph"></canvas>
       </section>
     </main>
-    <footer class="app-footer" aria-label="License notice">
-      <small>MIT License · Copyright © 2026 Anderson Espindola</small>
+    <footer class="app-footer" aria-label="Copyright notice">
+      <small>Copyright © 2026 Substructa</small>
     </footer>
     <dialog id="contentDialog" class="content-dialog" aria-labelledby="contentTitle">
       <article>

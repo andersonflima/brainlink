@@ -571,6 +571,7 @@ The graph UI shows:
 - neutral graph nodes with segment/group metadata
 - agent selector (id-only labels) for isolated views
 - graph filter matches title, path, tags and note content
+- graph filter keeps hub context nodes visible (`Memory Hub`/`MOC`/high-degree fallback) to preserve relationship readability
 - realtime refresh while `--watch` is enabled
 - graph controls for zoom in, zoom out, fit visible nodes and reset-to-fit-all
 - wheel zoom (including `cmd+scroll` and `ctrl+scroll`) anchored to cursor position for faster navigation in large graphs
@@ -1055,7 +1056,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 MIT. See [LICENSE](LICENSE).
-Copyright (c) 2026 Anderson Espindola. See [COPYRIGHT.md](COPYRIGHT.md).
+Copyright (c) 2026 Substructa. See [COPYRIGHT.md](COPYRIGHT.md).
 
 ### Memory Optimization Loop (1-7)
 

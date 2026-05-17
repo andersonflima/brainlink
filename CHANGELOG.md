@@ -28,6 +28,8 @@
 - Added cross-platform native desktop GUI auto-open for `blink server` (macOS Swift/WebKit, Windows PowerShell WinForms, Linux Python GTK/WebKit2), with app-window/browser fallback.
 - Changed Linux default UI launch to app-window/browser for lighter startup; Linux native GUI is now opt-in via `BRAINLINK_LINUX_NATIVE_GUI=1`.
 - Added native GUI parent-process monitoring so GUI windows close automatically when `blink server` stops.
+- Improved non-mac browser detection fallback to try installed Edge/Chrome/Firefox/Chromium candidates before system default open.
+- Improved graph filter rendering to keep hub anchor nodes visible (`Memory Hub`/`MOC`/high-degree fallback) for coherent relationship context.
 
 ## 0.1.0-beta.3
 

@@ -99,6 +99,8 @@ const resize = () => {
 }
 
 const normalizeQuery = value => value.trim().toLowerCase()
+const hubNodeRetentionLimit = 2
+const hubNodePattern = /\b(memory\s*hub|knowledge\s*hub|hub|moc|map|memory\s*map|mapa)\b/i
 
 const localFilteredNodes = query =>
   state.nodes.filter(node =>
@@ -107,14 +109,51 @@ const localFilteredNodes = query =>
     node.tags.some(tag => tag.toLowerCase().includes(query))
   )
 
+const rankedHubNodes = () => {
+  if (state.nodes.length === 0) {
+    return []
+  }
+
+  const byTitleAndDegree = [...state.nodes]
+    .filter(node => hubNodePattern.test(node.title) || hubNodePattern.test(node.path) || node.tags.some(tag => hubNodePattern.test(tag)))
+    .sort((left, right) => {
+      const byDegree = (state.nodeDegrees.get(right.id) ?? 0) - (state.nodeDegrees.get(left.id) ?? 0)
+      if (byDegree !== 0) return byDegree
+      return left.title.localeCompare(right.title)
+    })
+
+  if (byTitleAndDegree.length > 0) {
+    return byTitleAndDegree.slice(0, hubNodeRetentionLimit)
+  }
+
+  return [...state.nodes]
+    .sort((left, right) => {
+      const byDegree = (state.nodeDegrees.get(right.id) ?? 0) - (state.nodeDegrees.get(left.id) ?? 0)
+      if (byDegree !== 0) return byDegree
+      return left.title.localeCompare(right.title)
+    })
+    .slice(0, 1)
+}
+
+const withPersistentHubNodes = nodes => {
+  if (nodes.length === 0) {
+    return rankedHubNodes()
+  }
+
+  const ids = new Set(nodes.map(node => node.id))
+  const hubsToKeep = rankedHubNodes().filter(node => !ids.has(node.id))
+  return nodes.concat(hubsToKeep)
+}
+
 const filteredNodes = () => {
   const query = normalizeQuery(state.query)
   if (!query) return state.nodes
   if (state.contentFilter.query === query && state.contentFilter.ids instanceof Set) {
-    return state.nodes.filter(node => state.contentFilter.ids.has(node.id))
+    const matched = state.nodes.filter(node => state.contentFilter.ids.has(node.id))
+    return withPersistentHubNodes(matched)
   }
 
-  return localFilteredNodes(query)
+  return withPersistentHubNodes(localFilteredNodes(query))
 }
 
 const recomputeVisibility = () => {

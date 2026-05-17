@@ -4,7 +4,7 @@
   "description": "Local-first knowledge memory for agents with Markdown, backlinks, indexing and context retrieval.",
   "type": "module",
   "license": "MIT",
-  "author": "Anderson Espindola",
+  "author": "Substructa",
   "homepage": "https://github.com/andersonflima/brainlink#readme",
   "repository": {
     "type": "git",
