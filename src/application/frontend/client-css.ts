@@ -33,7 +33,7 @@ select {
 
 .shell {
   width: 100%;
-  height: 100svh;
+  height: calc(100svh - 28px);
   overflow: hidden;
 }
 
@@ -102,14 +102,6 @@ select {
   align-items: center;
   gap: 10px;
   margin-left: auto;
-}
-
-.license-badge {
-  margin-left: 10px;
-  color: var(--muted);
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
 }
 
 .search input,
@@ -353,6 +345,20 @@ li small {
   padding: 22px;
 }
 
+.app-footer {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.app-footer small {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
 @media (max-width: 860px) {
   .graph-header {
     align-items: stretch;
@@ -376,13 +382,6 @@ li small {
     margin-left: 0;
     justify-content: space-between;
     order: 4;
-  }
-
-  .license-badge {
-    width: 100%;
-    margin-left: 0;
-    order: 5;
-    white-space: normal;
   }
 
   .content-dialog header {

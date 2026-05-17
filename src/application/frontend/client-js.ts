@@ -411,6 +411,13 @@ const viewportNodeStride = () => {
 }
 
 const computeRenderVisibility = () => {
+  if (state.visibleNodes.length <= 2000) {
+    state.renderNodes = state.visibleNodes
+    const ids = new Set(state.renderNodes.map((node) => node.id))
+    state.renderEdges = state.visibleEdges.filter((edge) => ids.has(edge.source) && edge.target && ids.has(edge.target))
+    return
+  }
+
   const viewport = worldViewportBounds()
   const stride = viewportNodeStride()
   const picked = []
@@ -433,6 +440,25 @@ const computeRenderVisibility = () => {
   const nodes = picked.length > renderNodeBudget
     ? picked.slice(0, renderNodeBudget)
     : picked
+  if (nodes.length === 0 && state.visibleNodes.length > 0) {
+    const centerX = (viewport.minX + viewport.maxX) / 2
+    const centerY = (viewport.minY + viewport.maxY) / 2
+    const closest = [...state.visibleNodes]
+      .sort((left, right) => {
+        const leftDistance = (left.x - centerX) ** 2 + (left.y - centerY) ** 2
+        const rightDistance = (right.x - centerX) ** 2 + (right.y - centerY) ** 2
+        return leftDistance - rightDistance
+      })
+      .slice(0, Math.min(renderNodeBudget, 180))
+    const closestIds = new Set(closest.map((node) => node.id))
+
+    state.renderNodes = closest
+    state.renderEdges = state.visibleEdges.filter(
+      (edge) => closestIds.has(edge.source) && edge.target && closestIds.has(edge.target)
+    )
+    return
+  }
+
   const nodeIds = new Set(nodes.map((node) => node.id))
   const edges = state.visibleEdges.filter((edge) => nodeIds.has(edge.source) && edge.target && nodeIds.has(edge.target))
 
@@ -611,6 +637,20 @@ const zoomAtPoint = (screenX, screenY, factor) => {
   state.transform.y = screenY - worldY * nextScale
 }
 
+const wheelZoomFactor = event => {
+  const isModifierZoom = event.metaKey || event.ctrlKey
+  const delta = Math.abs(event.deltaY)
+
+  if (delta < 1) {
+    return event.deltaY < 0 ? 1.04 : 0.96
+  }
+
+  const zoomInFactor = isModifierZoom ? 1.12 : 1.08
+  const zoomOutFactor = isModifierZoom ? 0.88 : 0.92
+
+  return event.deltaY < 0 ? zoomInFactor : zoomOutFactor
+}
+
 const bindEvents = () => {
   window.addEventListener('resize', resize)
   elements.search.addEventListener('input', event => {
@@ -659,7 +699,7 @@ const bindEvents = () => {
     const rect = canvas.getBoundingClientRect()
     const cursorX = event.clientX - rect.left
     const cursorY = event.clientY - rect.top
-    const factor = event.deltaY < 0 ? 1.08 : 0.92
+    const factor = wheelZoomFactor(event)
     zoomAtPoint(cursorX, cursorY, factor)
   }, { passive: false })
   canvas.addEventListener('pointerdown', event => {
@@ -709,7 +749,7 @@ const loadAgents = async () => {
 
   state.agentId = selected
   if (signature !== state.agentsSignature) {
-    const formatAgentLabel = (agent) => agent.id === 'shared' ? agent.id : agent.id + ' · ' + agent.documentCount
+    const formatAgentLabel = (agent) => agent.id
     elements.agent.innerHTML = agents.length
       ? agents.map(agent => '<option value="' + escapeHtml(agent.id) + '">' + escapeHtml(formatAgentLabel(agent)) + '</option>').join('')
       : '<option value="shared">shared</option>'
