@@ -1,12 +1,13 @@
 import { watch, type FSWatcher } from 'node:fs'
-import type { IndexVaultResult } from './index-vault.js'
-import { indexVault } from './index-vault.js'
+import type { IndexVaultProgressEvent, IndexVaultResult } from './index-vault.js'
+import { indexVaultWithOptions } from './index-vault.js'
 import { isBucketVaultPath, resolveVaultPath } from '../infrastructure/file-system-vault.js'
 
 type WatchVaultInput = {
   readonly vaultPath: string
   readonly debounceMs?: number
   readonly onIndex?: (result: IndexVaultResult) => void
+  readonly onProgress?: (event: IndexVaultProgressEvent) => void
   readonly onError?: (error: unknown) => void
 }
 
@@ -30,6 +31,29 @@ export const startVaultWatcher = (input: WatchVaultInput): RunningWatcher => {
   const absoluteVaultPath = resolveVaultPath(input.vaultPath)
   const debounceMs = input.debounceMs ?? 350
   let timeout: NodeJS.Timeout | null = null
+  let running = false
+  let pending = false
+
+  const runIndex = (): void => {
+    if (running) {
+      pending = true
+      return
+    }
+
+    running = true
+    indexVaultWithOptions(absoluteVaultPath, {
+      onProgress: input.onProgress
+    })
+      .then(input.onIndex)
+      .catch(input.onError)
+      .finally(() => {
+        running = false
+        if (pending) {
+          pending = false
+          runIndex()
+        }
+      })
+  }
 
   const schedule = (filename: string | null): void => {
     if (shouldIgnore(filename)) {
@@ -41,7 +65,7 @@ export const startVaultWatcher = (input: WatchVaultInput): RunningWatcher => {
     }
 
     timeout = setTimeout(() => {
-      indexVault(absoluteVaultPath).then(input.onIndex).catch(input.onError)
+      runIndex()
     }, debounceMs)
   }
 
