@@ -219,6 +219,13 @@ const commandExists = (command: string): boolean => {
 const envFlagEnabled = (name: string): boolean =>
   process.env[name] === '1' || process.env[name] === 'true'
 
+const spawnAnyDetached = (candidates: readonly (readonly [string, readonly string[]])[]): boolean =>
+  candidates.some(([command, args]) => spawnDetached(command, args))
+
+const windowsStartCandidates = (program: string, args: readonly string[] = []): readonly [string, readonly string[]][] => [
+  ['cmd', ['/c', 'start', '', program, ...args]]
+]
+
 const resolveSwiftExecutable = (): string | null => {
   const directSwift = '/usr/bin/swift'
   if (existsSync(directSwift)) {
@@ -323,23 +330,52 @@ const openGraphInAppWindow = (url: string): boolean => {
 
   if (platform() === 'win32') {
     const appArgument = `--app=${url}`
-
-    return (
-      spawnDetached('cmd', ['/c', 'start', '', 'chrome', appArgument, '--new-window']) ||
-      spawnDetached('cmd', ['/c', 'start', '', 'msedge', appArgument, '--new-window']) ||
-      spawnDetached('cmd', ['/c', 'start', '', 'chromium', appArgument, '--new-window'])
-    )
+    return spawnAnyDetached([
+      ...windowsStartCandidates('msedge', [appArgument, '--new-window']),
+      ...windowsStartCandidates('chrome', [appArgument, '--new-window']),
+      ...windowsStartCandidates('chromium', [appArgument, '--new-window']),
+      ...windowsStartCandidates('brave', [appArgument, '--new-window'])
+    ])
   }
 
   const appArgument = `--app=${url}`
+  const linuxAppWindowCandidates = [
+    'microsoft-edge',
+    'microsoft-edge-stable',
+    'google-chrome',
+    'google-chrome-stable',
+    'chromium',
+    'chromium-browser',
+    'brave-browser'
+  ].filter((candidate) => commandExists(candidate))
 
-  return (
-    spawnDetached('google-chrome', [appArgument, '--new-window']) ||
-    spawnDetached('chromium-browser', [appArgument, '--new-window']) ||
-    spawnDetached('chromium', [appArgument, '--new-window']) ||
-    spawnDetached('microsoft-edge', [appArgument, '--new-window']) ||
-    spawnDetached('microsoft-edge-stable', [appArgument, '--new-window'])
-  )
+  return spawnAnyDetached(linuxAppWindowCandidates.map((command) => [command, [appArgument, '--new-window']] as const))
+}
+
+const openGraphInDetectedBrowser = (url: string): boolean => {
+  if (platform() === 'win32') {
+    return spawnAnyDetached([
+      ...windowsStartCandidates('msedge', [url]),
+      ...windowsStartCandidates('chrome', [url]),
+      ...windowsStartCandidates('firefox', ['-new-window', url]),
+      ...windowsStartCandidates('chromium', [url]),
+      ...windowsStartCandidates('brave', [url])
+    ])
+  }
+
+  const linuxBrowserCandidates: readonly (readonly [string, readonly string[]])[] = [
+    ['microsoft-edge', [url]],
+    ['microsoft-edge-stable', [url]],
+    ['google-chrome', [url]],
+    ['google-chrome-stable', [url]],
+    ['chromium', [url]],
+    ['chromium-browser', [url]],
+    ['brave-browser', [url]],
+    ['firefox', ['-new-window', url]]
+  ]
+
+  const available = linuxBrowserCandidates.filter(([command]) => commandExists(command))
+  return spawnAnyDetached(available)
 }
 
 const openUrlInUi = (url: string, parentPid: number): { readonly opened: boolean; readonly mode: 'native-gui' | 'app-window' | 'browser' | 'none' } => {
@@ -368,6 +404,10 @@ const openUrlInUi = (url: string, parentPid: number): { readonly opened: boolean
   try {
     if (platform() === 'darwin') {
       return { opened: spawnDetached('open', [url]), mode: 'browser' }
+    }
+
+    if (openGraphInDetectedBrowser(url)) {
+      return { opened: true, mode: 'browser' }
     }
 
     if (platform() === 'win32') {
