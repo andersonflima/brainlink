@@ -546,7 +546,10 @@ const openGraphInAppWindow = (url: string): boolean => {
   const appArgument = `--app=${url}`
   const linuxChromiumStableFlags = [
     '--ozone-platform=x11',
+    '--ozone-platform-hint=x11',
     '--disable-gpu',
+    '--disable-vulkan',
+    '--use-gl=swiftshader',
     '--disable-features=Vulkan,VaapiVideoDecoder',
     '--disable-background-networking'
   ] as const
@@ -586,7 +589,10 @@ const openGraphInDetectedBrowser = (url: string): boolean => {
 
   const linuxChromiumStableFlags = [
     '--ozone-platform=x11',
+    '--ozone-platform-hint=x11',
     '--disable-gpu',
+    '--disable-vulkan',
+    '--use-gl=swiftshader',
     '--disable-features=Vulkan,VaapiVideoDecoder',
     '--disable-background-networking'
   ] as const
