@@ -100,7 +100,7 @@ const runSqliteQuery = async (databasePath: string, sql: string): Promise<readon
   try {
     const { stdout } = await execFileAsync(
       'sqlite3',
-      ['-readonly', '-noheader', '-separator', fieldSeparator, '-newline', rowSeparator, databasePath, sql],
+      ['--readonly', '-noheader', '-separator', fieldSeparator, '-newline', rowSeparator, databasePath, sql],
       { maxBuffer: 1024 * 1024 * 64 }
     )
 
