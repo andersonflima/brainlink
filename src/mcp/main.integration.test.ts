@@ -46,6 +46,8 @@ describe('brainlink mcp integration', () => {
           'brainlink_policy',
           'brainlink_recommendations',
           'brainlink_context',
+          'brainlink_dedupe',
+          'brainlink_resolve_duplicate',
           'brainlink_add_note',
           'brainlink_index',
           'brainlink_validate'
@@ -69,6 +71,31 @@ describe('brainlink mcp integration', () => {
         writeConnectivity: {
           guaranteedEdge: true
         }
+      })
+
+      await client.callTool({
+        name: 'brainlink_add_note',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          title: 'Architecture Copy',
+          content: 'Brainlink MCP stores durable Markdown memory with [[Related Concept]] priority: high. #architecture #mcp'
+        }
+      })
+
+      const dedupeResult = await client.callTool({
+        name: 'brainlink_dedupe',
+        arguments: {
+          vault,
+          agent: 'coding-agent',
+          semantic: false
+        }
+      })
+
+      expect(dedupeResult.structuredContent).toMatchObject({
+        vault,
+        agent: 'coding-agent',
+        duplicates: [expect.objectContaining({ kind: 'exact', possibleDuplicate: true, score: 1 })]
       })
 
       const contextResult = await client.callTool({
@@ -135,13 +162,33 @@ describe('brainlink mcp integration', () => {
         bootstrap: expect.objectContaining({
           autoBootstrapped: false
         }),
-        edges: [
+        edges: expect.arrayContaining([
           expect.objectContaining({
             targetTitle: 'Related Concept',
             weight: 4,
             priority: 'high'
           })
-        ]
+        ])
+      })
+
+      const duplicatePair = (
+        dedupeResult.structuredContent as { duplicates?: readonly { left: { path: string }; right: { path: string } }[] }
+      ).duplicates?.[0]
+      expect(duplicatePair).toBeDefined()
+
+      const dedupeResolveResult = await client.callTool({
+        name: 'brainlink_resolve_duplicate',
+        arguments: {
+          vault,
+          leftPath: duplicatePair?.left.path,
+          rightPath: duplicatePair?.right.path,
+          action: 'ignore'
+        }
+      })
+
+      expect(dedupeResolveResult.structuredContent).toMatchObject({
+        vault,
+        action: 'ignore'
       })
 
       const recommendationsResult = await client.callTool({
@@ -159,14 +206,14 @@ describe('brainlink mcp integration', () => {
         defaults: {
           mode: 'hybrid'
         },
-        recommendations: [
+        recommendations: expect.arrayContaining([
           expect.objectContaining({
             tool: 'brainlink_context'
           }),
           expect.objectContaining({
             tool: 'brainlink_add_note'
           })
-        ]
+        ])
       })
     } finally {
       await client.close()

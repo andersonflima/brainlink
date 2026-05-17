@@ -270,6 +270,55 @@ describe('brainlink cli integration', () => {
     expect(configuredNote.path).toContain(join(configuredVault, 'agents/shared/configured-memory.md'))
   }, 20000)
 
+  it('detects and resolves duplicate notes through CLI commands', async () => {
+    const vault = await mkdtemp(join(tmpdir(), 'brainlink-dedupe-cli-vault-'))
+    tempPaths.push(vault)
+
+    await cli(['init', vault, '--no-migrate-existing', '--json'], projectPath)
+    await cli(
+      ['add', 'Auth Memory', '--vault', vault, '--content', 'JWT token policy and auth flows. #auth', '--json'],
+      projectPath
+    )
+    await cli(
+      ['add', 'Auth Memory Copy', '--vault', vault, '--content', 'JWT token policy and auth flows. #auth', '--json'],
+      projectPath
+    )
+
+    const dedupe = parseJson<{
+      duplicates: readonly { left: { path: string }; right: { path: string }; kind: string; score: number }[]
+    }>(await cli(['dedupe', '--vault', vault, '--no-semantic', '--json'], projectPath))
+    expect(dedupe.duplicates.length).toBeGreaterThan(0)
+    expect(dedupe.duplicates[0]?.kind).toBe('exact')
+    expect(dedupe.duplicates[0]?.score).toBe(1)
+
+    const first = dedupe.duplicates[0]
+    expect(first).toBeDefined()
+
+    const resolved = parseJson<{
+      action: string
+      updatedPaths: readonly string[]
+    }>(
+      await cli(
+        [
+          'dedupe-resolve',
+          '--vault',
+          vault,
+          '--left',
+          first?.left.path ?? '',
+          '--right',
+          first?.right.path ?? '',
+          '--action',
+          'ignore',
+          '--json'
+        ],
+        projectPath
+      )
+    )
+
+    expect(resolved.action).toBe('ignore')
+    expect(resolved.updatedPaths.length).toBeGreaterThan(0)
+  }, 20000)
+
   it('updates vault config through CLI commands and migrates memory', async () => {
     const brainlinkHome = await mkdtemp(join(tmpdir(), 'brainlink-config-home-'))
     const workspace = await mkdtemp(join(tmpdir(), 'brainlink-config-workspace-'))

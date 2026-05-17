@@ -7,6 +7,10 @@ import {
   addFileInputSchema,
   addFileTool,
   addNoteTool,
+  dedupeInputSchema,
+  dedupeResolveInputSchema,
+  dedupeResolveTool,
+  dedupeTool,
   brokenLinksInputSchema,
   brokenLinksTool,
   bootstrapInputSchema,
@@ -103,6 +107,28 @@ export const createBrainlinkMcpServer = (): McpServer => {
       inputSchema: searchInputSchema
     },
     searchTool
+  )
+
+  server.registerTool(
+    'brainlink_dedupe',
+    {
+      title: 'Detect Duplicate Notes',
+      description:
+        'Detect possible duplicate notes using exact content hash and semantic similarity scoring.',
+      inputSchema: dedupeInputSchema
+    },
+    dedupeTool
+  )
+
+  server.registerTool(
+    'brainlink_resolve_duplicate',
+    {
+      title: 'Resolve Duplicate Notes',
+      description:
+        'Resolve a duplicate pair with merge, link or ignore. Non-merge actions still create low-priority related edges.',
+      inputSchema: dedupeResolveInputSchema
+    },
+    dedupeResolveTool
   )
 
   server.registerTool(

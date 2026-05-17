@@ -429,6 +429,25 @@ This creates a slugged Markdown file with frontmatter and a heading.
 
 The CLI blocks common secret patterns by default. Do not use `--allow-sensitive` unless the vault is intentionally protected.
 Brainlink also auto-connects notes that have no `[[wiki links]]` by adding a fallback edge to an agent hub note, so new memory does not stay disconnected.
+`add` also returns `possibleDuplicates` (exact hash + semantic candidates) so agents can decide duplicate resolution immediately.
+
+### Detect Duplicate Notes
+
+```bash
+blink dedupe --vault ./vault --json
+blink dedupe --vault ./vault --agent coding-agent --limit 20 --min-score 0.92 --json
+blink dedupe --vault ./vault --no-semantic --json
+```
+
+### Resolve Duplicate Notes
+
+```bash
+blink dedupe-resolve --vault ./vault --left agents/shared/a.md --right agents/shared/b.md --action merge --json
+blink dedupe-resolve --vault ./vault --left agents/shared/a.md --right agents/shared/b.md --action link --json
+blink dedupe-resolve --vault ./vault --left agents/shared/a.md --right agents/shared/b.md --action ignore --json
+```
+
+`dedupe-resolve` keeps connectivity: non-merge actions still create a low-priority related edge (`#related-to`).
 
 For agent-private memory:
 
@@ -613,6 +632,8 @@ Available MCP tools:
 - `brainlink_recommendations`
 - `brainlink_context`
 - `brainlink_search`
+- `brainlink_dedupe`
+- `brainlink_resolve_duplicate`
 - `brainlink_add_note`
 - `brainlink_add_file`
 - `brainlink_index`
