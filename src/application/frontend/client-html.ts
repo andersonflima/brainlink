@@ -47,7 +47,7 @@ export const createClientHtml = (): string => `<!doctype html>
       </section>
     </main>
     <footer class="app-footer" aria-label="Copyright notice">
-      <small>Copyright © 2026 Anderson Espindola</small>
+      <small>Copyright © 2026 Substructa</small>
     </footer>
     <dialog id="contentDialog" class="content-dialog" aria-labelledby="contentTitle">
       <article>

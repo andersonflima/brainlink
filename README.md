@@ -1056,7 +1056,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 MIT. See [LICENSE](LICENSE).
-Copyright (c) 2026 Anderson Espindola. See [COPYRIGHT.md](COPYRIGHT.md).
+Copyright (c) 2026 Substructa. See [COPYRIGHT.md](COPYRIGHT.md).
 
 ### Memory Optimization Loop (1-7)
 
