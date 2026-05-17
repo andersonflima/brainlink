@@ -156,14 +156,14 @@ const graphBounds = nodes => {
 }
 
 const fitScaleBiasByNodeCount = nodeCount => {
-  if (nodeCount <= 6) return 2.4
-  if (nodeCount <= 20) return 1.9
-  if (nodeCount <= 60) return 1.5
-  if (nodeCount <= 180) return 1.25
-  if (nodeCount <= 600) return 1.05
+  if (nodeCount <= 6) return 2.8
+  if (nodeCount <= 20) return 2.2
+  if (nodeCount <= 60) return 1.72
+  if (nodeCount <= 180) return 1.34
+  if (nodeCount <= 600) return 1.08
   if (nodeCount <= 2000) return 0.9
   if (nodeCount <= 6000) return 0.72
-  return 0.62
+  return 0.58
 }
 
 const fitView = (options = { useFiltered: true }) => {
@@ -178,13 +178,34 @@ const fitView = (options = { useFiltered: true }) => {
     return
   }
 
-  const padding = 100
+  const paddingByNodeCount = nodeCount => {
+    if (nodeCount <= 6) return 28
+    if (nodeCount <= 20) return 44
+    if (nodeCount <= 60) return 68
+    if (nodeCount <= 180) return 86
+    if (nodeCount <= 600) return 110
+    if (nodeCount <= 2000) return 140
+    return 180
+  }
+  const minFitScaleByNodeCount = nodeCount => {
+    if (nodeCount <= 6) return 2.4
+    if (nodeCount <= 20) return 1.8
+    if (nodeCount <= 60) return 1.2
+    if (nodeCount <= 180) return 0.86
+    if (nodeCount <= 600) return 0.58
+    if (nodeCount <= 2000) return 0.34
+    if (nodeCount <= 6000) return 0.2
+    return 0.13
+  }
+
+  const padding = paddingByNodeCount(nodes.length)
   const scaleX = width / (bounds.width + padding * 2)
   const scaleY = height / (bounds.height + padding * 2)
   const fitScale = clampScale(Math.min(scaleX, scaleY))
   const biasedScale = clampScale(fitScale * fitScaleBiasByNodeCount(nodes.length))
+  const minimumScale = minFitScaleByNodeCount(nodes.length)
   const minimumLargeGraphScale = nodes.length > largeGraphNodeThreshold ? 0.13 : zoomRange.min
-  const scale = Math.max(biasedScale, minimumLargeGraphScale)
+  const scale = Math.max(biasedScale, minimumScale, minimumLargeGraphScale)
   const centerX = (bounds.minX + bounds.maxX) / 2
   const centerY = (bounds.minY + bounds.maxY) / 2
 
@@ -653,16 +674,17 @@ const zoomAtPoint = (screenX, screenY, factor) => {
 
 const wheelZoomFactor = event => {
   const isModifierZoom = event.metaKey || event.ctrlKey
-  const delta = Math.abs(event.deltaY)
+  const deltaModeFactor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 120 : 1
+  const normalizedDelta = Math.min(Math.abs(event.deltaY * deltaModeFactor), 1200) / 220
 
-  if (delta < 1) {
-    return event.deltaY < 0 ? 1.04 : 0.96
+  if (normalizedDelta <= 0.0001) {
+    return 1
   }
 
-  const zoomInFactor = isModifierZoom ? 1.12 : 1.08
-  const zoomOutFactor = isModifierZoom ? 0.88 : 0.92
+  const sensitivity = isModifierZoom ? 0.2 : 0.14
+  const direction = event.deltaY < 0 ? 1 : -1
 
-  return event.deltaY < 0 ? zoomInFactor : zoomOutFactor
+  return Math.exp(direction * normalizedDelta * sensitivity)
 }
 
 const bindEvents = () => {
@@ -748,6 +770,9 @@ const bindEvents = () => {
     if (!state.pointer.dragNode && !state.pointer.moved) selectNode(state.hovered, { openContent: true })
     state.pointer = { x: 0, y: 0, down: false, dragNode: null, moved: false }
     canvas.releasePointerCapture(event.pointerId)
+  })
+  canvas.addEventListener('pointercancel', () => {
+    state.pointer = { x: 0, y: 0, down: false, dragNode: null, moved: false }
   })
 }
 
