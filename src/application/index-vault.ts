@@ -8,6 +8,7 @@ import { loadBrainlinkConfig } from '../infrastructure/config.js'
 import { ensureVault, readMarkdownFileSummaries } from '../infrastructure/file-system-vault.js'
 import type { IndexedFileSnapshot } from '../infrastructure/index-state.js'
 import { readIndexState, writeIndexState } from '../infrastructure/index-state.js'
+import type { SearchPackBuildResult } from '../infrastructure/search-packs.js'
 import { buildSearchPacks } from '../infrastructure/search-packs.js'
 import { openFileIndex } from '../infrastructure/file-index.js'
 
@@ -15,6 +16,38 @@ export type IndexVaultResult = {
   readonly documentCount: number
   readonly chunkCount: number
   readonly linkCount: number
+  readonly elapsedMs?: number
+  readonly changedDocumentCount?: number
+  readonly packs?: {
+    readonly rebuilt: boolean
+    readonly reason: string
+    readonly packCount?: number
+    readonly recordCount?: number
+    readonly durationMs?: number
+    readonly compression?: SearchPackBuildResult['compression']
+  }
+}
+
+export type IndexVaultProgressPhase =
+  | 'start'
+  | 'scan'
+  | 'parse'
+  | 'embed'
+  | 'persist'
+  | 'packs'
+  | 'complete'
+
+export type IndexVaultProgressEvent = {
+  readonly phase: IndexVaultProgressPhase
+  readonly status: 'start' | 'finish' | 'skip'
+  readonly message: string
+  readonly elapsedMs: number
+  readonly timestamp: string
+  readonly details?: Record<string, unknown>
+}
+
+export type IndexVaultOptions = {
+  readonly onProgress?: (event: IndexVaultProgressEvent) => void
 }
 
 type ParsedDocument = ReturnType<typeof parseMarkdownDocument>
@@ -168,12 +201,40 @@ const readChangedDocuments = async (
 }
 
 export const indexVault = async (vaultPath: string): Promise<IndexVaultResult> => {
+  return indexVaultWithOptions(vaultPath, {})
+}
+
+export const indexVaultWithOptions = async (vaultPath: string, options: IndexVaultOptions): Promise<IndexVaultResult> => {
+  const startedAt = process.hrtime.bigint()
+  const elapsedMs = (): number => Number(process.hrtime.bigint() - startedAt) / 1_000_000
+  const emit = (
+    phase: IndexVaultProgressPhase,
+    status: 'start' | 'finish' | 'skip',
+    message: string,
+    details?: Record<string, unknown>
+  ): void => {
+    options.onProgress?.({
+      phase,
+      status,
+      message,
+      elapsedMs: elapsedMs(),
+      timestamp: new Date().toISOString(),
+      details
+    })
+  }
+
+  emit('start', 'start', 'Indexing started')
   const absoluteVaultPath = await ensureVault(vaultPath)
   const config = await loadBrainlinkConfig()
+  emit('scan', 'start', 'Scanning markdown files')
   const [summaries, previousState] = await Promise.all([
     readMarkdownFileSummaries(absoluteVaultPath),
     readIndexState(absoluteVaultPath)
   ])
+  emit('scan', 'finish', 'Scan complete', {
+    markdownFiles: summaries.length,
+    hasPreviousState: previousState != null
+  })
   const index = openFileIndex(absoluteVaultPath)
 
   try {
@@ -213,11 +274,29 @@ export const indexVault = async (vaultPath: string): Promise<IndexVaultResult> =
       existingIndexedDocuments.length === summaries.length &&
       previousState != null
     ) {
-      return toIndexResult(existingIndexedDocuments)
+      const result = {
+        ...toIndexResult(existingIndexedDocuments),
+        elapsedMs: elapsedMs(),
+        changedDocumentCount: 0,
+        packs: {
+          rebuilt: false,
+          reason: 'No changes detected'
+        }
+      } satisfies IndexVaultResult
+      emit('complete', 'skip', 'Index skipped: no changes detected', {
+        elapsedMs: result.elapsedMs
+      })
+      return result
     }
 
     const changedSummaries = summaries.filter((summary) => changedPaths.has(summary.relativePath))
+    emit('parse', 'start', 'Parsing changed markdown files', {
+      changedFiles: changedSummaries.length
+    })
     const changedDocumentsByPath = await readChangedDocuments(absoluteVaultPath, changedSummaries)
+    emit('parse', 'finish', 'Parse complete', {
+      changedDocuments: changedDocumentsByPath.size
+    })
     const documents = summaries.flatMap((summary) => {
       const changed = changedDocumentsByPath.get(summary.relativePath)
       if (changed) {
@@ -227,6 +306,9 @@ export const indexVault = async (vaultPath: string): Promise<IndexVaultResult> =
       return existing ? [existing.document] : []
     })
     const titleMaps = createTitleMaps(documents)
+    emit('embed', 'start', 'Embedding changed chunks', {
+      changedDocuments: changedDocumentsByPath.size
+    })
     const changedIndexedDocuments = changedDocumentsByPath.size > 0
       ? await embedIndexedDocuments(
           Array.from(changedDocumentsByPath.values()).map((document) =>
@@ -235,6 +317,9 @@ export const indexVault = async (vaultPath: string): Promise<IndexVaultResult> =
           config.embeddingProvider
         )
       : []
+    emit('embed', changedDocumentsByPath.size > 0 ? 'finish' : 'skip', changedDocumentsByPath.size > 0 ? 'Embedding complete' : 'Embedding skipped', {
+      changedIndexedDocuments: changedIndexedDocuments.length
+    })
     const changedIndexedByPath = new Map(changedIndexedDocuments.map((document) => [document.document.path, document]))
     const needsRelink = settingsChanged || hasDeletes || changedPaths.size > 0
     const indexedDocuments = documents.map((document) => {
@@ -251,8 +336,12 @@ export const indexVault = async (vaultPath: string): Promise<IndexVaultResult> =
       return needsRelink ? relinkIndexedDocument(existing, titleMaps) : existing
     })
 
+    emit('persist', 'start', 'Persisting index')
     await index.reset()
     await index.saveDocuments(indexedDocuments)
+    emit('persist', 'finish', 'Index persisted', {
+      indexedDocuments: indexedDocuments.length
+    })
 
     const existingPackManifest = await hasPackManifest(absoluteVaultPath)
     const changedCount = changedPaths.size
@@ -268,22 +357,80 @@ export const indexVault = async (vaultPath: string): Promise<IndexVaultResult> =
       changeRatio >= 0.04 ||
       pendingPackChanges >= 1200
 
+    let packResult: SearchPackBuildResult | undefined
+    const packReason = !existingPackManifest
+      ? 'Missing pack manifest'
+      : settingsChanged
+        ? 'Index settings changed'
+        : hasDeletes
+          ? 'Document deletions detected'
+          : changedCount >= 400
+            ? 'Changed file count threshold reached'
+            : changeRatio >= 0.04
+              ? 'Change ratio threshold reached'
+              : pendingPackChanges >= 1200
+                ? 'Pending pack changes threshold reached'
+                : 'Pack rebuild skipped'
     if (shouldRebuildPacks) {
+      emit('packs', 'start', 'Rebuilding compressed search packs', {
+        reason: packReason
+      })
       try {
-        await buildSearchPacks(absoluteVaultPath, indexedDocuments)
+        packResult = await buildSearchPacks(absoluteVaultPath, indexedDocuments)
+        emit('packs', 'finish', 'Compressed packs rebuilt', {
+          reason: packReason,
+          packCount: packResult.packCount,
+          recordCount: packResult.recordCount,
+          durationMs: packResult.durationMs,
+          compressionRatio: packResult.compression.ratio
+        })
       } catch {
         // Pack generation is best-effort. The JSON index remains the primary path.
+        emit('packs', 'skip', 'Pack rebuild failed; continuing with JSON index', {
+          reason: packReason
+        })
       }
+    } else {
+      emit('packs', 'skip', 'Pack rebuild not required', {
+        reason: packReason
+      })
     }
+
+    const packsRebuilt = packResult != null
+    const packResultReason = shouldRebuildPacks && !packsRebuilt ? `${packReason} (failed)` : packReason
 
     await writeIndexState(absoluteVaultPath, {
       chunkSize: config.chunkSize,
       embeddingProvider: config.embeddingProvider,
       files: currentSnapshot,
-      pendingPackChanges: shouldRebuildPacks ? 0 : pendingPackChanges
+      pendingPackChanges: packsRebuilt ? 0 : pendingPackChanges
     })
 
-    return toIndexResult(indexedDocuments)
+    const result = {
+      ...toIndexResult(indexedDocuments),
+      elapsedMs: elapsedMs(),
+      changedDocumentCount: changedDocumentsByPath.size,
+      packs: {
+        rebuilt: packsRebuilt,
+        reason: packResultReason,
+        ...(packResult
+          ? {
+              packCount: packResult.packCount,
+              recordCount: packResult.recordCount,
+              durationMs: packResult.durationMs,
+              compression: packResult.compression
+            }
+          : {})
+      }
+    } satisfies IndexVaultResult
+    emit('complete', 'finish', 'Indexing complete', {
+      documentCount: result.documentCount,
+      chunkCount: result.chunkCount,
+      linkCount: result.linkCount,
+      elapsedMs: result.elapsedMs
+    })
+
+    return result
   } finally {
     index.close()
   }

@@ -8,7 +8,8 @@ import { addNoteWithMetadata } from '../../application/add-note.js'
 import { buildContextPackage } from '../../application/build-context.js'
 import { resolveDuplicateNotes, scanDuplicateNotes } from '../../application/dedupe-notes.js'
 import { importLegacySqliteDatabase } from '../../application/import-legacy-sqlite.js'
-import { indexVault } from '../../application/index-vault.js'
+import type { IndexVaultProgressEvent, IndexVaultResult } from '../../application/index-vault.js'
+import { indexVault, indexVaultWithOptions } from '../../application/index-vault.js'
 import { migrateVaultContent, planVaultMigration, previewVaultMigration, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
 import { startServer } from '../../application/start-server.js'
 import { startVaultWatcher } from '../../application/watch-vault.js'
@@ -21,6 +22,7 @@ import { installAgentIntegration } from './agent-commands.js'
 import { parsePositiveInteger, print, resolveOptions } from '../runtime.js'
 import type {
   AddOptions,
+  BenchOptions,
   DbImportOptions,
   DedupeOptions,
   DedupeResolveOptions,
@@ -54,6 +56,73 @@ const parseScore = (value: string | undefined, fallback: number): number => {
   }
 
   return parsed
+}
+
+const formatBytes = (bytes: number | undefined): string => {
+  if (!Number.isFinite(bytes) || bytes == null) {
+    return 'n/a'
+  }
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB'] as const
+  let value = bytes / 1024
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`
+}
+
+const formatMs = (value: number | undefined): string =>
+  Number.isFinite(value) && value != null ? `${value.toFixed(value >= 100 ? 0 : 1)}ms` : 'n/a'
+
+const benchEventLabel = (event: IndexVaultProgressEvent): string =>
+  `${event.phase}:${event.status}`
+
+const printBenchRealtimeEvent = (json: boolean | undefined, event: IndexVaultProgressEvent): void => {
+  print(
+    json,
+    {
+      event: 'bench-progress',
+      ...event
+    },
+    () => `[bench] ${benchEventLabel(event)} ${event.message} (${formatMs(event.elapsedMs)})`
+  )
+}
+
+const printBenchSummary = (
+  json: boolean | undefined,
+  trigger: 'manual' | 'watch',
+  vault: string,
+  result: IndexVaultResult
+): void => {
+  print(
+    json,
+    {
+      event: 'bench-result',
+      trigger,
+      vault,
+      result
+    },
+    () => {
+      const packs = result.packs
+      const compression = packs?.compression
+      const savedPercent =
+        compression && compression.inputBytes > 0
+          ? `${((1 - compression.ratio) * 100).toFixed(1)}%`
+          : 'n/a'
+
+      return [
+        `[bench] trigger=${trigger}`,
+        `documents=${result.documentCount} chunks=${result.chunkCount} links=${result.linkCount}`,
+        `changedDocuments=${result.changedDocumentCount ?? 0} totalElapsed=${formatMs(result.elapsedMs)}`,
+        `packsRebuilt=${packs?.rebuilt ? 'yes' : 'no'} reason=${packs?.reason ?? 'n/a'}`,
+        packs?.rebuilt
+          ? `packCount=${packs.packCount ?? 0} packDuration=${formatMs(packs.durationMs)} input=${formatBytes(compression?.inputBytes)} output=${formatBytes(compression?.outputBytes)} saved=${savedPercent}`
+          : 'packCompression=n/a'
+      ].join('\n')
+    }
+  )
 }
 
 const spawnDetached = (command: string, args: readonly string[], envOverrides?: NodeJS.ProcessEnv): boolean => {
@@ -762,6 +831,71 @@ export const registerWriteCommands = (program: Command): void => {
       () => `Indexed ${result.documentCount} documents, ${result.chunkCount} chunks and ${result.linkCount} links`
     )
   })
+
+  program
+    .command('bench')
+    .option('-v, --vault <vault>', 'vault directory')
+    .option('-w, --watch', 'watch markdown changes and re-run benchmark in realtime')
+    .option('--debounce <ms>', 'watch debounce in milliseconds', '350')
+    .option('--json', 'print machine-readable JSON events')
+    .description('benchmark indexing in realtime, including compressed pack behavior')
+    .action(async (options: BenchOptions) => {
+      const resolved = await resolveOptions(options)
+      const emitProgress = (event: IndexVaultProgressEvent): void => {
+        printBenchRealtimeEvent(options.json, event)
+      }
+
+      const printBenchError = (error: unknown): void => {
+        const message = error instanceof Error ? error.message : String(error)
+        print(options.json, { event: 'bench-error', message }, () => `[bench] error ${message}`)
+      }
+
+      const runAndPrint = async (trigger: 'manual' | 'watch'): Promise<IndexVaultResult> => {
+        const result = await indexVaultWithOptions(resolved.vault, {
+          onProgress: emitProgress
+        })
+        printBenchSummary(options.json, trigger, resolved.vault, result)
+        return result
+      }
+
+      if (!options.watch) {
+        await runAndPrint('manual')
+        return
+      }
+
+      const debounceMs = parsePositiveInteger(options.debounce ?? '350', 350)
+      await runAndPrint('manual')
+
+      print(
+        options.json,
+        {
+          event: 'bench-watching',
+          vault: resolved.vault,
+          debounceMs
+        },
+        () => `[bench] watching ${resolved.vault} (debounce=${debounceMs}ms)`
+      )
+
+      const watcher = startVaultWatcher({
+        vaultPath: resolved.vault,
+        debounceMs,
+        onProgress: emitProgress,
+        onIndex: (result) => {
+          printBenchSummary(options.json, 'watch', resolved.vault, result)
+        },
+        onError: printBenchError
+      })
+
+      await new Promise<void>((resolveSignal) => {
+        const shutdown = (): void => {
+          watcher.close()
+          resolveSignal()
+        }
+
+        process.once('SIGINT', shutdown)
+        process.once('SIGTERM', shutdown)
+      })
+    })
 
   program
     .command('doctor')
