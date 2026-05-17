@@ -19,6 +19,9 @@ const hoverHitTestIntervalMs = 64
 const overviewClusterMaxCount = 1400
 const zoomRecoveryGuardMs = 1500
 const zoomCapTargetViewportShare = 0.72
+const meshEdgeScaleThreshold = 0.09
+const meshEdgeMinBudget = 140
+const meshEdgeMaxBudget = 1400
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
@@ -593,6 +596,122 @@ const collectVisibleEdgesForNodes = nodeIds => {
   })
 
   return collected
+}
+
+const edgePairKey = (source, target) =>
+  source < target ? source + '|' + target : target + '|' + source
+
+const meshNeighborBuckets = (nodes, cellSize) => {
+  const buckets = new Map()
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index]
+    const cellX = Math.floor(node.x / cellSize)
+    const cellY = Math.floor(node.y / cellSize)
+    const key = cellX + ':' + cellY
+    const bucket = buckets.get(key)
+    if (bucket) {
+      bucket.push(node)
+    } else {
+      buckets.set(key, [node])
+    }
+  }
+
+  return buckets
+}
+
+const meshCandidatesForNode = (node, buckets, cellSize) => {
+  const cellX = Math.floor(node.x / cellSize)
+  const cellY = Math.floor(node.y / cellSize)
+  const candidates = []
+
+  for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      const bucket = buckets.get((cellX + offsetX) + ':' + (cellY + offsetY))
+      if (!bucket) continue
+      for (let index = 0; index < bucket.length; index += 1) {
+        const candidate = bucket[index]
+        if (candidate.id !== node.id) {
+          candidates.push(candidate)
+        }
+      }
+    }
+  }
+
+  return candidates
+}
+
+const buildMeshEdgesForNodes = (nodes, existingEdges) => {
+  if (nodes.length < 2 || state.transform.scale < meshEdgeScaleThreshold) {
+    return []
+  }
+
+  const existingKeys = new Set()
+  for (let index = 0; index < existingEdges.length; index += 1) {
+    const edge = existingEdges[index]
+    if (edge.target) {
+      existingKeys.add(edgePairKey(edge.source, edge.target))
+    }
+  }
+
+  const desiredBudget = Math.min(
+    meshEdgeMaxBudget,
+    Math.max(meshEdgeMinBudget, Math.floor(edgeBudgetForCurrentFrame() * 0.62))
+  )
+  const perNodeNeighborCount =
+    state.transform.scale >= 1.05 ? 4
+      : state.transform.scale >= 0.62 ? 3
+        : 2
+  const cellSize = Math.max(120, 280 / Math.max(state.transform.scale, 0.0001))
+  const maxDistance = 980
+  const maxDistanceSquared = maxDistance * maxDistance
+  const buckets = meshNeighborBuckets(nodes, cellSize)
+  const meshEdges = []
+  const meshKeys = new Set()
+
+  for (let index = 0; index < nodes.length && meshEdges.length < desiredBudget; index += 1) {
+    const node = nodes[index]
+    const candidates = meshCandidatesForNode(node, buckets, cellSize)
+      .map((candidate) => ({
+        node: candidate,
+        distanceSquared: (candidate.x - node.x) ** 2 + (candidate.y - node.y) ** 2
+      }))
+      .filter((candidate) => candidate.distanceSquared <= maxDistanceSquared)
+      .sort((left, right) => left.distanceSquared - right.distanceSquared)
+
+    let linked = 0
+    for (let candidateIndex = 0; candidateIndex < candidates.length && linked < perNodeNeighborCount && meshEdges.length < desiredBudget; candidateIndex += 1) {
+      const candidate = candidates[candidateIndex].node
+      const key = edgePairKey(node.id, candidate.id)
+      if (existingKeys.has(key) || meshKeys.has(key)) {
+        continue
+      }
+
+      meshKeys.add(key)
+      meshEdges.push({
+        source: node.id,
+        target: candidate.id,
+        targetTitle: candidate.title,
+        weight: 1,
+        priority: 'normal',
+        sourceNode: node,
+        targetNode: candidate,
+        inferred: true
+      })
+      linked += 1
+    }
+  }
+
+  return meshEdges
+}
+
+const withMeshEdges = (nodes, edges) => {
+  if (nodes.length === 0 || state.visibleNodes.length <= largeGraphNodeThreshold || state.transform.scale < meshEdgeScaleThreshold) {
+    return edges
+  }
+
+  const meshEdges = buildMeshEdgesForNodes(nodes, edges)
+  return meshEdges.length > 0 ? edges.concat(meshEdges) : edges
 }
 
 const fallbackViewportNodes = () => {
@@ -1232,7 +1351,7 @@ const computeRenderVisibility = () => {
     state.renderNodes = state.visibleNodes
     state.renderClusters = []
     const ids = new Set(state.renderNodes.map((node) => node.id))
-    state.renderEdges = collectVisibleEdgesForNodes(ids)
+    state.renderEdges = withMeshEdges(state.renderNodes, collectVisibleEdgesForNodes(ids))
     return
   }
 
@@ -1256,7 +1375,7 @@ const computeRenderVisibility = () => {
 
     state.renderClusters = []
     state.renderNodes = sampledNodes
-    state.renderEdges = sampledEdges
+    state.renderEdges = withMeshEdges(sampledNodes, sampledEdges)
     return
   }
 
@@ -1265,7 +1384,7 @@ const computeRenderVisibility = () => {
     const sampledIds = new Set(sampled.map((node) => node.id))
     state.renderClusters = []
     state.renderNodes = sampled
-    state.renderEdges = collectVisibleEdgesForNodes(sampledIds)
+    state.renderEdges = withMeshEdges(sampled, collectVisibleEdgesForNodes(sampledIds))
     return
   }
 
@@ -1301,7 +1420,7 @@ const computeRenderVisibility = () => {
     const fallbackIds = new Set(fallbackNodes.map((node) => node.id))
     state.renderNodes = fallbackNodes
     state.renderClusters = []
-    state.renderEdges = collectVisibleEdgesForNodes(fallbackIds)
+    state.renderEdges = withMeshEdges(fallbackNodes, collectVisibleEdgesForNodes(fallbackIds))
     return
   }
 
@@ -1310,14 +1429,14 @@ const computeRenderVisibility = () => {
   const edges = collectVisibleEdgesForNodes(nodeIds)
 
   state.renderNodes = normalizedNodes
-  state.renderEdges = edges
+  state.renderEdges = withMeshEdges(normalizedNodes, edges)
 
   if (state.renderNodes.length === 0 && state.visibleNodes.length > 0) {
     const fallbackNodes = sampleVisibleNodes(Math.min(renderNodeBudget, 260))
     const fallbackIds = new Set(fallbackNodes.map((node) => node.id))
     state.renderClusters = []
     state.renderNodes = fallbackNodes
-    state.renderEdges = collectVisibleEdgesForNodes(fallbackIds)
+    state.renderEdges = withMeshEdges(fallbackNodes, collectVisibleEdgesForNodes(fallbackIds))
   }
 }
 
@@ -1427,11 +1546,18 @@ const render = now => {
   if (drawEdges) {
     state.renderEdges.forEach(edge => {
     const selectedEdge = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
+    const inferredEdge = Boolean(edge.inferred)
     ctx.beginPath()
     ctx.moveTo(edge.sourceNode.x, edge.sourceNode.y)
     ctx.lineTo(edge.targetNode.x, edge.targetNode.y)
-    ctx.strokeStyle = selectedEdge ? graphTheme.edgeActive : graphTheme.edge
-    ctx.lineWidth = (selectedEdge ? 1.8 : 1) + Math.min(edgeWeight(edge) - 1, 8) * 0.22
+    ctx.strokeStyle = selectedEdge
+      ? graphTheme.edgeActive
+      : inferredEdge
+        ? 'rgba(203, 213, 225, 0.1)'
+        : graphTheme.edge
+    ctx.lineWidth = inferredEdge
+      ? 0.82
+      : (selectedEdge ? 1.8 : 1) + Math.min(edgeWeight(edge) - 1, 8) * 0.22
     ctx.stroke()
     })
   }
