@@ -17,6 +17,7 @@ const worldCoordinateLimit = 5_000_000
 const transformCoordinateLimit = 20_000_000
 const hoverHitTestIntervalMs = 64
 const overviewClusterMaxCount = 1400
+const zoomRecoveryGuardMs = 560
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
@@ -52,7 +53,8 @@ const state = {
   macroRepresentative: null,
   filterWorker: null,
   filterReady: false,
-  lastHoverHitAt: 0
+  lastHoverHitAt: 0,
+  lastManualZoomAt: 0
 }
 
 const byId = id => document.getElementById(id)
@@ -1195,7 +1197,8 @@ const render = now => {
   computeRenderVisibility()
   tick(delta)
   const hasVisibleNodeOnScreen = state.renderNodes.some((node) => isNodeVisibleOnScreen(node, width, height))
-  if (!hasVisibleNodeOnScreen && state.renderNodes.length > 0) {
+  const manualZoomGuardActive = now - state.lastManualZoomAt < zoomRecoveryGuardMs
+  if (!hasVisibleNodeOnScreen && state.renderNodes.length > 0 && !manualZoomGuardActive) {
     state.offscreenFrameCount += 1
     if (state.offscreenFrameCount >= 6 && !state.recoveringViewport) {
       state.recoveringViewport = true
@@ -1395,7 +1398,7 @@ const selectNodeById = id => {
   if (node) selectNode(node, { openContent: true })
 }
 
-const zoomAtPoint = (screenX, screenY, factor) => {
+const zoomAtPoint = (screenX, screenY, factor, source = 'generic') => {
   const nextScale = clampScale(state.transform.scale * factor)
   if (nextScale === state.transform.scale) return
   const worldX = (screenX - state.transform.x) / state.transform.scale
@@ -1404,6 +1407,9 @@ const zoomAtPoint = (screenX, screenY, factor) => {
   state.transform.x = clampTransformCoordinate(screenX - worldX * nextScale)
   state.transform.y = clampTransformCoordinate(screenY - worldY * nextScale)
   state.offscreenFrameCount = 0
+  if (source === 'wheel') {
+    state.lastManualZoomAt = performance.now()
+  }
   markRenderDirty()
 }
 
@@ -1422,32 +1428,24 @@ const wheelZoomFactor = event => {
   return event.deltaY < 0 ? 1 + adjustedStep : 1 / (1 + adjustedStep)
 }
 
-const isScreenPointInsideCanvas = (screenX, screenY) => {
-  const rect = canvas.getBoundingClientRect()
-
-  return screenX >= rect.left && screenX <= rect.right && screenY >= rect.top && screenY <= rect.bottom
-}
-
 const handleWheelZoom = event => {
   if (elements.contentDialog?.open) {
     return
   }
 
-  if (!isScreenPointInsideCanvas(event.clientX, event.clientY)) {
-    return
-  }
-
   event.preventDefault()
   const rect = canvas.getBoundingClientRect()
-  const cursorX = event.clientX - rect.left
-  const cursorY = event.clientY - rect.top
+  const rawCursorX = Number.isFinite(event.offsetX) ? event.offsetX : event.clientX - rect.left
+  const rawCursorY = Number.isFinite(event.offsetY) ? event.offsetY : event.clientY - rect.top
+  const cursorX = Math.max(0, Math.min(Math.max(rect.width, 320), rawCursorX))
+  const cursorY = Math.max(0, Math.min(Math.max(rect.height, 320), rawCursorY))
   const factor = wheelZoomFactor(event)
 
   if (!Number.isFinite(factor) || factor <= 0 || factor === 1) {
     return
   }
 
-  zoomAtPoint(cursorX, cursorY, factor)
+  zoomAtPoint(cursorX, cursorY, factor, 'wheel')
 }
 
 const bindEvents = () => {
@@ -1493,7 +1491,7 @@ const bindEvents = () => {
     }
     if (event.target === elements.contentDialog) elements.contentDialog.close()
   })
-  window.addEventListener('wheel', handleWheelZoom, { passive: false })
+  canvas.addEventListener('wheel', handleWheelZoom, { passive: false })
   canvas.addEventListener('dblclick', event => {
     const rect = canvas.getBoundingClientRect()
     const cursorX = event.clientX - rect.left

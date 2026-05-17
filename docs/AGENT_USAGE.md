@@ -404,6 +404,7 @@ blink agent status
 ```
 
 `agent install` configures Brainlink MCP in `~/.codex/config.toml` so compatible agents can use Brainlink by default.
+`agent install` and `agent upgrade` automatically apply the `fully-auto` MCP bootstrap policy (`enforceBootstrap=true`, `enforceContextFirst=true`, `autoBootstrapOnRead=true`, `autoBootstrapOnStartup=true`) so all plug-and-play Brainlink features start enabled.
 Use `agent upgrade` on legacy installations to reapply the latest defaults and run self-test diagnostics.
 Use `agent policy --preset fully-auto` to keep startup/read auto-bootstrap enabled, or `agent policy --preset strict` to force explicit bootstrap calls.
 
