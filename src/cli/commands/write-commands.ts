@@ -56,9 +56,13 @@ const parseScore = (value: string | undefined, fallback: number): number => {
   return parsed
 }
 
-const spawnDetached = (command: string, args: readonly string[]): boolean => {
+const spawnDetached = (command: string, args: readonly string[], envOverrides?: NodeJS.ProcessEnv): boolean => {
   try {
-    const child = spawn(command, args, { detached: true, stdio: 'ignore' })
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: 'ignore',
+      env: envOverrides ? { ...process.env, ...envOverrides } : process.env
+    })
     child.unref()
     return true
   } catch {
@@ -246,6 +250,10 @@ const envFlagEnabled = (name: string): boolean =>
 const spawnAnyDetached = (candidates: readonly (readonly [string, readonly string[]])[]): boolean =>
   candidates.some(([command, args]) => spawnDetached(command, args))
 
+const spawnAnyDetachedWithEnv = (
+  candidates: readonly (readonly [string, readonly string[], NodeJS.ProcessEnv | undefined])[]
+): boolean => candidates.some(([command, args, env]) => spawnDetached(command, args, env))
+
 const windowsStartCandidates = (program: string, args: readonly string[] = []): readonly [string, readonly string[]][] => [
   ['cmd', ['/c', 'start', '', program, ...args]]
 ]
@@ -363,6 +371,16 @@ const openGraphInAppWindow = (url: string): boolean => {
   }
 
   const appArgument = `--app=${url}`
+  const linuxChromiumStableFlags = [
+    '--ozone-platform=x11',
+    '--disable-gpu',
+    '--disable-features=Vulkan,VaapiVideoDecoder',
+    '--disable-background-networking'
+  ] as const
+  const linuxChromiumEnv: NodeJS.ProcessEnv = {
+    GDK_BACKEND: 'x11',
+    OZONE_PLATFORM: 'x11'
+  }
   const linuxAppWindowCandidates = [
     'microsoft-edge',
     'microsoft-edge-stable',
@@ -373,7 +391,13 @@ const openGraphInAppWindow = (url: string): boolean => {
     'brave-browser'
   ].filter((candidate) => commandExists(candidate))
 
-  return spawnAnyDetached(linuxAppWindowCandidates.map((command) => [command, [appArgument, '--new-window']] as const))
+  return spawnAnyDetachedWithEnv(
+    linuxAppWindowCandidates.map((command) => [
+      command,
+      [...linuxChromiumStableFlags, appArgument, '--new-window'],
+      linuxChromiumEnv
+    ] as const)
+  )
 }
 
 const openGraphInDetectedBrowser = (url: string): boolean => {
@@ -387,19 +411,29 @@ const openGraphInDetectedBrowser = (url: string): boolean => {
     ])
   }
 
-  const linuxBrowserCandidates: readonly (readonly [string, readonly string[]])[] = [
-    ['microsoft-edge', [url]],
-    ['microsoft-edge-stable', [url]],
-    ['google-chrome', [url]],
-    ['google-chrome-stable', [url]],
-    ['chromium', [url]],
-    ['chromium-browser', [url]],
-    ['brave-browser', [url]],
-    ['firefox', ['-new-window', url]]
+  const linuxChromiumStableFlags = [
+    '--ozone-platform=x11',
+    '--disable-gpu',
+    '--disable-features=Vulkan,VaapiVideoDecoder',
+    '--disable-background-networking'
+  ] as const
+  const linuxChromiumEnv: NodeJS.ProcessEnv = {
+    GDK_BACKEND: 'x11',
+    OZONE_PLATFORM: 'x11'
+  }
+  const linuxBrowserCandidates: readonly (readonly [string, readonly string[], NodeJS.ProcessEnv | undefined])[] = [
+    ['microsoft-edge', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
+    ['microsoft-edge-stable', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
+    ['google-chrome', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
+    ['google-chrome-stable', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
+    ['chromium', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
+    ['chromium-browser', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
+    ['brave-browser', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
+    ['firefox', ['-new-window', url], undefined]
   ]
 
   const available = linuxBrowserCandidates.filter(([command]) => commandExists(command))
-  return spawnAnyDetached(available)
+  return spawnAnyDetachedWithEnv(available)
 }
 
 const openUrlInUi = (url: string, parentPid: number): { readonly opened: boolean; readonly mode: 'native-gui' | 'app-window' | 'browser' | 'none' } => {

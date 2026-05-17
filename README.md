@@ -81,6 +81,10 @@ Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/c
 - Local HTTP API.
 - Realtime graph UI with agent selector and colored knowledge groups.
 - Graph renderer optimized for large datasets with viewport-driven node culling and edge lookup by visible nodes.
+- Large graph layout API automatically uses compact payload encoding and edge-cap transmission to reduce initial client load on very large vaults.
+- Zoomed-out graph LOD now clusters dense regions and progressively expands nodes as zoom increases.
+- Graph filtering runs in a dedicated browser worker to keep the UI thread responsive during heavy datasets.
+- Edge rendering budgets adapt to zoom level to prevent frame spikes on large graph panoramas.
 
 ## Install
 
@@ -566,6 +570,7 @@ By default, `blink server` tries to open the graph in a native desktop GUI windo
 
 On Linux, native GUI is disabled by default for better startup performance. Enable it with `BRAINLINK_LINUX_NATIVE_GUI=1`.
 If native GUI launch is unavailable on your system, it falls back to dedicated app-window mode and then to the default browser.
+For Chromium-family browsers on Linux (`chromium`, `chromium-browser`, `google-chrome`, `microsoft-edge`, `brave-browser`), Brainlink now auto-applies compatibility flags during launch (`--ozone-platform=x11`, `--disable-gpu`, `--disable-features=Vulkan,VaapiVideoDecoder`, `--disable-background-networking`) to avoid common Wayland/Vulkan/VAAPI startup issues.
 Use `--no-open` to keep it headless.
 When native GUI is used, the GUI window automatically closes when the `blink server` process stops.
 
@@ -585,6 +590,7 @@ The graph UI shows:
 - double-click on canvas zooms in at cursor position
 - floating graph totals (notes, links, tags) below the Brainlink title
 - large-graph rendering safeguards (edge draw caps, lower redraw rate, zoom-aware interaction)
+- massive-graph LOD progression: zoomed-out views prefer lightweight clusters, then progressively reveal nodes and edges as zoom increases
 
 The server indexes before starting by default. Use `--no-index` to skip that step:
 
@@ -884,6 +890,7 @@ Starts the local read-only graph UI and HTTP API.
 By default, it tries to open a native desktop GUI window for the graph URL.
 On Linux, native GUI is disabled by default; enable it with `BRAINLINK_LINUX_NATIVE_GUI=1`.
 If native GUI launch is unavailable, it falls back to dedicated app-window mode and then browser open.
+When fallback opens Chromium-family browsers on Linux, Brainlink automatically uses compatibility launch flags for stable rendering on Ubuntu/Wayland setups.
 Use `--no-open` to skip that behavior.
 
 The HTTP server only binds to loopback hosts such as `127.0.0.1`, `localhost` or `::1`.

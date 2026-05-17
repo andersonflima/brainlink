@@ -33,6 +33,11 @@
 - Fixed graph modal content loading by correcting agent query parameter composition for `/api/graph-node` and `/api/graph-filter` requests.
 - Improved 50k+ graph rendering performance with viewport-aware spatial node culling, cached render visibility, and node-adjacent edge selection to avoid full graph scans every frame.
 - Added incremental vault indexing with file snapshots to reuse unchanged documents/chunks/embeddings, plus adaptive search-pack rebuild thresholds to avoid full re-compression on small edits.
+- Reduced large-graph HTTP payload size with compact `/api/graph-layout` encoding for high-node vaults and capped transmitted edges to improve UI load responsiveness.
+- Added aggressive graph LOD clustering when zoomed out, dynamic per-zoom edge render budgets, and a dedicated frontend worker for off-main-thread graph filter matching.
+- Improved Linux browser fallback launch stability by auto-applying Chromium compatibility flags (`--ozone-platform=x11`, `--disable-gpu`, `--disable-features=Vulkan,VaapiVideoDecoder`, `--disable-background-networking`) for app-window/browser modes.
+- Improved massive-graph UI responsiveness with stricter render budgets, adaptive heavy-graph frame throttling, reduced interaction hit-test frequency, and URL-first agent selection on initial graph load.
+- Improved 50k+ graph LOD behavior so zoomed-out views render lightweight cluster overviews and progressively reveal nodes/edges only as zoom increases.
 
 ## 0.1.0-beta.3
 

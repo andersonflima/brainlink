@@ -12,8 +12,10 @@ import { loadBrainlinkConfig, sanitizeSearchMode } from '../../infrastructure/co
 import { createClientCss } from '../frontend/client-css.js'
 import { createClientHtml } from '../frontend/client-html.js'
 import { createClientJs } from '../frontend/client-js.js'
+import { createClientWorkerJs } from '../frontend/client-worker-js.js'
 import { contentTypes, createJsonResponse, isReadMethod, parsePositiveInteger } from './http.js'
 import type { HttpResponse } from './types.js'
+import type { KnowledgeGraphLayout } from '../../domain/types.js'
 
 const readSearchMode = async (url: URL): Promise<ReturnType<typeof sanitizeSearchMode>> => {
   const config = await loadBrainlinkConfig()
@@ -67,10 +69,44 @@ const sameEntityTag = (candidate: string | string[] | undefined, signature: stri
 const readAgentQuery = (url: URL): string | undefined =>
   url.searchParams.get('agent') ?? undefined
 
+const compactGraphLayoutThreshold = 12_000
+const compactGraphLayoutEdgeLimit = 60_000
+
+const compactGraphLayoutEdgeLimitFor = (nodeCount: number): number => {
+  if (nodeCount > 100_000) return 15_000
+  if (nodeCount > 50_000) return 22_000
+  if (nodeCount > 25_000) return 30_000
+  return compactGraphLayoutEdgeLimit
+}
+
 const stripLayoutContent = (layout: Awaited<ReturnType<typeof getGraphLayout>>['layout']) => ({
   ...layout,
   nodes: layout.nodes.map(({ content, ...node }) => node)
 })
+
+const compactLayoutPayload = (layout: KnowledgeGraphLayout) => {
+  const edgeLimit = compactGraphLayoutEdgeLimitFor(layout.nodes.length)
+  const compactNodes = layout.nodes.map((node) => [node.id, node.title, node.x, node.y, node.group, node.segment] as const)
+  const compactEdges = [...layout.edges]
+    .sort((left, right) => (right.weight ?? 1) - (left.weight ?? 1))
+    .slice(0, edgeLimit)
+    .map((edge) => [edge.source, edge.target, edge.weight, edge.priority] as const)
+
+  return {
+    compact: true as const,
+    layout: {
+      nodes: compactNodes,
+      edges: compactEdges
+    },
+    totals: {
+      nodes: layout.nodes.length,
+      edges: layout.edges.length
+    }
+  }
+}
+
+const encodeLayoutPayload = (layout: Awaited<ReturnType<typeof getGraphLayout>>['layout']) =>
+  layout.nodes.length > compactGraphLayoutThreshold ? compactLayoutPayload(layout) : { compact: false as const, layout: stripLayoutContent(layout) }
 
 export const route = async (request: IncomingMessage, url: URL, vaultPath: string) => {
   if (isReadMethod(request) && (url.pathname === '/' || url.pathname === '/index.html')) {
@@ -85,6 +121,10 @@ export const route = async (request: IncomingMessage, url: URL, vaultPath: strin
     return createResponse(createClientJs(), 200, contentTypes['.js'])
   }
 
+  if (isReadMethod(request) && url.pathname === '/app-worker.js') {
+    return createResponse(createClientWorkerJs(), 200, contentTypes['.js'])
+  }
+
   if (isReadMethod(request) && url.pathname === '/api/graph') {
     return createResponse(createJsonResponse(await getGraph(vaultPath, readAgentQuery(url))), 200, contentTypes['.json'])
   }
@@ -94,7 +134,7 @@ export const route = async (request: IncomingMessage, url: URL, vaultPath: strin
     const requestEtags = request.headers['if-none-match']
     const notModified = sameEntityTag(requestEtags, signature)
     const etag = encodeEntityTag(signature)
-    const body = createJsonResponse({ signature, layout: stripLayoutContent(layout) })
+    const body = createJsonResponse({ signature, ...encodeLayoutPayload(layout) })
     const jsonResponse = createResponse(body, 200, contentTypes['.json'])
     const notModifiedResponse = createResponse('', 304, contentTypes['.json'])
 
