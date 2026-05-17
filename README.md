@@ -553,6 +553,7 @@ blink server --host 127.0.0.1 --port 4321 --watch
 ```
 
 By default, the server uses `$HOME/.brainlink/vault`. Pass `--vault ./vault` only when you want to inspect a custom vault.
+By default, `blink server` also opens the graph URL in your default browser. Use `--no-open` to keep it headless.
 
 The graph UI shows:
 
@@ -838,9 +839,11 @@ Watches Markdown files and rebuilds the index when notes change.
 ```bash
 blink server --watch
 blink server --vault ./vault --watch
+blink server --vault ./vault --watch --no-open
 ```
 
 Starts the local read-only graph UI and HTTP API.
+By default, it opens the graph URL in your default browser. Use `--no-open` to skip that behavior.
 
 The HTTP server only binds to loopback hosts such as `127.0.0.1`, `localhost` or `::1`.
 

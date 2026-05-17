@@ -536,9 +536,11 @@ shared: 30 documents
 ```bash
 blink server --host 127.0.0.1 --port 4321
 blink server --vault ./vault --host 127.0.0.1 --port 4321
+blink server --vault ./vault --host 127.0.0.1 --port 4321 --no-open
 ```
 
 This starts a local frontend for inspecting the knowledge graph.
+By default it opens the graph URL in your default browser. Use `--no-open` to keep the server headless.
 
 Without `--vault`, the graph UI serves `$HOME/.brainlink/vault`.
 
