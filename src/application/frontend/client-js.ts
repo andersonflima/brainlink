@@ -2,13 +2,14 @@ export const createClientJs = (): string => `const canvas = document.getElementB
 const ctx = canvas.getContext('2d')
 const largeGraphNodeThreshold = 4000
 const massiveGraphNodeThreshold = 20000
-const largeGraphEdgeRenderLimit = 16000
+const largeGraphEdgeRenderLimit = 120000
 const renderNodeBudget = 900
 const renderEdgeBudget = 2400
 const clusterActivationNodeThreshold = 600
 const clusterZoomThreshold = 0.18
 const macroGalaxyZoomThreshold = 0.012
 const massiveAutoFitMacroScale = 0.006
+const defaultMacroScale = 0.006
 const clusterCellPixelSize = 64
 const minNodePixelRadius = 2.3
 const viewportPaddingPx = 280
@@ -609,7 +610,7 @@ const autoFitScaleRangeByNodeCount = nodeCount => {
   return { min: 0.0008, max: 0.24 }
 }
 
-const fitView = (options = { useFiltered: true }) => {
+const fitView = (options = { useFiltered: true, macro: false }) => {
   const rect = canvas.getBoundingClientRect()
   const width = Math.max(rect.width, 320)
   const height = Math.max(rect.height, 320)
@@ -640,9 +641,12 @@ const fitView = (options = { useFiltered: true }) => {
   const biasedScale = clampScale(fitScale * fitScaleBiasByNodeCount(nodes.length))
   const scaleRange = autoFitScaleRangeByNodeCount(nodes.length)
   const baselineScale = clampScale(Math.min(scaleRange.max, Math.max(scaleRange.min, biasedScale)))
-  const scale = nodes.length > massiveGraphNodeThreshold
-    ? clampScale(Math.min(baselineScale, massiveAutoFitMacroScale))
-    : baselineScale
+  const macroScale = nodes.length > massiveGraphNodeThreshold ? massiveAutoFitMacroScale : defaultMacroScale
+  const scale = options.macro && nodes.length > 1
+    ? clampScale(Math.min(baselineScale, macroScale))
+    : nodes.length > massiveGraphNodeThreshold
+      ? clampScale(Math.min(baselineScale, massiveAutoFitMacroScale))
+      : baselineScale
   const centerX = (bounds.minX + bounds.maxX) / 2
   const centerY = (bounds.minY + bounds.maxY) / 2
 
@@ -656,7 +660,7 @@ const fitView = (options = { useFiltered: true }) => {
   markRenderDirty()
 }
 
-const resetView = () => fitView({ useFiltered: false })
+const resetView = () => fitView({ useFiltered: false, macro: true })
 
 const createLayout = graph => {
   const nodeRows = Array.isArray(graph.nodes) ? graph.nodes : []
@@ -1005,6 +1009,32 @@ const computeRenderVisibility = () => {
   state.lastViewportKey = viewportKey
   state.renderVisibilityDirty = false
 
+  const shouldRenderMacroGalaxy =
+    state.transform.scale <= macroGalaxyZoomThreshold && state.visibleNodes.length > 1
+
+  if (shouldRenderMacroGalaxy) {
+    const viewportNodes = viewportNodesFromSpatialIndex(viewport)
+    const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
+    const representative = state.macroRepresentative ?? sourceNodes[0] ?? null
+    if (representative) {
+      state.renderClusters = [
+        {
+          id: 'macro-galaxy',
+          x: state.macroCenter.x,
+          y: state.macroCenter.y,
+          count: sourceNodes.length,
+          representative
+        }
+      ]
+      state.renderNodes = [representative]
+    } else {
+      state.renderClusters = []
+      state.renderNodes = []
+    }
+    state.renderEdges = []
+    return
+  }
+
   if (state.visibleNodes.length <= 2000) {
     state.renderNodes = state.visibleNodes
     state.renderClusters = []
@@ -1016,26 +1046,6 @@ const computeRenderVisibility = () => {
   if (state.visibleNodes.length > massiveGraphNodeThreshold) {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
-    if (state.transform.scale <= macroGalaxyZoomThreshold) {
-      const representative = state.macroRepresentative ?? sourceNodes[0] ?? null
-      if (representative) {
-        state.renderClusters = [
-          {
-            id: 'macro-galaxy',
-            x: state.macroCenter.x,
-            y: state.macroCenter.y,
-            count: sourceNodes.length,
-            representative
-          }
-        ]
-        state.renderNodes = [representative]
-      } else {
-        state.renderClusters = []
-        state.renderNodes = []
-      }
-      state.renderEdges = []
-      return
-    }
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
     const sampled = sourceNodes.length > sampleLimit
       ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget), sourceNodes)
@@ -1325,6 +1335,8 @@ const fetchNodeDetails = async node => {
   return detail
 }
 
+const wait = async (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds))
+
 const openContentDialog = async node => {
   if (!node) return
   elements.contentTitle.textContent = node.title || 'Loading...'
@@ -1340,19 +1352,32 @@ const openContentDialog = async node => {
     elements.contentDialog.showModal()
   }
 
+  const applyDetailToDialog = detail => {
+    elements.contentTitle.textContent = detail.title
+    elements.contentPath.textContent = detail.path
+    elements.contentTags.innerHTML = detail.tags.length
+      ? detail.tags.map(tag => '<span>#' + escapeHtml(tag) + '</span>').join('')
+      : '<span>No tags</span>'
+    elements.contentBody.textContent = detail.content
+  }
+
   try {
     const detailedNode = await fetchNodeDetails(node)
     if (state.selected?.id !== node.id) {
       return
     }
-    elements.contentTitle.textContent = detailedNode.title
-    elements.contentPath.textContent = detailedNode.path
-    elements.contentTags.innerHTML = detailedNode.tags.length
-      ? detailedNode.tags.map(tag => '<span>#' + escapeHtml(tag) + '</span>').join('')
-      : '<span>No tags</span>'
-    elements.contentBody.textContent = detailedNode.content
+    applyDetailToDialog(detailedNode)
   } catch {
-    elements.contentBody.textContent = 'Unable to load note content.'
+    try {
+      await wait(120)
+      const retriedNode = await fetchNodeDetails(node)
+      if (state.selected?.id !== node.id) {
+        return
+      }
+      applyDetailToDialog(retriedNode)
+    } catch {
+      elements.contentBody.textContent = 'Unable to load note content.'
+    }
   }
 }
 
