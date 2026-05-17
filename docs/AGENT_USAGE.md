@@ -555,6 +555,7 @@ Without `--vault`, the graph UI serves `$HOME/.brainlink/vault`.
 The frontend includes an agent selector that shows only the agent id. Selecting an agent calls the same read APIs with `agent=<agent-id>` and renders that namespace instead of merging every agent into one graph.
 
 Graph navigation controls include zoom in, zoom out, fit visible nodes and reset-to-fit-all nodes. Mouse wheel zoom (including `cmd+scroll` and `ctrl+scroll`) is anchored to the cursor. Keyboard shortcuts are `+` (zoom in), `-` (zoom out) and `0` (reset fit). Double-click on canvas zooms in at cursor position. Totals for notes, links and tags stay visible as floating metrics under the Brainlink title, and node details open on click in a modal (tags, outgoing links, backlinks and Markdown content).
+During graph filtering, Brainlink keeps hub context nodes visible (`Memory Hub`/`MOC`/high-degree fallback) so filtered views still show relationship anchors.
 
 The command reindexes by default, then serves:
 
