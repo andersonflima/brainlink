@@ -18,6 +18,7 @@ const transformCoordinateLimit = 20_000_000
 const hoverHitTestIntervalMs = 64
 const overviewClusterMaxCount = 1400
 const zoomRecoveryGuardMs = 1500
+const zoomCapTargetViewportShare = 0.72
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
@@ -53,6 +54,7 @@ const state = {
   macroCenter: { x: 0, y: 0 },
   macroRepresentative: null,
   primaryHub: null,
+  hubNeighborDistance: Number.POSITIVE_INFINITY,
   filterWorker: null,
   filterReady: false,
   lastHoverHitAt: 0,
@@ -232,6 +234,19 @@ const resize = () => {
 const normalizeQuery = value => value.trim().toLowerCase()
 const hubNodeRetentionLimit = 2
 const hubNodePattern = /\b(memory\s*hub|knowledge\s*hub|hub|moc|map|memory\s*map|mapa)\b/i
+const memoryHubPathPattern = /\bmemory[-_\s]*hub\b/i
+
+const hubNodeScore = node => {
+  const title = node.title.trim().toLowerCase()
+  if (title === 'memory hub') return 6
+  if (title === 'knowledge hub') return 5
+  if (memoryHubPathPattern.test(node.path || '')) return 4
+  if (node.tags.some(tag => tag.trim().toLowerCase() === 'memory-hub')) return 3
+  if (/\bmoc\b/i.test(node.title)) return 2
+  return hubNodePattern.test(node.title) || hubNodePattern.test(node.path || '') || node.tags.some(tag => hubNodePattern.test(tag))
+    ? 1
+    : 0
+}
 
 const localFilteredNodes = query =>
   state.nodes.filter(node =>
@@ -246,8 +261,10 @@ const rankedHubNodes = () => {
   }
 
   const byTitleAndDegree = [...state.nodes]
-    .filter(node => hubNodePattern.test(node.title) || hubNodePattern.test(node.path) || node.tags.some(tag => hubNodePattern.test(tag)))
+    .filter(node => hubNodeScore(node) > 0)
     .sort((left, right) => {
+      const byHubScore = hubNodeScore(right) - hubNodeScore(left)
+      if (byHubScore !== 0) return byHubScore
       const byDegree = (state.nodeDegrees.get(right.id) ?? 0) - (state.nodeDegrees.get(left.id) ?? 0)
       if (byDegree !== 0) return byDegree
       return left.title.localeCompare(right.title)
@@ -292,7 +309,10 @@ const resolveMacroRepresentative = (nodes) => {
     return null
   }
 
-  let best = nodes[0]
+  const hubCandidate = state.primaryHub && nodes.some(node => node.id === state.primaryHub.id)
+    ? state.primaryHub
+    : null
+  let best = hubCandidate ?? nodes[0]
   let bestDegree = state.nodeDegrees.get(best.id) ?? 0
 
   for (let index = 1; index < nodes.length; index += 1) {
@@ -305,6 +325,24 @@ const resolveMacroRepresentative = (nodes) => {
   }
 
   return best
+}
+
+const nearestHubNeighborDistance = (hub, nodes) => {
+  if (!hub || nodes.length <= 1) {
+    return Number.POSITIVE_INFINITY
+  }
+
+  let minimum = Number.POSITIVE_INFINITY
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index]
+    if (node.id === hub.id) continue
+    const distance = Math.hypot(node.x - hub.x, node.y - hub.y)
+    if (distance < minimum) {
+      minimum = distance
+    }
+  }
+
+  return minimum
 }
 
 const recomputeVisibility = () => {
@@ -322,15 +360,17 @@ const recomputeVisibility = () => {
   state.visibleNodeSpatial = createSpatialIndex(nodes)
   state.visibleEdgeByNode = createVisibleEdgeLookup(limitedEdges)
   state.overviewClusters = nodes.length > massiveGraphNodeThreshold ? buildOverviewClusters(nodes) : []
+  const primaryHub = rankedHubNodes()[0] ?? null
+  state.primaryHub = primaryHub
+  state.hubNeighborDistance = nearestHubNeighborDistance(primaryHub, nodes)
   const bounds = graphBounds(nodes)
   state.macroCenter = bounds
     ? {
-      x: (bounds.minX + bounds.maxX) / 2,
-      y: (bounds.minY + bounds.maxY) / 2
+      x: primaryHub ? primaryHub.x : (bounds.minX + bounds.maxX) / 2,
+      y: primaryHub ? primaryHub.y : (bounds.minY + bounds.maxY) / 2
     }
     : { x: 0, y: 0 }
   state.macroRepresentative = resolveMacroRepresentative(nodes)
-  state.primaryHub = rankedHubNodes()[0] ?? null
   markRenderDirty()
 }
 
@@ -641,15 +681,27 @@ const ensureHubNodesInRenderedSet = (nodes) => {
     return nodes
   }
 
-  const maxNodes = Math.max(renderNodeBudget, nodes.length)
+  const maxNodes = Math.max(Math.min(renderNodeBudget, nodes.length), 1)
   const ids = new Set(nodes.map((node) => node.id))
   const hubs = rankedHubNodes()
   const merged = [...nodes]
 
-  for (let index = 0; index < hubs.length && merged.length < maxNodes; index += 1) {
+  for (let index = 0; index < hubs.length; index += 1) {
     const hub = hubs[index]
-    if (!ids.has(hub.id)) {
+    if (ids.has(hub.id)) {
+      continue
+    }
+
+    if (merged.length < maxNodes) {
       merged.push(hub)
+      ids.add(hub.id)
+      continue
+    }
+
+    const replacementIndex = merged.findIndex((node) => !hubs.some((candidate) => candidate.id === node.id))
+    if (replacementIndex >= 0) {
+      ids.delete(merged[replacementIndex].id)
+      merged[replacementIndex] = hub
       ids.add(hub.id)
     }
   }
@@ -657,7 +709,33 @@ const ensureHubNodesInRenderedSet = (nodes) => {
   return merged
 }
 
-const clampScale = value => Math.max(zoomRange.min, Math.min(zoomRange.max, value))
+const zoomCapByNodeCount = (nodeCount) => {
+  if (nodeCount > 50000) return 0.88
+  if (nodeCount > 20000) return 1.15
+  if (nodeCount > 6000) return 1.65
+  if (nodeCount > 2000) return 2.2
+  return zoomRange.max
+}
+
+const zoomCapByHubDistance = (distance) => {
+  if (!Number.isFinite(distance) || distance <= 0) {
+    return zoomRange.max
+  }
+
+  const rect = canvas.getBoundingClientRect()
+  const viewportWidth = Math.max(rect.width, 320)
+  const viewportHeight = Math.max(rect.height, 320)
+  const reference = Math.max(220, Math.min(viewportWidth, viewportHeight) * zoomCapTargetViewportShare)
+  return Math.max(0.3, Math.min(zoomRange.max, reference / distance))
+}
+
+const currentZoomMax = () => {
+  const nodeCount = state.visibleNodes.length > 0 ? state.visibleNodes.length : state.nodes.length
+  const capped = Math.min(zoomCapByNodeCount(nodeCount), zoomCapByHubDistance(state.hubNeighborDistance))
+  return Math.max(zoomRange.min * 2, capped)
+}
+
+const clampScale = value => Math.max(zoomRange.min, Math.min(currentZoomMax(), value))
 const isFiniteNumber = value => Number.isFinite(value)
 const isReasonableCoordinate = value => isFiniteNumber(value) && Math.abs(value) <= worldCoordinateLimit
 const clampTransformCoordinate = value => {
@@ -1123,7 +1201,7 @@ const computeRenderVisibility = () => {
   if (shouldRenderMacroGalaxy) {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
-    const representative = state.macroRepresentative ?? sourceNodes[0] ?? null
+    const representative = state.primaryHub ?? state.macroRepresentative ?? sourceNodes[0] ?? null
     if (representative) {
       state.renderClusters = [
         {
@@ -1371,6 +1449,13 @@ const render = now => {
       ctx.lineWidth = 1.4 / safeScale
       ctx.strokeStyle = isMacro ? '#ffffff' : graphTheme.nodeStroke
       ctx.stroke()
+      if (isMacro && cluster.representative?.title) {
+        ctx.fillStyle = '#edf2f7'
+        ctx.font = 12 / safeScale + 'px Inter, system-ui, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+        ctx.fillText(cluster.representative.title.slice(0, 28), cluster.x, cluster.y + (radiusPx + 9) / safeScale)
+      }
       // Keep cluster markers minimal and faster to draw on large graphs.
     })
   } else {
