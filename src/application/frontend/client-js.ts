@@ -201,7 +201,9 @@ const createLayout = graph => {
   const nodes = graph.nodes.map(node => ({
     ...node,
     x: Number.isFinite(node.x) ? node.x : 0,
-    y: Number.isFinite(node.y) ? node.y : 0
+    y: Number.isFinite(node.y) ? node.y : 0,
+    vx: Number.isFinite(node.vx) ? node.vx : 0,
+    vy: Number.isFinite(node.vy) ? node.vy : 0
   }))
   const nodeMap = new Map(nodes.map(node => [node.id, node]))
   const edges = graph.edges
@@ -296,6 +298,10 @@ const tick = delta => {
   edges.forEach(edge => {
     const source = edge.sourceNode
     const target = edge.targetNode
+    source.vx = Number.isFinite(source.vx) ? source.vx : 0
+    source.vy = Number.isFinite(source.vy) ? source.vy : 0
+    target.vx = Number.isFinite(target.vx) ? target.vx : 0
+    target.vy = Number.isFinite(target.vy) ? target.vy : 0
     const dx = target.x - source.x
     const dy = target.y - source.y
     const distance = Math.max(Math.hypot(dx, dy), 1)
@@ -312,6 +318,10 @@ const tick = delta => {
     for (let j = i + 1; j < nodes.length; j += 1) {
       const a = nodes[i]
       const b = nodes[j]
+      a.vx = Number.isFinite(a.vx) ? a.vx : 0
+      a.vy = Number.isFinite(a.vy) ? a.vy : 0
+      b.vx = Number.isFinite(b.vx) ? b.vx : 0
+      b.vy = Number.isFinite(b.vy) ? b.vy : 0
       const dx = b.x - a.x
       const dy = b.y - a.y
       const distance = Math.max(Math.hypot(dx, dy), 1)
@@ -326,6 +336,10 @@ const tick = delta => {
   }
 
   nodes.forEach(node => {
+    node.vx = Number.isFinite(node.vx) ? node.vx : 0
+    node.vy = Number.isFinite(node.vy) ? node.vy : 0
+    node.x = Number.isFinite(node.x) ? node.x : 0
+    node.y = Number.isFinite(node.y) ? node.y : 0
     if (state.pointer.dragNode === node) {
       node.vx = 0
       node.vy = 0
