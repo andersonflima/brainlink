@@ -1,9 +1,8 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
-import { platform } from 'node:os'
-import { spawn } from 'node:child_process'
+import { dirname, join, relative, resolve } from 'node:path'
+import { platform, tmpdir } from 'node:os'
+import { spawn, spawnSync } from 'node:child_process'
 import type { Command } from 'commander'
 import { addNote } from '../../application/add-note.js'
 import { buildContextPackage } from '../../application/build-context.js'
@@ -41,6 +40,216 @@ const spawnDetached = (command: string, args: readonly string[]): boolean => {
   } catch {
     return false
   }
+}
+
+const nativeGuiSwiftScriptPath = join(tmpdir(), 'brainlink-native-gui.swift')
+const nativeGuiPowershellScriptPath = join(tmpdir(), 'brainlink-native-gui.ps1')
+const nativeGuiLinuxScriptPath = join(tmpdir(), 'brainlink-native-gui-linux.py')
+
+const nativeGuiSwiftScript = `import Foundation
+import AppKit
+import WebKit
+
+final class BrainlinkAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+  private let targetUrl: URL
+  private var window: NSWindow?
+  private var webView: WKWebView?
+
+  init(targetUrl: URL) {
+    self.targetUrl = targetUrl
+  }
+
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 1320, height: 860),
+      styleMask: [.titled, .closable, .miniaturizable, .resizable],
+      backing: .buffered,
+      defer: false
+    )
+    window.title = "Brainlink Graph"
+    window.center()
+    window.isReleasedWhenClosed = false
+    window.delegate = self
+
+    let webView = WKWebView(frame: window.contentView?.bounds ?? .zero)
+    webView.autoresizingMask = [.width, .height]
+    webView.allowsBackForwardNavigationGestures = true
+    webView.load(URLRequest(url: targetUrl))
+    window.contentView?.addSubview(webView)
+
+    self.window = window
+    self.webView = webView
+
+    window.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  func windowWillClose(_ notification: Notification) {
+    NSApp.terminate(nil)
+  }
+}
+
+let rawTarget = CommandLine.arguments.dropFirst().first ?? "http://127.0.0.1:4321"
+
+guard let targetUrl = URL(string: rawTarget) else {
+  fputs("Invalid URL for Brainlink GUI: \\(rawTarget)\\n", stderr)
+  exit(1)
+}
+
+let app = NSApplication.shared
+app.setActivationPolicy(.regular)
+let delegate = BrainlinkAppDelegate(targetUrl: targetUrl)
+app.delegate = delegate
+app.run()
+`
+
+const nativeGuiPowershellScript = `param(
+  [string]$TargetUrl = "http://127.0.0.1:4321"
+)
+
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "Brainlink Graph"
+$form.Width = 1320
+$form.Height = 860
+$form.StartPosition = "CenterScreen"
+
+$browser = New-Object System.Windows.Forms.WebBrowser
+$browser.Dock = [System.Windows.Forms.DockStyle]::Fill
+$browser.ScriptErrorsSuppressed = $true
+$browser.Navigate($TargetUrl)
+
+$form.Controls.Add($browser)
+[void]$form.ShowDialog()
+`
+
+const nativeGuiLinuxPythonScript = `#!/usr/bin/env python3
+import sys
+
+def run() -> int:
+    try:
+        import gi
+        gi.require_version("Gtk", "3.0")
+        try:
+            gi.require_version("WebKit2", "4.1")
+        except ValueError:
+            gi.require_version("WebKit2", "4.0")
+        from gi.repository import Gtk, WebKit2
+    except Exception:
+        return 1
+
+    target_url = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:4321"
+
+    window = Gtk.Window(title="Brainlink Graph")
+    window.set_default_size(1320, 860)
+    window.connect("destroy", Gtk.main_quit)
+
+    webview = WebKit2.WebView()
+    webview.load_uri(target_url)
+    window.add(webview)
+    window.show_all()
+    Gtk.main()
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(run())
+`
+
+const commandExists = (command: string): boolean => {
+  try {
+    const probe = platform() === 'win32'
+      ? spawnSync('where', [command], { stdio: 'ignore' })
+      : spawnSync('which', [command], { stdio: 'ignore' })
+    return probe.status === 0
+  } catch {
+    return false
+  }
+}
+
+const resolveSwiftExecutable = (): string | null => {
+  const directSwift = '/usr/bin/swift'
+  if (existsSync(directSwift)) {
+    return directSwift
+  }
+
+  try {
+    const probe = spawnSync('xcrun', ['--find', 'swift'], { encoding: 'utf8' })
+    const swiftPath = probe.status === 0 ? probe.stdout.trim() : ''
+    return swiftPath.length > 0 ? swiftPath : null
+  } catch {
+    return null
+  }
+}
+
+const openGraphInMacNativeGui = (url: string): boolean => {
+  const swiftBinary = resolveSwiftExecutable()
+  if (!swiftBinary) {
+    return false
+  }
+
+  try {
+    writeFileSync(nativeGuiSwiftScriptPath, nativeGuiSwiftScript, 'utf8')
+  } catch {
+    return false
+  }
+
+  return spawnDetached(swiftBinary, [nativeGuiSwiftScriptPath, url])
+}
+
+const resolveWindowsPowershellExecutable = (): string | null => {
+  if (commandExists('powershell')) {
+    return 'powershell'
+  }
+
+  if (commandExists('pwsh')) {
+    return 'pwsh'
+  }
+
+  return null
+}
+
+const openGraphInWindowsNativeGui = (url: string): boolean => {
+  const powershell = resolveWindowsPowershellExecutable()
+  if (!powershell) {
+    return false
+  }
+
+  try {
+    writeFileSync(nativeGuiPowershellScriptPath, nativeGuiPowershellScript, 'utf8')
+  } catch {
+    return false
+  }
+
+  return spawnDetached(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', nativeGuiPowershellScriptPath, url])
+}
+
+const openGraphInLinuxNativeGui = (url: string): boolean => {
+  if (!commandExists('python3')) {
+    return false
+  }
+
+  try {
+    writeFileSync(nativeGuiLinuxScriptPath, nativeGuiLinuxPythonScript, 'utf8')
+  } catch {
+    return false
+  }
+
+  return spawnDetached('python3', [nativeGuiLinuxScriptPath, url])
+}
+
+const openGraphInNativeGui = (url: string): boolean => {
+  if (platform() === 'darwin') {
+    return openGraphInMacNativeGui(url)
+  }
+
+  if (platform() === 'win32') {
+    return openGraphInWindowsNativeGui(url)
+  }
+
+  return openGraphInLinuxNativeGui(url)
 }
 
 const openGraphInAppWindow = (url: string): boolean => {
@@ -83,7 +292,7 @@ const openGraphInAppWindow = (url: string): boolean => {
   )
 }
 
-const openUrlInBrowser = (url: string): { readonly opened: boolean; readonly mode: 'app-window' | 'browser' | 'none' } => {
+const openUrlInUi = (url: string): { readonly opened: boolean; readonly mode: 'native-gui' | 'app-window' | 'browser' | 'none' } => {
   const openDisabled =
     process.env.BRAINLINK_NO_BROWSER === '1' ||
     process.env.BRAINLINK_NO_BROWSER === 'true' ||
@@ -91,6 +300,10 @@ const openUrlInBrowser = (url: string): { readonly opened: boolean; readonly mod
 
   if (openDisabled) {
     return { opened: false, mode: 'none' }
+  }
+
+  if (openGraphInNativeGui(url)) {
+    return { opened: true, mode: 'native-gui' }
   }
 
   if (openGraphInAppWindow(url)) {
@@ -360,7 +573,7 @@ export const registerWriteCommands = (program: Command): void => {
   .option('-h, --host <host>', 'server host', '127.0.0.1')
   .option('-p, --port <port>', 'server port', '4321')
   .option('--no-index', 'skip indexing before starting the server')
-  .option('--no-open', 'do not open the graph UI in the default browser')
+  .option('--no-open', 'do not open the graph UI automatically')
   .option('-w, --watch', 'watch markdown files and reindex on changes')
   .option('--json', 'print machine-readable JSON')
   .description('start a local web UI for the knowledge graph')
@@ -373,7 +586,7 @@ export const registerWriteCommands = (program: Command): void => {
       shouldIndex: options.index,
       shouldWatch: Boolean(options.watch)
     })
-    const openResult = options.open !== false ? openUrlInBrowser(server.url) : { opened: false, mode: 'none' as const }
+    const openResult = options.open !== false ? openUrlInUi(server.url) : { opened: false, mode: 'none' as const }
 
     print(
       options.json,
@@ -387,9 +600,11 @@ export const registerWriteCommands = (program: Command): void => {
       () =>
         `Brainlink graph server running at ${server.url}${
           openResult.opened
-            ? openResult.mode === 'app-window'
-              ? ' (opened in dedicated app window)'
-              : ' (opened in browser)'
+            ? openResult.mode === 'native-gui'
+              ? ' (opened in native desktop GUI)'
+              : openResult.mode === 'app-window'
+                ? ' (opened in dedicated app window)'
+                : ' (opened in browser)'
             : options.open === false
               ? ' (auto-open disabled)'
               : ''
