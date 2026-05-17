@@ -69,6 +69,7 @@ Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/c
 - Backlinks, broken-link reports, orphan detection and validation.
 - Full-text, semantic and hybrid retrieval on a local file index.
 - Middle-out context assembly around the strongest chunk per document.
+- In-process index and context caching with automatic invalidation on index updates.
 - Compressed-space prefiltering for `.blpk` packs before decryption and scan.
 - Agent namespaces under `agents/<agent-id>/`.
 - S3-compatible bucket vaults through `s3://bucket/prefix` URIs.
@@ -764,6 +765,7 @@ blink context "question" --vault ./vault --agent coding-agent --mode hybrid --js
 ```
 
 Builds a compact context package for an agent.
+Repeated calls with the same vault, agent, query, mode and token/limit settings are served from a short in-memory cache while the index is unchanged.
 
 ### `links`
 
