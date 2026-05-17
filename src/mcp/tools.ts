@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { getBrokenLinksReport, getOrphansReport, getStats, validateVault } from '../application/analyze-vault.js'
 import { addNoteWithMetadata } from '../application/add-note.js'
 import { buildContextPackage } from '../application/build-context.js'
+import { resolveDuplicateNotes, scanDuplicateNotes } from '../application/dedupe-notes.js'
 import { getGraph } from '../application/get-graph.js'
 import { indexVault } from '../application/index-vault.js'
 import { searchKnowledge } from '../application/search-knowledge.js'
@@ -405,6 +406,22 @@ export const recommendationsInputSchema = {
   tokens: optionalPositiveInteger().describe('Optional context token budget override for generated recommendations.')
 }
 
+export const dedupeInputSchema = {
+  ...vaultInput,
+  ...agentInput,
+  limit: optionalPositiveInteger().describe('Maximum duplicate candidate pairs to return.'),
+  minScore: z.number().min(0).max(1).optional().describe('Minimum semantic similarity score between 0 and 1.'),
+  semantic: z.boolean().optional().default(true).describe('Enable semantic duplicate detection in addition to exact content hash matches.')
+}
+
+export const dedupeResolveInputSchema = {
+  ...vaultInput,
+  leftPath: z.string().min(1).describe('Left note path from dedupe results.'),
+  rightPath: z.string().min(1).describe('Right note path from dedupe results.'),
+  action: z.enum(['merge', 'link', 'ignore']).describe('Resolution action.'),
+  autoIndex: z.boolean().optional().default(true).describe('Reindex after duplicate resolution.')
+}
+
 export const contextTool = async (input: z.infer<z.ZodObject<typeof contextInputSchema>>): Promise<CallToolResult> => {
   const context = await resolveExecutionContext(input)
   const readiness = await ensureBootstrapReady(context, input, 'brainlink_context')
@@ -475,6 +492,14 @@ export const addNoteTool = async (input: z.infer<z.ZodObject<typeof addNoteInput
     allowSensitive: input.allowSensitive
   })
   const index = shouldIndex ? await indexVault(context.vault) : undefined
+  const focusPath = added.path.includes('agents/') ? added.path.slice(added.path.indexOf('agents/')).replaceAll('\\', '/') : undefined
+  const possibleDuplicates = await scanDuplicateNotes(context.vault, {
+    agentId: context.agent,
+    focusPath,
+    limit: 5,
+    minSemanticScore: 0.92,
+    includeSemantic: true
+  })
 
   return jsonResult({
     vault: context.vault,
@@ -486,6 +511,7 @@ export const addNoteTool = async (input: z.infer<z.ZodObject<typeof addNoteInput
       linkTarget: added.linkTarget,
       guaranteedEdge: true
     },
+    possibleDuplicates,
     ...(index ? { index } : {})
   })
 }
@@ -972,6 +998,17 @@ export const recommendationsTool = async (
       }
     },
     {
+      tool: 'brainlink_dedupe',
+      reason: 'Detect and resolve duplicate durable notes to keep memory quality high.',
+      args: {
+        vault: context.vault,
+        ...(context.agent ? { agent: context.agent } : {}),
+        limit: 10,
+        minScore: 0.92,
+        semantic: true
+      }
+    },
+    {
       tool: 'brainlink_add_note',
       reason: 'Persist durable outcomes after task completion (write responses include connectivity metadata).',
       args: {
@@ -996,5 +1033,38 @@ export const recommendationsTool = async (
     contextStatus,
     stats,
     recommendations
+  })
+}
+
+export const dedupeTool = async (input: z.infer<z.ZodObject<typeof dedupeInputSchema>>): Promise<CallToolResult> => {
+  const context = await resolveExecutionContext(input)
+  const duplicates = await scanDuplicateNotes(context.vault, {
+    agentId: context.agent,
+    limit: input.limit ?? 25,
+    minSemanticScore: input.minScore ?? 0.92,
+    includeSemantic: input.semantic !== false
+  })
+
+  return jsonResult({
+    vault: context.vault,
+    agent: context.agent,
+    duplicates
+  })
+}
+
+export const dedupeResolveTool = async (
+  input: z.infer<z.ZodObject<typeof dedupeResolveInputSchema>>
+): Promise<CallToolResult> => {
+  const context = await resolveExecutionContext(input)
+  const result = await resolveDuplicateNotes(context.vault, {
+    leftPath: input.leftPath,
+    rightPath: input.rightPath,
+    action: input.action,
+    autoIndex: isTruthy(input.autoIndex)
+  })
+
+  return jsonResult({
+    vault: context.vault,
+    ...result
   })
 }

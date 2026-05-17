@@ -4,8 +4,9 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { platform, tmpdir } from 'node:os'
 import { spawn, spawnSync } from 'node:child_process'
 import type { Command } from 'commander'
-import { addNote } from '../../application/add-note.js'
+import { addNoteWithMetadata } from '../../application/add-note.js'
 import { buildContextPackage } from '../../application/build-context.js'
+import { resolveDuplicateNotes, scanDuplicateNotes } from '../../application/dedupe-notes.js'
 import { importLegacySqliteDatabase } from '../../application/import-legacy-sqlite.js'
 import { indexVault } from '../../application/index-vault.js'
 import { migrateVaultContent, planVaultMigration, previewVaultMigration, shouldMigrateDefaultVault } from '../../application/migrate-vault.js'
@@ -18,7 +19,17 @@ import { assertVaultAllowed, ensureVault } from '../../infrastructure/file-syste
 import { getBootstrapPolicy, getBootstrapSessionStatus, touchBootstrapSession } from '../../infrastructure/session-state.js'
 import { installAgentIntegration } from './agent-commands.js'
 import { parsePositiveInteger, print, resolveOptions } from '../runtime.js'
-import type { AddOptions, DbImportOptions, InitOptions, MigrateVaultOptions, QuickstartOptions, ServerOptions, VaultOptions } from '../types.js'
+import type {
+  AddOptions,
+  DbImportOptions,
+  DedupeOptions,
+  DedupeResolveOptions,
+  InitOptions,
+  MigrateVaultOptions,
+  QuickstartOptions,
+  ServerOptions,
+  VaultOptions
+} from '../types.js'
 
 const resolveAddContent = (options: AddOptions): string => {
   if (options.content != null && options.content.trim().length > 0) {
@@ -30,6 +41,19 @@ const resolveAddContent = (options: AddOptions): string => {
   }
 
   return readFileSync(options.contentFile, 'utf8')
+}
+
+const parseScore = (value: string | undefined, fallback: number): number => {
+  if (value == null) {
+    return fallback
+  }
+
+  const parsed = Number.parseFloat(value)
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error(`Invalid score value: ${value}. Expected a number between 0 and 1.`)
+  }
+
+  return parsed
 }
 
 const spawnDetached = (command: string, args: readonly string[]): boolean => {
@@ -579,18 +603,115 @@ export const registerWriteCommands = (program: Command): void => {
   .action(async (title: string, options: AddOptions) => {
     const resolved = await resolveOptions(options)
     const content = resolveAddContent(options)
-    const notePath = await addNote(resolved.vault, title, content, resolved.agent, {
+    const added = await addNoteWithMetadata(resolved.vault, title, content, resolved.agent, {
       allowSensitive: Boolean(options.allowSensitive)
     })
     const shouldAutoIndex = options.autoIndex !== false && resolved.config.autoIndexOnWrite
     const index = shouldAutoIndex ? await indexVault(resolved.vault) : undefined
+    const absoluteVaultPath = await ensureVault(resolved.vault)
+    const focusPath = added.path.startsWith(absoluteVaultPath)
+      ? relative(absoluteVaultPath, added.path).replaceAll('\\', '/')
+      : added.path.includes('agents/')
+        ? added.path.slice(added.path.indexOf('agents/')).replaceAll('\\', '/')
+        : undefined
+    const possibleDuplicates = await scanDuplicateNotes(resolved.vault, {
+      agentId: resolved.agent,
+      focusPath,
+      limit: 5,
+      minSemanticScore: 0.92,
+      includeSemantic: true
+    })
 
     print(
       options.json,
-      { title, agent: resolved.agent ?? 'shared', path: notePath, ...(index ? { index } : {}) },
-      () => `Created note at ${notePath}`
+      {
+        title,
+        agent: resolved.agent ?? 'shared',
+        path: added.path,
+        writeConnectivity: {
+          autoLinked: added.autoLinked,
+          linkTarget: added.linkTarget,
+          guaranteedEdge: true
+        },
+        possibleDuplicates,
+        ...(index ? { index } : {})
+      },
+      () => {
+        const duplicateMessage =
+          possibleDuplicates.length > 0
+            ? `\nPotential duplicates: ${possibleDuplicates.length}. Use "blink dedupe --json" or "blink dedupe-resolve".`
+            : ''
+        return `Created note at ${added.path}${duplicateMessage}`
+      }
     )
   })
+
+  program
+    .command('dedupe')
+    .option('-v, --vault <vault>', 'vault directory')
+    .option('-a, --agent <agent>', 'agent memory namespace')
+    .option('-l, --limit <limit>', 'maximum duplicate candidate pairs')
+    .option('--min-score <score>', 'minimum semantic similarity score between 0 and 1', '0.92')
+    .option('--no-semantic', 'disable semantic duplicate detection and keep exact-content matching only')
+    .option('--json', 'print machine-readable JSON')
+    .description('detect possible duplicate notes with exact hash and semantic similarity scores')
+    .action(async (options: DedupeOptions) => {
+      const resolved = await resolveOptions(options)
+      const duplicates = await scanDuplicateNotes(resolved.vault, {
+        agentId: resolved.agent,
+        limit: parsePositiveInteger(options.limit ?? '25', 25),
+        minSemanticScore: parseScore(options.minScore, 0.92),
+        includeSemantic: options.semantic !== false
+      })
+
+      print(options.json, { vault: resolved.vault, agent: resolved.agent, duplicates }, () => {
+        if (duplicates.length === 0) {
+          return 'No possible duplicates found.'
+        }
+
+        return duplicates
+          .map(
+            (item, index) =>
+              `${index + 1}. [${item.kind}] score=${item.score.toFixed(4)} ${item.left.path} <-> ${item.right.path} (${item.reason})`
+          )
+          .join('\n')
+      })
+    })
+
+  program
+    .command('dedupe-resolve')
+    .option('-v, --vault <vault>', 'vault directory')
+    .option('--left <path>', 'left note relative path from dedupe result')
+    .option('--right <path>', 'right note relative path from dedupe result')
+    .option('--action <action>', 'resolution action: merge, link or ignore')
+    .option('--no-auto-index', 'skip reindex after duplicate resolution')
+    .option('--json', 'print machine-readable JSON')
+    .description('resolve a duplicate candidate with merge, link or ignore')
+    .action(async (options: DedupeResolveOptions) => {
+      const resolved = await resolveOptions(options)
+      if (!options.left || !options.right) {
+        throw new Error('Use --left <path> and --right <path> to resolve a duplicate pair.')
+      }
+      if (options.action !== 'merge' && options.action !== 'link' && options.action !== 'ignore') {
+        throw new Error('Use --action merge|link|ignore.')
+      }
+
+      const result = await resolveDuplicateNotes(resolved.vault, {
+        leftPath: options.left,
+        rightPath: options.right,
+        action: options.action,
+        autoIndex: options.autoIndex !== false
+      })
+
+      print(
+        options.json,
+        {
+          vault: resolved.vault,
+          ...result
+        },
+        () => `Resolved duplicate (${result.action}) for ${result.leftPath} <-> ${result.rightPath}`
+      )
+    })
 
   program
     .command('index')
