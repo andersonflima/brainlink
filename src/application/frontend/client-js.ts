@@ -17,7 +17,7 @@ const worldCoordinateLimit = 5_000_000
 const transformCoordinateLimit = 20_000_000
 const hoverHitTestIntervalMs = 64
 const overviewClusterMaxCount = 1400
-const zoomRecoveryGuardMs = 560
+const zoomRecoveryGuardMs = 1500
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
@@ -601,6 +601,27 @@ const enrichSampleWithNeighbors = (nodes) => {
   }
 }
 
+const ensureHubNodesInRenderedSet = (nodes) => {
+  if (nodes.length === 0) {
+    return nodes
+  }
+
+  const maxNodes = Math.max(renderNodeBudget, nodes.length)
+  const ids = new Set(nodes.map((node) => node.id))
+  const hubs = rankedHubNodes()
+  const merged = [...nodes]
+
+  for (let index = 0; index < hubs.length && merged.length < maxNodes; index += 1) {
+    const hub = hubs[index]
+    if (!ids.has(hub.id)) {
+      merged.push(hub)
+      ids.add(hub.id)
+    }
+  }
+
+  return merged
+}
+
 const clampScale = value => Math.max(zoomRange.min, Math.min(zoomRange.max, value))
 const isFiniteNumber = value => Number.isFinite(value)
 const isReasonableCoordinate = value => isFiniteNumber(value) && Math.abs(value) <= worldCoordinateLimit
@@ -1100,12 +1121,13 @@ const computeRenderVisibility = () => {
       : sourceNodes.slice(0, Math.min(sourceNodes.length, renderNodeBudget))
     const sampledIds = new Set(sampled.map((node) => node.id))
     let sampledEdges = state.transform.scale >= 0.035 ? collectVisibleEdgesForNodes(sampledIds) : []
-    let sampledNodes = sampled
+    let sampledNodes = ensureHubNodesInRenderedSet(sampled)
 
     if (state.transform.scale >= 0.035 && sampledEdges.length === 0) {
-      const enriched = enrichSampleWithNeighbors(sampled)
-      sampledNodes = enriched.nodes
-      sampledEdges = enriched.edges
+      const enriched = enrichSampleWithNeighbors(sampledNodes)
+      sampledNodes = ensureHubNodesInRenderedSet(enriched.nodes)
+      const sampledWithHubsIds = new Set(sampledNodes.map((node) => node.id))
+      sampledEdges = collectVisibleEdgesForNodes(sampledWithHubsIds)
     }
 
     state.renderClusters = []
@@ -1159,10 +1181,11 @@ const computeRenderVisibility = () => {
     return
   }
 
-  const nodeIds = new Set(nodes.map((node) => node.id))
+  const normalizedNodes = ensureHubNodesInRenderedSet(nodes)
+  const nodeIds = new Set(normalizedNodes.map((node) => node.id))
   const edges = collectVisibleEdgesForNodes(nodeIds)
 
-  state.renderNodes = nodes
+  state.renderNodes = normalizedNodes
   state.renderEdges = edges
 
   if (state.renderNodes.length === 0 && state.visibleNodes.length > 0) {
@@ -1456,17 +1479,19 @@ const selectNodeById = id => {
 }
 
 const zoomAtPoint = (screenX, screenY, factor, source = 'generic') => {
+  if (source === 'wheel') {
+    state.lastManualZoomAt = performance.now()
+  }
   const nextScale = clampScale(state.transform.scale * factor)
-  if (nextScale === state.transform.scale) return
+  if (nextScale === state.transform.scale) {
+    return
+  }
   const worldX = (screenX - state.transform.x) / state.transform.scale
   const worldY = (screenY - state.transform.y) / state.transform.scale
   state.transform.scale = clampScale(nextScale)
   state.transform.x = clampTransformCoordinate(screenX - worldX * nextScale)
   state.transform.y = clampTransformCoordinate(screenY - worldY * nextScale)
   state.offscreenFrameCount = 0
-  if (source === 'wheel') {
-    state.lastManualZoomAt = performance.now()
-  }
   markRenderDirty()
 }
 
