@@ -23,6 +23,7 @@ const state = {
   nodeDetails: new Map(),
   transform: { x: 0, y: 0, scale: 1 },
   pointer: { x: 0, y: 0, down: false, dragNode: null, moved: false },
+  cursor: { x: 0, y: 0, inCanvas: false },
   graphSignature: '',
   graphStatus: '',
   last: performance.now()
@@ -687,6 +688,30 @@ const wheelZoomFactor = event => {
   return event.deltaY < 0 ? 1 + adjustedStep : 1 / (1 + adjustedStep)
 }
 
+const isScreenPointInsideCanvas = (screenX, screenY) => {
+  const rect = canvas.getBoundingClientRect()
+
+  return screenX >= rect.left && screenX <= rect.right && screenY >= rect.top && screenY <= rect.bottom
+}
+
+const handleWheelZoom = event => {
+  if (!isScreenPointInsideCanvas(event.clientX, event.clientY)) {
+    return
+  }
+
+  event.preventDefault()
+  const rect = canvas.getBoundingClientRect()
+  const cursorX = event.clientX - rect.left
+  const cursorY = event.clientY - rect.top
+  const factor = wheelZoomFactor(event)
+
+  if (!Number.isFinite(factor) || factor <= 0 || factor === 1) {
+    return
+  }
+
+  zoomAtPoint(cursorX, cursorY, factor)
+}
+
 const bindEvents = () => {
   window.addEventListener('resize', resize)
   elements.search.addEventListener('input', event => {
@@ -730,14 +755,7 @@ const bindEvents = () => {
     }
     if (event.target === elements.contentDialog) elements.contentDialog.close()
   })
-  canvas.addEventListener('wheel', event => {
-    event.preventDefault()
-    const rect = canvas.getBoundingClientRect()
-    const cursorX = event.clientX - rect.left
-    const cursorY = event.clientY - rect.top
-    const factor = wheelZoomFactor(event)
-    zoomAtPoint(cursorX, cursorY, factor)
-  }, { passive: false })
+  window.addEventListener('wheel', handleWheelZoom, { passive: false })
   canvas.addEventListener('dblclick', event => {
     const rect = canvas.getBoundingClientRect()
     const cursorX = event.clientX - rect.left
@@ -757,6 +775,7 @@ const bindEvents = () => {
   canvas.addEventListener('pointermove', event => {
     const point = worldPoint(event)
     state.hovered = hitNode(point)
+    state.cursor = { x: event.clientX, y: event.clientY, inCanvas: true }
     if (!state.pointer.down) return
     const dx = event.clientX - state.pointer.x
     const dy = event.clientY - state.pointer.y
@@ -779,6 +798,12 @@ const bindEvents = () => {
   })
   canvas.addEventListener('pointercancel', () => {
     state.pointer = { x: 0, y: 0, down: false, dragNode: null, moved: false }
+  })
+  canvas.addEventListener('pointerenter', event => {
+    state.cursor = { x: event.clientX, y: event.clientY, inCanvas: true }
+  })
+  canvas.addEventListener('pointerleave', event => {
+    state.cursor = { x: event.clientX, y: event.clientY, inCanvas: false }
   })
   window.addEventListener('keydown', event => {
     if (event.key === '+' || event.key === '=') {
