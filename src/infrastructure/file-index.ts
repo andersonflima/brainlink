@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { cosineSimilarity } from '../domain/embeddings.js'
 import type {
@@ -19,6 +19,12 @@ type StoredIndex = {
   readonly links: readonly KnowledgeLink[]
 }
 
+type IndexCacheEntry = {
+  readonly mtimeMs: number
+  readonly size: number
+  readonly index: StoredIndex
+}
+
 type IndexSearchRow = {
   readonly documentId: string
   readonly agentId: string
@@ -32,6 +38,8 @@ type IndexSearchRow = {
 }
 
 const queryTokenPattern = /[\p{L}\p{N}_-]+/gu
+const indexCacheMaxEntries = 16
+const indexCache = new Map<string, IndexCacheEntry>()
 
 const emptyIndex = (): StoredIndex => ({
   version: 1,
@@ -45,18 +53,48 @@ export const indexStoragePath = (vaultPath: string): string =>
   join(vaultPath, '.brainlink', 'index.json')
 
 const readIndex = async (vaultPath: string): Promise<StoredIndex> => {
-  try {
-    const parsed = JSON.parse(await readFile(indexStoragePath(vaultPath), 'utf8')) as Partial<StoredIndex>
+  const path = indexStoragePath(vaultPath)
+  let stats: { readonly mtimeMs: number; readonly size: number } | null = null
 
-    return {
+  try {
+    const fileStats = await stat(path)
+    stats = { mtimeMs: fileStats.mtimeMs, size: fileStats.size }
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      indexCache.delete(path)
+      return emptyIndex()
+    }
+
+    return emptyIndex()
+  }
+
+  const cached = indexCache.get(path)
+  if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
+    return cached.index
+  }
+
+  try {
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as Partial<StoredIndex>
+    const loaded: StoredIndex = {
       version: 1,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
       documents: Array.isArray(parsed.documents) ? parsed.documents : [],
       chunks: Array.isArray(parsed.chunks) ? parsed.chunks : [],
       links: Array.isArray(parsed.links) ? parsed.links : []
     }
+    indexCache.set(path, { ...stats, index: loaded })
+
+    if (indexCache.size > indexCacheMaxEntries) {
+      const oldest = indexCache.keys().next().value
+      if (typeof oldest === 'string') {
+        indexCache.delete(oldest)
+      }
+    }
+
+    return loaded
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      indexCache.delete(path)
       return emptyIndex()
     }
 
@@ -71,6 +109,12 @@ const writeIndex = async (vaultPath: string, index: StoredIndex): Promise<void> 
   await mkdir(dirname(target), { recursive: true, mode: 0o700 })
   await writeFile(temp, `${JSON.stringify(index)}\n`, { encoding: 'utf8', mode: 0o600 })
   await rename(temp, target)
+  const fileStats = await stat(target)
+  indexCache.set(target, {
+    mtimeMs: fileStats.mtimeMs,
+    size: fileStats.size,
+    index
+  })
 }
 
 const normalizeToken = (value: string): string =>
