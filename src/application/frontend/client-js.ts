@@ -543,11 +543,12 @@ const filterOverviewClustersByViewport = viewport =>
 const edgeBudgetForCurrentFrame = () => {
   const zoom = state.transform.scale
   if (zoom < 0.12) return 380
-  if (zoom < 0.18) return 700
-  if (zoom < 0.28) return 1100
-  if (zoom < 0.45) return 1600
-  if (zoom < 0.7) return 2100
-  return renderEdgeBudget
+  if (zoom < 0.18) return 900
+  if (zoom < 0.28) return 1700
+  if (zoom < 0.45) return 2800
+  if (zoom < 0.7) return 4200
+  if (zoom < 1.05) return 5600
+  return 7600
 }
 
 const clusterBudgetForScale = (scale) => {
@@ -566,13 +567,45 @@ const nodeBudgetForScale = (scale) => {
   return renderNodeBudget
 }
 
+const edgeIdentityKey = edge => {
+  if (!edge.target) return ''
+  const pair = edge.source < edge.target
+    ? edge.source + '|' + edge.target
+    : edge.target + '|' + edge.source
+  return pair + '|' + (edge.inferred ? 'mesh' : 'real')
+}
+
+const edgeRelevanceScore = edge => {
+  let score = edgeWeight(edge) * 10
+  if (!edge.inferred) {
+    score += 8
+  }
+
+  const selectedId = state.selected?.id
+  if (selectedId && (edge.source === selectedId || edge.target === selectedId)) {
+    score += 120
+  }
+
+  const hoveredId = state.hovered?.id
+  if (hoveredId && (edge.source === hoveredId || edge.target === hoveredId)) {
+    score += 70
+  }
+
+  const hubId = state.primaryHub?.id
+  if (hubId && (edge.source === hubId || edge.target === hubId)) {
+    score += 42
+  }
+
+  return score
+}
+
 const collectVisibleEdgesForNodes = nodeIds => {
   if (nodeIds.size === 0) {
     return []
   }
 
   const seen = new Set()
-  const collected = []
+  const candidates = []
   const limit = edgeBudgetForCurrentFrame()
 
   nodeIds.forEach(nodeId => {
@@ -582,20 +615,94 @@ const collectVisibleEdgesForNodes = nodeIds => {
       if (!edge.target || !nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
         continue
       }
-      const key = edge.source < edge.target
-        ? edge.source + '|' + edge.target + '|' + edge.targetTitle
-        : edge.target + '|' + edge.source + '|' + edge.targetTitle
+      const key = edgeIdentityKey(edge)
       if (seen.has(key)) continue
 
       seen.add(key)
-      collected.push(edge)
-      if (collected.length >= limit) {
-        return
-      }
+      candidates.push(edge)
     }
   })
 
-  return collected
+  if (candidates.length <= limit) {
+    return candidates
+  }
+
+  return candidates
+    .sort((left, right) => {
+      const scoreDelta = edgeRelevanceScore(right) - edgeRelevanceScore(left)
+      if (scoreDelta !== 0) {
+        return scoreDelta
+      }
+      const leftKey = edgeIdentityKey(left)
+      const rightKey = edgeIdentityKey(right)
+      return leftKey.localeCompare(rightKey)
+    })
+    .slice(0, limit)
+}
+
+const edgeOpacityForScale = (edge, scale) => {
+  if (edge.inferred) {
+    if (scale < 0.2) return 0.06
+    if (scale < 0.4) return 0.08
+    if (scale < 0.7) return 0.1
+    return 0.14
+  }
+
+  if (scale < 0.2) return 0.14
+  if (scale < 0.4) return 0.2
+  if (scale < 0.7) return 0.28
+  if (scale < 1.05) return 0.36
+  return 0.46
+}
+
+const edgeStrokeFor = (edge, selectedEdge) => {
+  if (selectedEdge) {
+    return graphTheme.edgeActive
+  }
+
+  const opacity = edgeOpacityForScale(edge, state.transform.scale)
+  return edge.inferred
+    ? 'rgba(203, 213, 225, ' + opacity + ')'
+    : 'rgba(153, 165, 181, ' + opacity + ')'
+}
+
+const edgeWidthFor = (edge, selectedEdge) => {
+  if (edge.inferred) {
+    return selectedEdge ? 1.22 : 0.84
+  }
+
+  return (selectedEdge ? 1.9 : 1.05) + Math.min(edgeWeight(edge) - 1, 8) * 0.24
+}
+
+const drawGraphEdge = (edge) => {
+  const selectedEdge = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
+  ctx.beginPath()
+  ctx.moveTo(edge.sourceNode.x, edge.sourceNode.y)
+  ctx.lineTo(edge.targetNode.x, edge.targetNode.y)
+  ctx.strokeStyle = edgeStrokeFor(edge, selectedEdge)
+  ctx.lineWidth = edgeWidthFor(edge, selectedEdge)
+  ctx.stroke()
+}
+
+const drawGraphEdges = () => {
+  const selectedEdges = []
+  const regularEdges = []
+  for (let index = 0; index < state.renderEdges.length; index += 1) {
+    const edge = state.renderEdges[index]
+    const isSelected = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
+    if (isSelected) {
+      selectedEdges.push(edge)
+    } else {
+      regularEdges.push(edge)
+    }
+  }
+
+  for (let index = 0; index < regularEdges.length; index += 1) {
+    drawGraphEdge(regularEdges[index])
+  }
+  for (let index = 0; index < selectedEdges.length; index += 1) {
+    drawGraphEdge(selectedEdges[index])
+  }
 }
 
 const edgePairKey = (source, target) =>
@@ -1544,22 +1651,7 @@ const render = now => {
     state.renderClusters.length === 0 &&
     state.transform.scale >= minimumEdgeScale
   if (drawEdges) {
-    state.renderEdges.forEach(edge => {
-    const selectedEdge = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
-    const inferredEdge = Boolean(edge.inferred)
-    ctx.beginPath()
-    ctx.moveTo(edge.sourceNode.x, edge.sourceNode.y)
-    ctx.lineTo(edge.targetNode.x, edge.targetNode.y)
-    ctx.strokeStyle = selectedEdge
-      ? graphTheme.edgeActive
-      : inferredEdge
-        ? 'rgba(203, 213, 225, 0.1)'
-        : graphTheme.edge
-    ctx.lineWidth = inferredEdge
-      ? 0.82
-      : (selectedEdge ? 1.8 : 1) + Math.min(edgeWeight(edge) - 1, 8) * 0.22
-    ctx.stroke()
-    })
+    drawGraphEdges()
   }
 
   if (state.renderClusters.length > 0) {
