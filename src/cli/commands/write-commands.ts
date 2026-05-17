@@ -417,6 +417,83 @@ const commandExists = (command: string): boolean => {
   }
 }
 
+const readLinuxDefaultBrowserDesktopEntry = (): string | null => {
+  try {
+    const preferred = spawnSync('xdg-settings', ['get', 'default-web-browser'], { encoding: 'utf8' })
+    const rawPreferred = preferred.status === 0 ? preferred.stdout.trim() : ''
+    if (rawPreferred.length > 0) {
+      return rawPreferred
+    }
+  } catch {
+    // fallback below
+  }
+
+  try {
+    const fallback = spawnSync('xdg-mime', ['query', 'default', 'x-scheme-handler/https'], { encoding: 'utf8' })
+    const rawFallback = fallback.status === 0 ? fallback.stdout.trim() : ''
+    return rawFallback.length > 0 ? rawFallback : null
+  } catch {
+    return null
+  }
+}
+
+const toLinuxDefaultBrowserCommands = (desktopEntry: string | null): readonly string[] => {
+  if (!desktopEntry) {
+    return []
+  }
+
+  const normalized = desktopEntry.toLowerCase().trim()
+  if (normalized.includes('firefox')) {
+    return ['firefox']
+  }
+  if (normalized.includes('edge')) {
+    return ['microsoft-edge', 'microsoft-edge-stable']
+  }
+  if (normalized.includes('brave')) {
+    return ['brave-browser']
+  }
+  if (normalized.includes('chromium')) {
+    return ['chromium', 'chromium-browser']
+  }
+  if (normalized.includes('chrome')) {
+    return ['google-chrome', 'google-chrome-stable']
+  }
+
+  return []
+}
+
+const readBrowserEnvCommands = (): readonly string[] => {
+  const value = process.env.BROWSER?.trim()
+  if (!value) {
+    return []
+  }
+
+  return value
+    .split(':')
+    .map((entry) => entry.trim().split(/\s+/)[0] ?? '')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+}
+
+const prioritizeLinuxBrowserCandidates = <T extends readonly [string, ...unknown[]]>(
+  candidates: readonly T[]
+): readonly T[] => {
+  const preferredCommands = toLinuxDefaultBrowserCommands(readLinuxDefaultBrowserDesktopEntry())
+  if (preferredCommands.length === 0) {
+    return candidates
+  }
+
+  const priorityMap = new Map(preferredCommands.map((command, index) => [command, index]))
+
+  return [...candidates].sort((left, right) => {
+    const leftPriority = priorityMap.get(left[0] as string)
+    const rightPriority = priorityMap.get(right[0] as string)
+    const leftScore = leftPriority == null ? Number.POSITIVE_INFINITY : leftPriority
+    const rightScore = rightPriority == null ? Number.POSITIVE_INFINITY : rightPriority
+    return leftScore - rightScore
+  })
+}
+
 const envFlagEnabled = (name: string): boolean =>
   process.env[name] === '1' || process.env[name] === 'true'
 
@@ -544,6 +621,10 @@ const openGraphInAppWindow = (url: string): boolean => {
   }
 
   const appArgument = `--app=${url}`
+  const linuxAppWindowEnabled = envFlagEnabled('BRAINLINK_LINUX_APP_WINDOW')
+  if (!linuxAppWindowEnabled) {
+    return false
+  }
   const linuxChromiumStableFlags = [
     '--ozone-platform=x11',
     '--ozone-platform-hint=x11',
@@ -600,18 +681,30 @@ const openGraphInDetectedBrowser = (url: string): boolean => {
     GDK_BACKEND: 'x11',
     OZONE_PLATFORM: 'x11'
   }
+  const envBrowserCandidates = readBrowserEnvCommands()
+    .map((command) =>
+      command.includes('firefox')
+        ? ([command, ['-new-window', url], undefined] as const)
+        : ([command, [url], undefined] as const)
+    )
+    .filter(([command]) => commandExists(command))
+
+  if (envBrowserCandidates.length > 0 && spawnAnyDetachedWithEnv(envBrowserCandidates)) {
+    return true
+  }
+
   const linuxBrowserCandidates: readonly (readonly [string, readonly string[], NodeJS.ProcessEnv | undefined])[] = [
+    ['firefox', ['-new-window', url], undefined],
     ['microsoft-edge', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
     ['microsoft-edge-stable', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
     ['google-chrome', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
     ['google-chrome-stable', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
-    ['chromium', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
-    ['chromium-browser', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
     ['brave-browser', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
-    ['firefox', ['-new-window', url], undefined]
+    ['chromium', [...linuxChromiumStableFlags, url], linuxChromiumEnv],
+    ['chromium-browser', [...linuxChromiumStableFlags, url], linuxChromiumEnv]
   ]
 
-  const available = linuxBrowserCandidates.filter(([command]) => commandExists(command))
+  const available = prioritizeLinuxBrowserCandidates(linuxBrowserCandidates.filter(([command]) => commandExists(command)))
   return spawnAnyDetachedWithEnv(available)
 }
 
@@ -632,6 +725,22 @@ const openUrlInUi = (url: string, parentPid: number): { readonly opened: boolean
 
   if (nativeGuiEnabled && openGraphInNativeGui(url, parentPid)) {
     return { opened: true, mode: 'native-gui' }
+  }
+
+  if (platform() === 'linux') {
+    if (spawnDetached('xdg-open', [url])) {
+      return { opened: true, mode: 'browser' }
+    }
+
+    if (openGraphInDetectedBrowser(url)) {
+      return { opened: true, mode: 'browser' }
+    }
+
+    if (openGraphInAppWindow(url)) {
+      return { opened: true, mode: 'app-window' }
+    }
+
+    return { opened: false, mode: 'none' }
   }
 
   if (openGraphInAppWindow(url)) {

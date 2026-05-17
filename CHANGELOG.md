@@ -44,6 +44,8 @@
 - Added `blink pack-backup` for offline second-stage compression backups of encrypted `.blpk` packs, outside the online query path.
 - Hardened Linux browser launch flags for Ubuntu 26 Chromium/Wayland compatibility (`--disable-vulkan`, `--use-gl=swiftshader`, `--ozone-platform-hint=x11`).
 - Improved pack resilience by auto-repairing missing search-pack manifests from existing `.blpk` files, avoiding unnecessary full repacks on small incremental updates.
+- Updated Linux graph auto-open behavior to prioritize the system default browser (`xdg-open`) before explicit browser fallbacks.
+- Removed implicit Chromium dependency in Linux auto-open flow; app-window launch is now opt-in (`BRAINLINK_LINUX_APP_WINDOW=1`).
 
 ## 0.1.0-beta.3
 
