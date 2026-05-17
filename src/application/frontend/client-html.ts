@@ -38,7 +38,7 @@ export const createClientHtml = (): string => `<!doctype html>
             <div class="toolbar" aria-label="Graph controls">
               <button id="zoomIn" type="button" title="Zoom in">+</button>
               <button id="zoomOut" type="button" title="Zoom out">-</button>
-              <button id="fit" type="button" title="Fit visible nodes">◎</button>
+              <button id="fit" type="button" title="Focus central hub">◎</button>
               <button id="reset" type="button" title="Reset view">⌂</button>
             </div>
           </div>
