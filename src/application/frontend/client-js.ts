@@ -65,7 +65,7 @@ const zoomRange = {
   max: 4.5
 }
 
-const agentQuery = () => state.agentId ? '?agent=' + encodeURIComponent(state.agentId) : ''
+const agentQuery = (separator = '?') => state.agentId ? separator + 'agent=' + encodeURIComponent(state.agentId) : ''
 
 const setGraphStatus = text => {
   state.graphStatus = text
@@ -309,11 +309,11 @@ const resetContentFilter = () => {
 
 const syncContentFilter = async (query, token) => {
   const response = await fetch(
-    '/api/graph-filter?q=' +
+      '/api/graph-filter?q=' +
       encodeURIComponent(query) +
       '&limit=' +
       encodeURIComponent(String(Math.max(state.nodes.length, 1))) +
-      agentQuery()
+      agentQuery('&')
   )
 
   if (!response.ok || token !== state.contentFilter.token) {
@@ -705,7 +705,7 @@ const fetchNodeDetails = async node => {
     return cached
   }
 
-  const response = await fetch('/api/graph-node?id=' + encodeURIComponent(node.id) + agentQuery())
+  const response = await fetch('/api/graph-node?id=' + encodeURIComponent(node.id) + agentQuery('&'))
   if (!response.ok) {
     throw new Error('Failed to load graph node details')
   }
