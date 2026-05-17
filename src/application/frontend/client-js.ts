@@ -21,6 +21,7 @@ const zoomRecoveryGuardMs = 560
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
+  nodeById: new Map(),
   edges: [],
   visibleNodes: [],
   visibleEdges: [],
@@ -555,6 +556,51 @@ const sampleVisibleNodes = (limit = renderNodeBudget, sourceNodes = state.visibl
   return nodes
 }
 
+const enrichSampleWithNeighbors = (nodes) => {
+  if (nodes.length === 0) {
+    return {
+      nodes,
+      edges: []
+    }
+  }
+
+  const maxNodes = Math.min(renderNodeBudget, nodes.length + 200)
+  const expanded = [...nodes]
+  const ids = new Set(expanded.map((node) => node.id))
+
+  for (let index = 0; index < nodes.length && expanded.length < maxNodes; index += 1) {
+    const node = nodes[index]
+    const candidates = [...(state.visibleEdgeByNode.get(node.id) ?? [])]
+      .filter((edge) => edge.target)
+      .sort((left, right) => edgeWeight(right) - edgeWeight(left))
+      .slice(0, 3)
+
+    for (let candidateIndex = 0; candidateIndex < candidates.length && expanded.length < maxNodes; candidateIndex += 1) {
+      const edge = candidates[candidateIndex]
+      const otherId = edge.source === node.id ? edge.target : edge.source
+
+      if (!otherId || ids.has(otherId)) {
+        continue
+      }
+
+      const otherNode = state.nodeById.get(otherId)
+      if (!otherNode) {
+        continue
+      }
+
+      ids.add(otherId)
+      expanded.push(otherNode)
+    }
+  }
+
+  const edges = collectVisibleEdgesForNodes(ids)
+
+  return {
+    nodes: expanded,
+    edges
+  }
+}
+
 const clampScale = value => Math.max(zoomRange.min, Math.min(zoomRange.max, value))
 const isFiniteNumber = value => Number.isFinite(value)
 const isReasonableCoordinate = value => isFiniteNumber(value) && Math.abs(value) <= worldCoordinateLimit
@@ -1053,9 +1099,18 @@ const computeRenderVisibility = () => {
       ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget), sourceNodes)
       : sourceNodes.slice(0, Math.min(sourceNodes.length, renderNodeBudget))
     const sampledIds = new Set(sampled.map((node) => node.id))
+    let sampledEdges = state.transform.scale >= 0.035 ? collectVisibleEdgesForNodes(sampledIds) : []
+    let sampledNodes = sampled
+
+    if (state.transform.scale >= 0.035 && sampledEdges.length === 0) {
+      const enriched = enrichSampleWithNeighbors(sampled)
+      sampledNodes = enriched.nodes
+      sampledEdges = enriched.edges
+    }
+
     state.renderClusters = []
-    state.renderNodes = sampled
-    state.renderEdges = state.transform.scale >= 0.1 ? collectVisibleEdgesForNodes(sampledIds) : []
+    state.renderNodes = sampledNodes
+    state.renderEdges = sampledEdges
     return
   }
 
@@ -1212,11 +1267,13 @@ const render = now => {
     state.offscreenFrameCount = 0
   }
   const minimumEdgeScale =
-    state.nodes.length > massiveGraphNodeThreshold
-      ? 0.1
-      : state.nodes.length > largeGraphNodeThreshold
-        ? 0.16
-        : 0
+    state.renderNodes.length > 1300
+      ? 0.12
+      : state.renderNodes.length > 900
+        ? 0.085
+        : state.renderNodes.length > 500
+          ? 0.05
+          : 0
   const drawEdges =
     state.renderClusters.length === 0 &&
     state.transform.scale >= minimumEdgeScale
@@ -1627,6 +1684,7 @@ const loadGraph = async (options = { reset: false }) => {
   state.graphSignature = signature
   state.graph = graph
   state.nodes = layout.nodes
+  state.nodeById = new Map(state.nodes.map((node) => [node.id, node]))
   state.edges = layout.edges
   state.nodeDegrees = state.edges.reduce((degrees, edge) => {
     degrees.set(edge.source, (degrees.get(edge.source) ?? 0) + edgeWeight(edge))
