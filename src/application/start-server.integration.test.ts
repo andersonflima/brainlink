@@ -100,6 +100,9 @@ describe('brainlink http server integration', () => {
 
       const clientScript = await fetch(`${server.url}/app.js`).then((response) => response.text())
       expect(() => new Function(clientScript)).not.toThrow()
+      expect(clientScript).toContain("const agentQuery = (separator = '?')")
+      expect(clientScript).toContain("/api/graph-node?id=' + encodeURIComponent(node.id) + agentQuery('&')")
+      expect(clientScript).toContain("agentQuery('&')")
 
       const search = (await fetch(`${server.url}/api/search?q=jwt&limit=5&mode=hybrid`).then((response) => response.json())) as {
         readonly mode: string

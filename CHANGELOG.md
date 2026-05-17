@@ -30,6 +30,7 @@
 - Added native GUI parent-process monitoring so GUI windows close automatically when `blink server` stops.
 - Improved non-mac browser detection fallback to try installed Edge/Chrome/Firefox/Chromium candidates before system default open.
 - Improved graph filter rendering to keep hub anchor nodes visible (`Memory Hub`/`MOC`/high-degree fallback) for coherent relationship context.
+- Fixed graph modal content loading by correcting agent query parameter composition for `/api/graph-node` and `/api/graph-filter` requests.
 
 ## 0.1.0-beta.3
 
