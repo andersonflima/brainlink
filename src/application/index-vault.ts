@@ -1,5 +1,4 @@
-import { readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { createIndexedDocument, parseMarkdownDocument } from '../domain/markdown.js'
 import type { IndexedDocument } from '../domain/types.js'
 import { sharedAgentId } from '../domain/agents.js'
@@ -9,7 +8,7 @@ import { ensureVault, readMarkdownFileSummaries } from '../infrastructure/file-s
 import type { IndexedFileSnapshot } from '../infrastructure/index-state.js'
 import { readIndexState, writeIndexState } from '../infrastructure/index-state.js'
 import type { SearchPackBuildResult } from '../infrastructure/search-packs.js'
-import { buildSearchPacks, toSearchPackBuildOptions } from '../infrastructure/search-packs.js'
+import { buildSearchPacks, ensureSearchPackManifest, toSearchPackBuildOptions } from '../infrastructure/search-packs.js'
 import { openFileIndex } from '../infrastructure/file-index.js'
 
 export type IndexVaultResult = {
@@ -164,18 +163,6 @@ const toSnapshot = (
 const createSnapshotMap = (snapshot: readonly IndexedFileSnapshot[]): ReadonlyMap<string, IndexedFileSnapshot> =>
   new Map(snapshot.map((entry) => [entry.path, entry]))
 
-const packManifestPath = (vaultPath: string): string =>
-  join(vaultPath, '.brainlink', 'search-packs', 'manifest.json')
-
-const hasPackManifest = async (vaultPath: string): Promise<boolean> => {
-  try {
-    await stat(packManifestPath(vaultPath))
-    return true
-  } catch {
-    return false
-  }
-}
-
 const readChangedDocuments = async (
   absoluteVaultPath: string,
   changedSummaries: readonly {
@@ -272,6 +259,7 @@ export const indexVaultWithOptions = async (vaultPath: string, options: IndexVau
     const hasDeletes = previousState
       ? previousState.files.some((entry) => !currentSnapshotMap.has(entry.path))
       : false
+    const manifestRecovery = await ensureSearchPackManifest(absoluteVaultPath)
 
     if (
       changedPaths.size === 0 &&
@@ -285,11 +273,13 @@ export const indexVaultWithOptions = async (vaultPath: string, options: IndexVau
         changedDocumentCount: 0,
         packs: {
           rebuilt: false,
-          reason: 'No changes detected'
+          reason: manifestRecovery.repaired ? 'No changes detected; pack manifest repaired' : 'No changes detected'
         }
       } satisfies IndexVaultResult
       emit('complete', 'skip', 'Index skipped: no changes detected', {
-        elapsedMs: result.elapsedMs
+        elapsedMs: result.elapsedMs,
+        manifestRepaired: manifestRecovery.repaired,
+        manifestRecoverySource: manifestRecovery.source
       })
       return result
     }
@@ -348,7 +338,7 @@ export const indexVaultWithOptions = async (vaultPath: string, options: IndexVau
       indexedDocuments: indexedDocuments.length
     })
 
-    const existingPackManifest = await hasPackManifest(absoluteVaultPath)
+    const existingPackManifest = manifestRecovery.repaired || manifestRecovery.source === 'not-needed'
     const changedCount = changedPaths.size
     const documentCount = Math.max(indexedDocuments.length, 1)
     const changeRatio = changedCount / documentCount
@@ -366,6 +356,8 @@ export const indexVaultWithOptions = async (vaultPath: string, options: IndexVau
     let packResult: SearchPackBuildResult | undefined
     const packReason = !existingPackManifest
       ? 'Missing pack manifest'
+      : manifestRecovery.repaired
+        ? 'Pack manifest repaired from existing packs'
       : settingsChanged
         ? 'Index settings changed'
         : packSettingsChanged

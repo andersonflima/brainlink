@@ -497,6 +497,7 @@ blink bench --vault ./vault --json
 - objective guardrails (`guardrailMinSavingsPercent`, `guardrailMaxLatencyRegressionPercent`)
 
 Use `--watch` for continuous benchmark runs while editing notes. Watch mode is supported only for local filesystem vaults.
+If pack manifest metadata is missing but encrypted `.blpk` files are present, Brainlink repairs manifest metadata before deciding rebuild policy to avoid unnecessary full repacks on small updates.
 
 ### Create Offline Pack Backup
 
