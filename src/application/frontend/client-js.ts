@@ -22,6 +22,7 @@ const zoomCapTargetViewportShare = 0.72
 const meshEdgeScaleThreshold = 0.09
 const meshEdgeMinBudget = 140
 const meshEdgeMaxBudget = 1400
+const layeredCoreScaleThreshold = 0.55
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
@@ -565,6 +566,70 @@ const nodeBudgetForScale = (scale) => {
   if (scale < 0.09) return 520
   if (scale < 0.14) return 720
   return renderNodeBudget
+}
+
+const layerWindowForScale = (scale) => {
+  if (scale < 0.08) return { inner: 0.78, outer: 1 }
+  if (scale < 0.14) return { inner: 0.62, outer: 0.9 }
+  if (scale < 0.24) return { inner: 0.46, outer: 0.74 }
+  if (scale < 0.36) return { inner: 0.3, outer: 0.58 }
+  if (scale < layeredCoreScaleThreshold) return { inner: 0.16, outer: 0.42 }
+  if (scale < 0.9) return { inner: 0.06, outer: 0.26 }
+  return { inner: 0, outer: 0.14 }
+}
+
+const selectLayeredNodesForScale = (sourceNodes) => {
+  const hub = state.primaryHub
+  if (!hub || sourceNodes.length <= 1200 || state.visibleNodes.length <= massiveGraphNodeThreshold) {
+    return sourceNodes
+  }
+
+  let maxDistance = 0
+  const distances = sourceNodes.map((node) => {
+    const distance = Math.hypot(node.x - hub.x, node.y - hub.y)
+    if (distance > maxDistance) {
+      maxDistance = distance
+    }
+    return { node, distance }
+  })
+
+  if (maxDistance <= 0.001) {
+    return sourceNodes
+  }
+
+  const window = layerWindowForScale(state.transform.scale)
+  const inner = window.inner * maxDistance
+  const outer = window.outer * maxDistance
+  const layered = distances
+    .filter((item) => item.distance >= inner && item.distance <= outer)
+    .map((item) => item.node)
+
+  if (state.transform.scale >= layeredCoreScaleThreshold && !layered.some((node) => node.id === hub.id)) {
+    layered.push(hub)
+  }
+
+  if (layered.length > 0) {
+    return layered
+  }
+
+  const midpoint = (window.inner + window.outer) / 2
+  const fallback = [...distances]
+    .sort((left, right) => {
+      const leftNorm = left.distance / maxDistance
+      const rightNorm = right.distance / maxDistance
+      const leftDelta = Math.abs(leftNorm - midpoint)
+      const rightDelta = Math.abs(rightNorm - midpoint)
+      if (leftDelta !== rightDelta) return leftDelta - rightDelta
+      return left.node.id.localeCompare(right.node.id)
+    })
+    .slice(0, Math.min(900, sourceNodes.length))
+    .map((item) => item.node)
+
+  if (state.transform.scale >= layeredCoreScaleThreshold && !fallback.some((node) => node.id === hub.id)) {
+    fallback.push(hub)
+  }
+
+  return fallback
 }
 
 const edgeIdentityKey = edge => {
@@ -1465,10 +1530,11 @@ const computeRenderVisibility = () => {
   if (state.visibleNodes.length > massiveGraphNodeThreshold) {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
+    const layeredNodes = selectLayeredNodesForScale(sourceNodes)
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
-    const sampled = sourceNodes.length > sampleLimit
-      ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget), sourceNodes)
-      : sourceNodes.slice(0, Math.min(sourceNodes.length, renderNodeBudget))
+    const sampled = layeredNodes.length > sampleLimit
+      ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget), layeredNodes)
+      : layeredNodes.slice(0, Math.min(layeredNodes.length, renderNodeBudget))
     const sampledIds = new Set(sampled.map((node) => node.id))
     let sampledEdges = state.transform.scale >= 0.035 ? collectVisibleEdgesForNodes(sampledIds) : []
     let sampledNodes = ensureHubNodesInRenderedSet(sampled)
