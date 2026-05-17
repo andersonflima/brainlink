@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { access } from 'node:fs/promises'
 import { basename, extname, join, relative, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { extractTags, extractWikiLinks } from '../domain/markdown.js'
 import { sanitizeAgentId, sharedAgentId } from '../domain/agents.js'
@@ -97,20 +98,34 @@ const parseDelimitedRows = (rawOutput: string): readonly (readonly string[])[] =
 }
 
 const runSqliteQuery = async (databasePath: string, sql: string): Promise<readonly (readonly string[])[]> => {
-  try {
-    const { stdout } = await execFileAsync(
-      'sqlite3',
-      ['--readonly', '-noheader', '-separator', fieldSeparator, '-newline', rowSeparator, databasePath, sql],
-      { maxBuffer: 1024 * 1024 * 64 }
-    )
+  const baseArgs = ['-noheader', '-separator', fieldSeparator, '-newline', rowSeparator, '-cmd', '.timeout 5000']
+  const runQuery = async (args: readonly string[]): Promise<readonly (readonly string[])[]> => {
+    const { stdout } = await execFileAsync('sqlite3', [...args, sql], { maxBuffer: 1024 * 1024 * 64 })
 
     return parseDelimitedRows(stdout)
+  }
+
+  try {
+    return await runQuery(['--readonly', ...baseArgs, databasePath])
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const lower = message.toLowerCase()
 
     if (lower.includes('enoent') || lower.includes('not found')) {
       throw new Error('sqlite3 CLI was not found. Install sqlite3 to use db-import.')
+    }
+
+    if (lower.includes('database is locked') || lower.includes('(5)')) {
+      try {
+        const uri = pathToFileURL(databasePath)
+        uri.search = 'mode=ro&immutable=1'
+        return await runQuery(['-uri', ...baseArgs, uri.toString()])
+      } catch (fallbackError) {
+        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+        throw new Error(
+          `Unable to read SQLite database (locked). Close writers (server/watch/mcp) or rerun with DB idle. Details: ${fallbackMessage}`
+        )
+      }
     }
 
     throw new Error(`Unable to read SQLite database: ${message}`)
