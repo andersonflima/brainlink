@@ -7,7 +7,7 @@ const renderNodeBudget = 900
 const renderEdgeBudget = 2400
 const clusterActivationNodeThreshold = 600
 const clusterZoomThreshold = 0.18
-const macroGalaxyZoomThreshold = 0.0012
+const macroGalaxyZoomThreshold = 0.012
 const massiveAutoFitMacroScale = 0.006
 const defaultMacroScale = 0.006
 const clusterCellPixelSize = 64
@@ -235,7 +235,6 @@ const normalizeQuery = value => value.trim().toLowerCase()
 const hubNodeRetentionLimit = 2
 const hubNodePattern = /\b(memory\s*hub|knowledge\s*hub|hub|moc|map|memory\s*map|mapa)\b/i
 const memoryHubPathPattern = /\bmemory[-_\s]*hub\b/i
-const isMemoryHubNode = node => node.title.trim().toLowerCase() === 'memory hub'
 
 const hubNodeScore = node => {
   const title = node.title.trim().toLowerCase()
@@ -310,13 +309,14 @@ const resolveMacroRepresentative = (nodes) => {
     return null
   }
 
-  const nonHubNodes = nodes.filter(node => !isMemoryHubNode(node))
-  const pool = nonHubNodes.length > 0 ? nonHubNodes : nodes
-  let best = pool[0]
+  const hubCandidate = state.primaryHub && nodes.some(node => node.id === state.primaryHub.id)
+    ? state.primaryHub
+    : null
+  let best = hubCandidate ?? nodes[0]
   let bestDegree = state.nodeDegrees.get(best.id) ?? 0
 
-  for (let index = 1; index < pool.length; index += 1) {
-    const node = pool[index]
+  for (let index = 1; index < nodes.length; index += 1) {
+    const node = nodes[index]
     const degree = state.nodeDegrees.get(node.id) ?? 0
     if (degree > bestDegree) {
       best = node
@@ -826,7 +826,9 @@ const fitView = (options = { useFiltered: true, macro: false, preferHubCenter: t
   const macroScale = nodes.length > massiveGraphNodeThreshold ? massiveAutoFitMacroScale : defaultMacroScale
   const scale = options.macro && nodes.length > 1
     ? clampScale(Math.min(baselineScale, macroScale))
-    : baselineScale
+    : nodes.length > massiveGraphNodeThreshold
+      ? clampScale(Math.min(baselineScale, massiveAutoFitMacroScale))
+      : baselineScale
   const hubCenter =
     options.preferHubCenter && state.primaryHub && nodes.some((node) => node.id === state.primaryHub.id)
       ? state.primaryHub
@@ -844,7 +846,7 @@ const fitView = (options = { useFiltered: true, macro: false, preferHubCenter: t
   markRenderDirty()
 }
 
-const resetView = () => fitView({ useFiltered: false, macro: false, preferHubCenter: true })
+const resetView = () => fitView({ useFiltered: false, macro: true, preferHubCenter: true })
 
 const createLayout = graph => {
   const nodeRows = Array.isArray(graph.nodes) ? graph.nodes : []
@@ -1199,7 +1201,7 @@ const computeRenderVisibility = () => {
   if (shouldRenderMacroGalaxy) {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
-    const representative = state.macroRepresentative ?? sourceNodes[0] ?? null
+    const representative = state.primaryHub ?? state.macroRepresentative ?? sourceNodes[0] ?? null
     if (representative) {
       state.renderClusters = [
         {
@@ -1447,6 +1449,13 @@ const render = now => {
       ctx.lineWidth = 1.4 / safeScale
       ctx.strokeStyle = isMacro ? '#ffffff' : graphTheme.nodeStroke
       ctx.stroke()
+      if (isMacro && cluster.representative?.title) {
+        ctx.fillStyle = '#edf2f7'
+        ctx.font = 12 / safeScale + 'px Inter, system-ui, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+        ctx.fillText(cluster.representative.title.slice(0, 28), cluster.x, cluster.y + (radiusPx + 9) / safeScale)
+      }
       // Keep cluster markers minimal and faster to draw on large graphs.
     })
   } else {
