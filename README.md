@@ -572,6 +572,7 @@ By default, `blink server` tries to open the graph in a native desktop GUI windo
 On Linux, native GUI is disabled by default for better startup performance. Enable it with `BRAINLINK_LINUX_NATIVE_GUI=1`.
 If native GUI launch is unavailable on your system, it falls back to dedicated app-window mode and then to the default browser.
 For Chromium-family browsers on Linux (`chromium`, `chromium-browser`, `google-chrome`, `microsoft-edge`, `brave-browser`), Brainlink now auto-applies compatibility flags during launch (`--ozone-platform=x11`, `--ozone-platform-hint=x11`, `--disable-gpu`, `--disable-vulkan`, `--use-gl=swiftshader`, `--disable-features=Vulkan,VaapiVideoDecoder`, `--disable-background-networking`) to avoid common Wayland/Vulkan/VAAPI startup issues.
+On Linux, Brainlink opens the graph through the system default browser first (`xdg-open`), then `$BROWSER`/detected browsers as fallback. Chromium-family app-window mode is optional via `BRAINLINK_LINUX_APP_WINDOW=1`.
 Use `--no-open` to keep it headless.
 When native GUI is used, the GUI window automatically closes when the `blink server` process stops.
 
