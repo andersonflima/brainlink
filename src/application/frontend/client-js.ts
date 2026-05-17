@@ -978,39 +978,13 @@ const computeRenderVisibility = () => {
     return
   }
 
-  if (state.visibleNodes.length > massiveGraphNodeThreshold && state.transform.scale <= 0.035) {
-    const viewportClusters = filterOverviewClustersByViewport(viewport)
-    const clusters = viewportClusters.length > 0
-      ? viewportClusters
-      : state.overviewClusters.slice(0, Math.min(220, state.overviewClusters.length))
-    const clusterLimit = clusterBudgetForScale(state.transform.scale)
-    const limitedClusters = clusters.slice(0, Math.min(clusterLimit, clusters.length))
-    if (limitedClusters.length > 0) {
-      state.renderClusters = limitedClusters
-      state.renderNodes = limitedClusters.map((cluster) => cluster.representative)
-      state.renderEdges = []
-      return
-    }
-  }
-
-  if (state.visibleNodes.length > massiveGraphNodeThreshold && state.transform.scale <= 0.06) {
-    const viewportClusters = filterOverviewClustersByViewport(viewport)
-    const clusters = viewportClusters.length > 0
-      ? viewportClusters
-      : state.overviewClusters.slice(0, Math.min(400, state.overviewClusters.length))
-    const clusterLimit = clusterBudgetForScale(state.transform.scale)
-    const limitedClusters = clusters.slice(0, Math.min(clusterLimit, clusters.length))
-    if (limitedClusters.length > 0) {
-      state.renderClusters = limitedClusters
-      state.renderNodes = limitedClusters.map((cluster) => cluster.representative)
-      state.renderEdges = []
-      return
-    }
-  }
-
   if (state.visibleNodes.length > massiveGraphNodeThreshold) {
+    const viewportNodes = viewportNodesFromSpatialIndex(viewport)
+    const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
-    const sampled = sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget))
+    const sampled = sourceNodes.length > sampleLimit
+      ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget))
+      : sourceNodes.slice(0, Math.min(sourceNodes.length, renderNodeBudget))
     const sampledIds = new Set(sampled.map((node) => node.id))
     state.renderClusters = []
     state.renderNodes = sampled
