@@ -540,7 +540,8 @@ blink server --vault ./vault --host 127.0.0.1 --port 4321 --no-open
 ```
 
 This starts a local frontend for inspecting the knowledge graph.
-By default it opens the graph URL in your default browser. Use `--no-open` to keep the server headless.
+By default it tries to open the graph in a dedicated app window and falls back to the default browser when app-window mode is unavailable.
+Use `--no-open` to keep the server headless.
 
 Without `--vault`, the graph UI serves `$HOME/.brainlink/vault`.
 
