@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { platform } from 'node:os'
 import { spawn } from 'node:child_process'
@@ -32,32 +33,83 @@ const resolveAddContent = (options: AddOptions): string => {
   return readFileSync(options.contentFile, 'utf8')
 }
 
-const openUrlInBrowser = (url: string): void => {
+const spawnDetached = (command: string, args: readonly string[]): boolean => {
+  try {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' })
+    child.unref()
+    return true
+  } catch {
+    return false
+  }
+}
+
+const openGraphInAppWindow = (url: string): boolean => {
+  if (platform() === 'darwin') {
+    const macCandidates = [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+    ]
+      .filter((candidate) => existsSync(candidate))
+      .map((binary) => ({ binary, args: [`--app=${url}`, '--new-window'] as const }))
+
+    for (const candidate of macCandidates) {
+      if (spawnDetached(candidate.binary, candidate.args)) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  if (platform() === 'win32') {
+    const appArgument = `--app=${url}`
+
+    return (
+      spawnDetached('cmd', ['/c', 'start', '', 'chrome', appArgument, '--new-window']) ||
+      spawnDetached('cmd', ['/c', 'start', '', 'msedge', appArgument, '--new-window']) ||
+      spawnDetached('cmd', ['/c', 'start', '', 'chromium', appArgument, '--new-window'])
+    )
+  }
+
+  const appArgument = `--app=${url}`
+
+  return (
+    spawnDetached('google-chrome', [appArgument, '--new-window']) ||
+    spawnDetached('chromium-browser', [appArgument, '--new-window']) ||
+    spawnDetached('chromium', [appArgument, '--new-window']) ||
+    spawnDetached('microsoft-edge', [appArgument, '--new-window']) ||
+    spawnDetached('microsoft-edge-stable', [appArgument, '--new-window'])
+  )
+}
+
+const openUrlInBrowser = (url: string): { readonly opened: boolean; readonly mode: 'app-window' | 'browser' | 'none' } => {
   const openDisabled =
     process.env.BRAINLINK_NO_BROWSER === '1' ||
     process.env.BRAINLINK_NO_BROWSER === 'true' ||
     process.env.CI === 'true'
 
   if (openDisabled) {
-    return
+    return { opened: false, mode: 'none' }
+  }
+
+  if (openGraphInAppWindow(url)) {
+    return { opened: true, mode: 'app-window' }
   }
 
   try {
     if (platform() === 'darwin') {
-      const child = spawn('open', [url], { detached: true, stdio: 'ignore' })
-      child.unref()
-      return
+      return { opened: spawnDetached('open', [url]), mode: 'browser' }
     }
 
     if (platform() === 'win32') {
-      const child = spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' })
-      child.unref()
-      return
+      return { opened: spawnDetached('cmd', ['/c', 'start', '', url]), mode: 'browser' }
     }
 
-    const child = spawn('xdg-open', [url], { detached: true, stdio: 'ignore' })
-    child.unref()
-  } catch {}
+    return { opened: spawnDetached('xdg-open', [url]), mode: 'browser' }
+  } catch {
+    return { opened: false, mode: 'none' }
+  }
 }
 
 export const registerWriteCommands = (program: Command): void => {
@@ -321,14 +373,27 @@ export const registerWriteCommands = (program: Command): void => {
       shouldIndex: options.index,
       shouldWatch: Boolean(options.watch)
     })
-    if (options.open !== false) {
-      openUrlInBrowser(server.url)
-    }
+    const openResult = options.open !== false ? openUrlInBrowser(server.url) : { opened: false, mode: 'none' as const }
 
     print(
       options.json,
-      { url: server.url, watch: Boolean(options.watch), readonly: true, openedInBrowser: options.open !== false },
-      () => `Brainlink graph server running at ${server.url}${options.open !== false ? ' (opened in browser)' : ''}`
+      {
+        url: server.url,
+        watch: Boolean(options.watch),
+        readonly: true,
+        openedUi: openResult.opened,
+        openMode: openResult.mode
+      },
+      () =>
+        `Brainlink graph server running at ${server.url}${
+          openResult.opened
+            ? openResult.mode === 'app-window'
+              ? ' (opened in dedicated app window)'
+              : ' (opened in browser)'
+            : options.open === false
+              ? ' (auto-open disabled)'
+              : ''
+        }`
     )
   })
 
