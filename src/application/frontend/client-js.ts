@@ -101,6 +101,39 @@ const initialAgentFromUrl = (() => {
   }
 })()
 
+const selectedAgentStorageKey = 'brainlink:selected-agent'
+
+const readStoredAgent = () => {
+  try {
+    const value = window.localStorage.getItem(selectedAgentStorageKey)?.trim() ?? ''
+    return value.length > 0 ? value : ''
+  } catch {
+    return ''
+  }
+}
+
+const writeStoredAgent = (agentId) => {
+  try {
+    if (!agentId) {
+      window.localStorage.removeItem(selectedAgentStorageKey)
+      return
+    }
+    window.localStorage.setItem(selectedAgentStorageKey, agentId)
+  } catch {}
+}
+
+const syncAgentInUrl = (agentId) => {
+  try {
+    const url = new URL(window.location.href)
+    if (agentId && agentId.trim().length > 0) {
+      url.searchParams.set('agent', agentId)
+    } else {
+      url.searchParams.delete('agent')
+    }
+    window.history.replaceState({}, '', url.toString())
+  } catch {}
+}
+
 const agentQuery = (separator = '?') => state.agentId ? separator + 'agent=' + encodeURIComponent(state.agentId) : ''
 
 const setGraphStatus = text => {
@@ -1545,6 +1578,8 @@ const bindEvents = () => {
   })
   elements.agent.addEventListener('change', event => {
     state.agentId = event.target.value
+    writeStoredAgent(state.agentId)
+    syncAgentInUrl(state.agentId)
     state.selected = null
     state.nodeDetails = new Map()
     resetContentFilter()
@@ -1671,7 +1706,7 @@ const loadAgents = async () => {
   const response = await fetch('/api/agents')
   const payload = await response.json()
   const agents = Array.isArray(payload.agents) ? payload.agents : []
-  const preferredAgent = state.agentId || initialAgentFromUrl
+  const preferredAgent = state.agentId || initialAgentFromUrl || readStoredAgent()
   const currentExists = agents.some(agent => agent.id === preferredAgent)
   const selected = currentExists
     ? preferredAgent
@@ -1679,6 +1714,8 @@ const loadAgents = async () => {
   const signature = JSON.stringify(agents.map(agent => [agent.id, agent.documentCount]))
 
   state.agentId = selected
+  writeStoredAgent(selected)
+  syncAgentInUrl(selected)
   if (signature !== state.agentsSignature) {
     const formatAgentLabel = (agent) => agent.id
     elements.agent.innerHTML = agents.length
