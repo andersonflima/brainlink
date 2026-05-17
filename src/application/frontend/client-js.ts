@@ -23,6 +23,8 @@ const meshEdgeScaleThreshold = 0.09
 const meshEdgeMinBudget = 140
 const meshEdgeMaxBudget = 1400
 const layeredCoreScaleThreshold = 0.55
+const dragNeighborhoodMaxAffected = 180
+const dragSettleRounds = 3
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
@@ -1354,6 +1356,104 @@ const worldPoint = event => {
   }
 }
 
+const connectedNodeIdsFor = (nodeId) => {
+  const edges = state.visibleEdgeByNode.get(nodeId) ?? []
+  const ids = new Set()
+
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index]
+    if (!edge.target) continue
+    if (edge.source === nodeId) {
+      ids.add(edge.target)
+    } else if (edge.target === nodeId) {
+      ids.add(edge.source)
+    }
+  }
+
+  return ids
+}
+
+const applyDragNeighborhoodAdjustment = (dragNode, deltaX, deltaY) => {
+  if (!dragNode) return
+  if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return
+  if (Math.abs(deltaX) + Math.abs(deltaY) <= 0.001) return
+
+  const scale = Math.max(state.transform.scale, 0.0001)
+  const influenceRadius = Math.max(220, Math.min(920, 440 / scale))
+  const influenceRadiusSquared = influenceRadius * influenceRadius
+  const connectedIds = connectedNodeIdsFor(dragNode.id)
+  const candidates = state.renderNodes.length > 0 ? state.renderNodes : state.visibleNodes
+  let adjusted = 0
+
+  for (let index = 0; index < candidates.length && adjusted < dragNeighborhoodMaxAffected; index += 1) {
+    const node = candidates[index]
+    if (node.id === dragNode.id) continue
+
+    const isConnected = connectedIds.has(node.id)
+    const dx = node.x - dragNode.x
+    const dy = node.y - dragNode.y
+    const distanceSquared = dx * dx + dy * dy
+    const withinRadius = distanceSquared <= influenceRadiusSquared
+    if (!isConnected && !withinRadius) continue
+
+    const distance = Math.max(Math.sqrt(distanceSquared), 0.0001)
+    const proximity = withinRadius ? 1 - (distance / influenceRadius) : 0
+    const coupledStrength = isConnected ? 0.28 : 0.12
+    const influence = Math.min(0.46, coupledStrength + proximity * 0.34)
+    node.x += deltaX * influence
+    node.y += deltaY * influence
+    node.vx = (Number.isFinite(node.vx) ? node.vx : 0) + deltaX * influence * 0.06
+    node.vy = (Number.isFinite(node.vy) ? node.vy : 0) + deltaY * influence * 0.06
+    adjusted += 1
+  }
+}
+
+const settleNeighborhoodAroundNode = (dragNode) => {
+  if (!dragNode) return
+
+  const scale = Math.max(state.transform.scale, 0.0001)
+  const settleRadius = Math.max(240, Math.min(980, 520 / scale))
+  const settleRadiusSquared = settleRadius * settleRadius
+  const connectedIds = connectedNodeIdsFor(dragNode.id)
+  const candidates = (state.renderNodes.length > 0 ? state.renderNodes : state.visibleNodes)
+    .filter((node) => {
+      if (node.id === dragNode.id) return true
+      const dx = node.x - dragNode.x
+      const dy = node.y - dragNode.y
+      const distanceSquared = dx * dx + dy * dy
+      return connectedIds.has(node.id) || distanceSquared <= settleRadiusSquared
+    })
+    .slice(0, dragNeighborhoodMaxAffected)
+
+  if (candidates.length <= 1) return
+
+  for (let round = 0; round < dragSettleRounds; round += 1) {
+    for (let leftIndex = 0; leftIndex < candidates.length; leftIndex += 1) {
+      const left = candidates[leftIndex]
+      for (let rightIndex = leftIndex + 1; rightIndex < candidates.length; rightIndex += 1) {
+        const right = candidates[rightIndex]
+        const dx = right.x - left.x
+        const dy = right.y - left.y
+        const distance = Math.max(Math.hypot(dx, dy), 0.001)
+        const minDistance = baseNodeRadius(left) + baseNodeRadius(right) + 10
+        if (distance >= minDistance) continue
+
+        const push = (minDistance - distance) * 0.36
+        const ux = dx / distance
+        const uy = dy / distance
+        if (left.id !== dragNode.id) {
+          left.x -= ux * push
+          left.y -= uy * push
+        }
+        if (right.id !== dragNode.id) {
+          right.x += ux * push
+          right.y += uy * push
+        }
+      }
+    }
+  }
+}
+
 const hitNode = point => {
   computeRenderVisibility()
   if (state.renderClusters.length > 0) {
@@ -2030,8 +2130,12 @@ const bindEvents = () => {
     state.pointer.y = event.clientY
     state.pointer.moved = state.pointer.moved || Math.abs(dx) + Math.abs(dy) > 3
     if (state.pointer.dragNode) {
-      state.pointer.dragNode.x = point.x
-      state.pointer.dragNode.y = point.y
+      const dragNode = state.pointer.dragNode
+      const previousX = dragNode.x
+      const previousY = dragNode.y
+      dragNode.x = point.x
+      dragNode.y = point.y
+      applyDragNeighborhoodAdjustment(dragNode, dragNode.x - previousX, dragNode.y - previousY)
       markRenderDirty()
       return
     }
@@ -2043,8 +2147,13 @@ const bindEvents = () => {
     markRenderDirty()
   })
   canvas.addEventListener('pointerup', event => {
-    if (state.pointer.dragNode && !state.pointer.moved) selectNode(state.pointer.dragNode, { openContent: true })
-    if (!state.pointer.dragNode && !state.pointer.moved) selectNode(state.hovered, { openContent: true })
+    const draggedNode = state.pointer.dragNode
+    if (draggedNode && state.pointer.moved) {
+      settleNeighborhoodAroundNode(draggedNode)
+      markRenderDirty()
+    }
+    if (draggedNode && !state.pointer.moved) selectNode(draggedNode, { openContent: true })
+    if (!draggedNode && !state.pointer.moved) selectNode(state.hovered, { openContent: true })
     state.pointer = { x: 0, y: 0, down: false, dragNode: null, moved: false }
     canvas.releasePointerCapture(event.pointerId)
   })
