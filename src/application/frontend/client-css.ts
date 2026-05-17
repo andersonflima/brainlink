@@ -25,6 +25,13 @@ body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 button,
 input,
 select {
@@ -32,8 +39,9 @@ select {
 }
 
 .shell {
+  flex: 1 1 auto;
   width: 100%;
-  height: calc(100svh - 28px);
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -346,6 +354,7 @@ li small {
 }
 
 .app-footer {
+  flex: 0 0 28px;
   height: 28px;
   display: flex;
   align-items: center;
