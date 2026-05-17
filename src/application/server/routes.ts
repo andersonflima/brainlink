@@ -79,6 +79,62 @@ const compactGraphLayoutEdgeLimitFor = (nodeCount: number): number => {
   return compactGraphLayoutEdgeLimit
 }
 
+const edgeWeight = (weight: number | undefined): number =>
+  Number.isFinite(weight) ? Number(weight) : 1
+
+const edgeKey = (source: string, target: string, priority: string): string =>
+  `${source}|${target}|${priority}`
+
+const selectCompactEdges = (layout: KnowledgeGraphLayout, limit: number): readonly KnowledgeGraphLayout['edges'][number][] => {
+  const resolvedEdges = layout.edges.filter(
+    (edge): edge is KnowledgeGraphLayout['edges'][number] & { readonly target: string } =>
+      typeof edge.target === 'string' && edge.target.length > 0
+  )
+
+  if (resolvedEdges.length <= limit) {
+    return resolvedEdges
+  }
+
+  const bestEdgeByEndpoint = new Map<string, KnowledgeGraphLayout['edges'][number] & { readonly target: string }>()
+  for (let index = 0; index < resolvedEdges.length; index += 1) {
+    const edge = resolvedEdges[index]
+    const endpoints = [edge.source, edge.target]
+
+    for (let endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex += 1) {
+      const endpoint = endpoints[endpointIndex]
+      const previous = bestEdgeByEndpoint.get(endpoint)
+      if (!previous || edgeWeight(edge.weight) > edgeWeight(previous.weight)) {
+        bestEdgeByEndpoint.set(endpoint, edge)
+      }
+    }
+  }
+
+  const selected = new Map<string, KnowledgeGraphLayout['edges'][number] & { readonly target: string }>()
+  for (const edge of bestEdgeByEndpoint.values()) {
+    selected.set(edgeKey(edge.source, edge.target, edge.priority), edge)
+  }
+
+  if (selected.size > limit) {
+    return Array.from(selected.values())
+      .sort((left, right) => edgeWeight(right.weight) - edgeWeight(left.weight))
+      .slice(0, limit)
+  }
+
+  const byWeight = [...resolvedEdges].sort((left, right) => edgeWeight(right.weight) - edgeWeight(left.weight))
+  for (let index = 0; index < byWeight.length; index += 1) {
+    if (selected.size >= limit) {
+      break
+    }
+    const edge = byWeight[index]
+    const key = edgeKey(edge.source, edge.target, edge.priority)
+    if (!selected.has(key)) {
+      selected.set(key, edge)
+    }
+  }
+
+  return Array.from(selected.values())
+}
+
 const stripLayoutContent = (layout: Awaited<ReturnType<typeof getGraphLayout>>['layout']) => ({
   ...layout,
   nodes: layout.nodes.map(({ content, ...node }) => node)
@@ -86,17 +142,16 @@ const stripLayoutContent = (layout: Awaited<ReturnType<typeof getGraphLayout>>['
 
 const compactLayoutPayload = (layout: KnowledgeGraphLayout) => {
   const edgeLimit = compactGraphLayoutEdgeLimitFor(layout.nodes.length)
+  const compactEdges = selectCompactEdges(layout, edgeLimit)
   const compactNodes = layout.nodes.map((node) => [node.id, node.title, node.x, node.y, node.group, node.segment] as const)
-  const compactEdges = [...layout.edges]
-    .sort((left, right) => (right.weight ?? 1) - (left.weight ?? 1))
-    .slice(0, edgeLimit)
+  const compactEdgeRows = compactEdges
     .map((edge) => [edge.source, edge.target, edge.weight, edge.priority] as const)
 
   return {
     compact: true as const,
     layout: {
       nodes: compactNodes,
-      edges: compactEdges
+      edges: compactEdgeRows
     },
     totals: {
       nodes: layout.nodes.length,
