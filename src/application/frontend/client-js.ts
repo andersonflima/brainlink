@@ -710,9 +710,9 @@ const ensureHubNodesInRenderedSet = (nodes) => {
 }
 
 const zoomCapByNodeCount = (nodeCount) => {
-  if (nodeCount > 50000) return 0.88
-  if (nodeCount > 20000) return 1.15
-  if (nodeCount > 6000) return 1.65
+  if (nodeCount > 50000) return 2.6
+  if (nodeCount > 20000) return 2.35
+  if (nodeCount > 6000) return 2.1
   if (nodeCount > 2000) return 2.2
   return zoomRange.max
 }
@@ -731,7 +731,9 @@ const zoomCapByHubDistance = (distance) => {
 
 const currentZoomMax = () => {
   const nodeCount = state.visibleNodes.length > 0 ? state.visibleNodes.length : state.nodes.length
-  const capped = Math.min(zoomCapByNodeCount(nodeCount), zoomCapByHubDistance(state.hubNeighborDistance))
+  const hubDistanceCap = zoomCapByHubDistance(state.hubNeighborDistance)
+  const minimumUsefulCap = nodeCount > massiveGraphNodeThreshold ? 1.9 : nodeCount > largeGraphNodeThreshold ? 1.35 : 0.8
+  const capped = Math.min(zoomCapByNodeCount(nodeCount), Math.max(minimumUsefulCap, hubDistanceCap))
   return Math.max(zoomRange.min * 2, capped)
 }
 
@@ -1066,7 +1068,12 @@ const hitNode = point => {
   if (state.renderClusters.length > 0) {
     return null
   }
-  if (state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.9) {
+  const hitScaleFloor = state.nodes.length > massiveGraphNodeThreshold
+    ? 0.2
+    : state.nodes.length > largeGraphNodeThreshold
+      ? 0.34
+      : 0
+  if (state.transform.scale < hitScaleFloor) {
     return null
   }
 
@@ -1478,6 +1485,7 @@ const render = now => {
     const shouldDrawLabels =
       isSelected ||
       isHovered ||
+      (state.nodes.length > largeGraphNodeThreshold && state.transform.scale >= 0.62 && state.renderNodes.length <= 1200) ||
       (state.nodes.length <= largeGraphNodeThreshold && (state.transform.scale > 1.18 || state.nodes.length <= 25))
     if (shouldDrawLabels) {
       ctx.fillStyle = graphTheme.label
@@ -1721,7 +1729,7 @@ const bindEvents = () => {
     const point = worldPoint(event)
     const now = performance.now()
     const canHoverHitTest =
-      !(state.nodes.length > massiveGraphNodeThreshold && state.transform.scale < 0.12)
+      !(state.nodes.length > massiveGraphNodeThreshold && state.transform.scale < 0.06)
     const shouldHitTest = canHoverHitTest &&
       (state.pointer.down || now - state.lastHoverHitAt >= hoverHitTestIntervalMs)
     if (shouldHitTest) {
