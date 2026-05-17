@@ -500,17 +500,17 @@ const fallbackViewportNodes = () => {
   return nodes
 }
 
-const sampleVisibleNodes = (limit = renderNodeBudget) => {
-  if (state.visibleNodes.length === 0 || limit <= 0) {
+const sampleVisibleNodes = (limit = renderNodeBudget, sourceNodes = state.visibleNodes) => {
+  if (sourceNodes.length === 0 || limit <= 0) {
     return []
   }
 
   const nodes = []
-  const maxNodes = Math.min(Math.max(limit, 1), state.visibleNodes.length)
-  const step = Math.max(1, Math.ceil(state.visibleNodes.length / maxNodes))
+  const maxNodes = Math.min(Math.max(limit, 1), sourceNodes.length)
+  const step = Math.max(1, Math.ceil(sourceNodes.length / maxNodes))
 
-  for (let index = 0; index < state.visibleNodes.length && nodes.length < maxNodes; index += step) {
-    nodes.push(state.visibleNodes[index])
+  for (let index = 0; index < sourceNodes.length && nodes.length < maxNodes; index += step) {
+    nodes.push(sourceNodes[index])
   }
 
   if (state.selected && !nodes.find(node => node.id === state.selected.id)) {
@@ -983,12 +983,12 @@ const computeRenderVisibility = () => {
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
     const sampled = sourceNodes.length > sampleLimit
-      ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget))
+      ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget), sourceNodes)
       : sourceNodes.slice(0, Math.min(sourceNodes.length, renderNodeBudget))
     const sampledIds = new Set(sampled.map((node) => node.id))
     state.renderClusters = []
     state.renderNodes = sampled
-    state.renderEdges = state.transform.scale >= 0.12 ? collectVisibleEdgesForNodes(sampledIds) : []
+    state.renderEdges = state.transform.scale >= 0.1 ? collectVisibleEdgesForNodes(sampledIds) : []
     return
   }
 
@@ -1143,9 +1143,15 @@ const render = now => {
   } else {
     state.offscreenFrameCount = 0
   }
+  const minimumEdgeScale =
+    state.nodes.length > massiveGraphNodeThreshold
+      ? 0.1
+      : state.nodes.length > largeGraphNodeThreshold
+        ? 0.16
+        : 0
   const drawEdges =
     state.renderClusters.length === 0 &&
-    !(state.nodes.length > largeGraphNodeThreshold && state.transform.scale < 0.22)
+    state.transform.scale >= minimumEdgeScale
   if (drawEdges) {
     state.renderEdges.forEach(edge => {
     const selectedEdge = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
