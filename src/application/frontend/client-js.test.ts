@@ -11,5 +11,7 @@ describe('graph client rendering policy', () => {
     expect(clientScript).toContain('sourceWithCarryIds.has(node.id)')
     expect(clientScript).toContain('const drawEdgeBatch = (edges, options) =>')
     expect(clientScript).toContain('const drawNodeBatch = (nodes) =>')
+    expect(clientScript).toContain('const regularEdgeBatchKey = (edge) =>')
+    expect(clientScript).not.toContain('if (state.nodes.length <= largeGraphNodeThreshold) {\\n    state.renderNodes.forEach(node => drawSingleNode(node))')
   })
 })
