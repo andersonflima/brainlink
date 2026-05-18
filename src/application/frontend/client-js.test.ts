@@ -15,5 +15,7 @@ describe('graph client rendering policy', () => {
     expect(clientScript).not.toContain('if (state.nodes.length <= largeGraphNodeThreshold) {\\n    state.renderNodes.forEach(node => drawSingleNode(node))')
     expect(clientScript).toContain('if (nodeCount > 50000) return 0.26')
     expect(clientScript).toContain('if (nodeCount > 50000) return 5.4')
+    expect(clientScript).toContain("const webGlRenderer = createWebGlRenderer(glCanvas)")
+    expect(clientScript).toContain('const drawAcceleratedGraph = (width, height, drawEdges) =>')
   })
 })
