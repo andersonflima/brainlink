@@ -594,7 +594,7 @@ The graph UI shows:
 - double-click on canvas zooms in at cursor position
 - floating graph totals (notes, links, tags) below the Brainlink title
 - large-graph rendering safeguards (edge draw caps, lower redraw rate, zoom-aware interaction)
-- massive-graph LOD progression: very low zoom uses spatial overview clusters to preserve whole-vault shape, then progressively reveals nodes and edges as zoom increases
+- massive-graph LOD progression: very low zoom uses spatial overview sampling to preserve whole-vault shape while keeping node visuals consistent, then progressively reveals nodes and edges as zoom increases
 
 The server indexes before starting by default. Use `--no-index` to skip that step:
 

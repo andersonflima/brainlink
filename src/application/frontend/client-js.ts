@@ -1758,6 +1758,18 @@ const clusterViewportNodes = viewportNodes => {
     }))
 }
 
+const representativeNodesFromClusters = (clusters, limit) => {
+  const representatives = clusters
+    .map((cluster) => cluster.representative)
+    .filter((node) => Boolean(node))
+  const merged = mergeUniqueNodes(
+    representatives,
+    state.renderNodes ?? [],
+    Math.max(1, limit)
+  )
+  return ensureHubNodesInRenderedSet(merged)
+}
+
 const computeRenderVisibility = () => {
   if (!hasValidTransform()) {
     fitView({ useFiltered: true })
@@ -1816,8 +1828,11 @@ const computeRenderVisibility = () => {
         .sort((left, right) => right.count - left.count)
         .slice(0, Math.min(renderNodeBudget, clusterBudgetForScale(state.transform.scale)))
       if (overviewClusters.length > 0) {
-        state.renderClusters = overviewClusters
-        state.renderNodes = overviewClusters.map((cluster) => cluster.representative)
+        state.renderClusters = []
+        state.renderNodes = representativeNodesFromClusters(
+          overviewClusters,
+          Math.min(renderNodeBudget, clusterBudgetForScale(state.transform.scale))
+        )
         state.renderEdges = []
         return
       }
@@ -1877,8 +1892,8 @@ const computeRenderVisibility = () => {
   const viewportNodes = viewportNodesFromSpatialIndex(viewport)
   const clusters = clusterViewportNodes(viewportNodes)
   if (clusters.length > 0) {
-    state.renderClusters = clusters
-    state.renderNodes = clusters.map(cluster => cluster.representative)
+    state.renderClusters = []
+    state.renderNodes = representativeNodesFromClusters(clusters, Math.min(renderNodeBudget, 900))
     state.renderEdges = []
     return
   }
