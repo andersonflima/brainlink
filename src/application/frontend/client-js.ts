@@ -537,6 +537,17 @@ const nearestHubNeighborDistance = (hub, nodes) => {
   return minimum
 }
 
+const isDominantHub = (hub, nodeCount = state.visibleNodes.length) => {
+  if (!hub || nodeCount <= 0) {
+    return false
+  }
+
+  const degree = state.nodeDegrees.get(hub.id) ?? 0
+  const minimumDegree = Math.max(18, Math.sqrt(nodeCount) * 1.8)
+  const degreeRatio = degree / Math.max(nodeCount, 1)
+  return degree >= minimumDegree || degreeRatio >= 0.035
+}
+
 const recomputeVisibility = () => {
   const nodes = filteredNodes()
   const ids = new Set(nodes.map(node => node.id))
@@ -556,10 +567,11 @@ const recomputeVisibility = () => {
   state.primaryHub = primaryHub
   state.hubNeighborDistance = nearestHubNeighborDistance(primaryHub, nodes)
   const bounds = graphBounds(nodes)
+  const macroHub = isDominantHub(primaryHub, nodes.length) ? primaryHub : null
   state.macroCenter = bounds
     ? {
-      x: primaryHub ? primaryHub.x : (bounds.minX + bounds.maxX) / 2,
-      y: primaryHub ? primaryHub.y : (bounds.minY + bounds.maxY) / 2
+      x: macroHub ? macroHub.x : (bounds.minX + bounds.maxX) / 2,
+      y: macroHub ? macroHub.y : (bounds.minY + bounds.maxY) / 2
     }
     : { x: 0, y: 0 }
   state.macroRepresentative = resolveMacroRepresentative(nodes)
@@ -1675,7 +1687,9 @@ const zoomCapByHubDistance = (distance) => {
 
 const currentZoomMax = () => {
   const nodeCount = state.visibleNodes.length > 0 ? state.visibleNodes.length : state.nodes.length
-  const hubDistanceCap = zoomCapByHubDistance(state.hubNeighborDistance)
+  const hubDistanceCap = isDominantHub(state.primaryHub, nodeCount)
+    ? zoomCapByHubDistance(state.hubNeighborDistance)
+    : zoomRange.max
   const minimumUsefulCap = nodeCount > massiveGraphNodeThreshold ? 1.9 : nodeCount > largeGraphNodeThreshold ? 1.35 : 0.8
   const capped = Math.min(zoomCapByNodeCount(nodeCount), Math.max(minimumUsefulCap, hubDistanceCap))
   return Math.max(zoomRange.min * 2, capped)
@@ -1776,7 +1790,7 @@ const fitView = (options = { useFiltered: true, macro: false, preferHubCenter: t
       ? clampScale(Math.min(baselineScale, massiveAutoFitMacroScale))
       : baselineScale
   const hubCenter =
-    options.preferHubCenter && state.primaryHub && nodes.some((node) => node.id === state.primaryHub.id)
+    options.preferHubCenter && isDominantHub(state.primaryHub, nodes.length) && nodes.some((node) => node.id === state.primaryHub.id)
       ? state.primaryHub
       : null
   const centerX = hubCenter ? hubCenter.x : (bounds.minX + bounds.maxX) / 2
@@ -2735,27 +2749,8 @@ const selectNodeById = id => {
 }
 
 const zoomAtPoint = (screenX, screenY, factor, source = 'generic') => {
-  const resolveZoomFactor = () => {
-    if (state.nodes.length <= massiveGraphNodeThreshold) {
-      return factor
-    }
-
-    const scale = state.transform.scale
-    if (factor > 1) {
-      if (scale < 0.006) return Math.max(factor, 1.48)
-      if (scale < 0.02) return Math.max(factor, 1.34)
-      if (scale < 0.08) return Math.max(factor, 1.22)
-      return factor
-    }
-
-    if (scale < 0.006) return Math.min(factor, 0.68)
-    if (scale < 0.02) return Math.min(factor, 0.78)
-    if (scale < 0.08) return Math.min(factor, 0.86)
-    return factor
-  }
-
   state.lastManualZoomAt = performance.now()
-  const effectiveFactor = resolveZoomFactor()
+  const effectiveFactor = factor
   const nextScale = clampScale(state.transform.scale * effectiveFactor)
   if (nextScale === state.transform.scale) {
     return

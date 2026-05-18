@@ -600,6 +600,7 @@ The graph UI shows:
 - graph rendering safeguards (batched canvas drawing across graph sizes, edge draw caps, lower redraw rate, zoom-aware interaction)
 - WebGL node and edge acceleration when supported, falling back to Canvas 2D without changing graph behavior
 - compact macro-to-micro density progression so reset keeps the graph mass oriented and zoom-in separates local neighborhoods progressively
+- graph camera treats hub-centered navigation as structural only when the hub is dominant; diffuse stress graphs reset and zoom around the full graph mass
 - massive-graph LOD progression: very low zoom uses spatial overview sampling plus hub-neighborhood edge previews to preserve whole-vault shape and orientation, then progressively raises the focused node budget as zoom increases so dense local areas keep nearby notes and links visible
 
 The server indexes before starting by default. Use `--no-index` to skip that step:
