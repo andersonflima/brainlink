@@ -13,5 +13,7 @@ describe('graph client rendering policy', () => {
     expect(clientScript).toContain('const drawNodeBatch = (nodes) =>')
     expect(clientScript).toContain('const regularEdgeBatchKey = (edge) =>')
     expect(clientScript).not.toContain('if (state.nodes.length <= largeGraphNodeThreshold) {\\n    state.renderNodes.forEach(node => drawSingleNode(node))')
+    expect(clientScript).toContain('if (nodeCount > 50000) return 0.26')
+    expect(clientScript).toContain('if (nodeCount > 50000) return 5.4')
   })
 })
