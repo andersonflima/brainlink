@@ -83,6 +83,7 @@ Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/c
 - Realtime graph UI with agent selector and colored knowledge groups.
 - Graph renderer optimized for large datasets with viewport-driven node culling and edge lookup by visible nodes.
 - Large graph layout API automatically uses compact payload encoding with link-coverage-aware edge selection to reduce initial client load without hiding major relationships.
+- Large-segment layout spacing now grows logarithmically to keep initial visual density consistent between medium and very large vaults (for example, ~1k vs ~50k notes).
 - Zoomed-out graph LOD now clusters dense regions and progressively expands nodes as zoom increases.
 - Graph reset starts in macro "galaxy" overview mode and progressively reveals nearby nodes as zoom increases, including smaller vaults.
 - Graph filtering runs in a dedicated browser worker to keep the UI thread responsive during heavy datasets.

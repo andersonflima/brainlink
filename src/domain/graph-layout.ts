@@ -245,6 +245,12 @@ const groupNodesBySegment = (
 const segmentAngle = (segment: string, index: number, count: number): number =>
   segmentAngles[segment] ?? (Math.PI * 2 * index) / Math.max(count, 1) - Math.PI / 2
 
+const petalSpreadForSegmentSize = (size: number): number => {
+  const safeSize = Math.max(size, 1)
+
+  return 180 + Math.log2(safeSize + 1) * 6
+}
+
 const createSegmentNodes = (
   segments: ReadonlyMap<string, string>,
   degrees: ReadonlyMap<string, number>,
@@ -255,7 +261,7 @@ const createSegmentNodes = (
   const baseRadius = segmentCount === 1 ? 0 : 340 + Math.min(sortedNodes.length, 22) * 10
   const centerX = Math.cos(angle) * baseRadius
   const centerY = Math.sin(angle) * (baseRadius * 0.78)
-  const petalSpread = 40 + Math.sqrt(sortedNodes.length) * 14
+  const petalSpread = petalSpreadForSegmentSize(sortedNodes.length)
 
   return sortedNodes.map((node, index) => {
     const localAngle = index * 2.399963 + jitter(node.title, 0.42)
