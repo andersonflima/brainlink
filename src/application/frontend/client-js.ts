@@ -1797,8 +1797,17 @@ const computeRenderVisibility = () => {
       selectAccessBridgeNodes(sourceWithCarry, bridgeLimit),
       Math.min(renderNodeBudget, sampleLimit + bridgeLimit)
     )
-    const sampled = selectStableSampleNodes(
+    const sampledRaw = selectStableSampleNodes(
       bridgedNodes,
+      Math.min(sampleLimit, renderNodeBudget)
+    )
+    const continuityBudget = Math.max(24, Math.min(sampleLimit - 8, Math.floor(sampleLimit * 0.42)))
+    const previousVisibleNodes = (state.renderNodes ?? [])
+      .filter((node) => sourceWithCarry.some((candidate) => candidate.id === node.id))
+    const continuityNodes = selectStableSampleNodes(previousVisibleNodes, continuityBudget)
+    const sampled = mergeUniqueNodes(
+      continuityNodes,
+      sampledRaw,
       Math.min(sampleLimit, renderNodeBudget)
     )
     const sampledIds = new Set(sampled.map((node) => node.id))
