@@ -22,8 +22,12 @@ const worldCoordinateLimit = 5_000_000
 const transformCoordinateLimit = 20_000_000
 const hoverHitTestIntervalMs = 64
 const ecosystemGroupSize = 1000
+const ecosystemGroupSizes = [1000, 250, 60]
 const ecosystemClusterEdgeLimit = 520
-const ecosystemClusterScaleThreshold = 0.08
+const ecosystemClusterScaleThreshold = 0.32
+const ecosystemSubgraphScaleThreshold = 0.18
+const ecosystemMicroScaleThreshold = 0.08
+const ecosystemFocusedParentLimit = 3
 const zoomRecoveryGuardMs = 4200
 const zoomCapTargetViewportShare = 0.72
 const meshEdgeScaleThreshold = 0.09
@@ -68,7 +72,7 @@ const state = {
   visibleNodeSpatial: { cellSize: 220, minX: 0, minY: 0, maxX: 0, maxY: 0, buckets: new Map() },
   visibleEdgeByNode: new Map(),
   ecosystemClusters: [],
-  ecosystemEdges: [],
+  ecosystemClustersBySize: new Map(),
   macroCenter: { x: 0, y: 0 },
   macroRepresentative: null,
   primaryHub: null,
@@ -566,10 +570,10 @@ const recomputeVisibility = () => {
   state.visibleNodeSpatial = createSpatialIndex(nodes)
   state.visibleEdgeByNode = createVisibleEdgeLookup(limitedEdges)
   const ecosystemGraph = nodes.length > 1
-    ? buildEcosystemGraph(nodes, limitedEdges)
-    : { clusters: [], edges: [] }
+    ? buildEcosystemGraph(nodes)
+    : { clusters: [], clustersBySize: new Map() }
   state.ecosystemClusters = ecosystemGraph.clusters
-  state.ecosystemEdges = ecosystemGraph.edges
+  state.ecosystemClustersBySize = ecosystemGraph.clustersBySize
   const primaryHub = rankedHubNodes()[0] ?? null
   state.primaryHub = primaryHub
   state.hubNeighborDistance = nearestHubNeighborDistance(primaryHub, nodes)
@@ -738,32 +742,138 @@ const buildEcosystemCluster = (nodes, index) => {
     x: sum.x / count,
     y: sum.y / count,
     count,
+    nodeIds: nodes.map(node => node.id),
     representative,
     label: ecosystemKeyForNode(nodes[0] ?? representative ?? { path: '' })
   }
 }
 
-const buildEcosystemGraph = (nodes, edges) => {
-  if (nodes.length === 0) {
-    return { clusters: [], edges: [] }
-  }
-
-  const sortedNodes = [...nodes].sort(compareNodesForEcosystem)
+const buildEcosystemLevel = (sortedNodes, size, parentLookup) => {
   const clusters = []
   const clusterByNodeId = new Map()
 
-  for (let offset = 0; offset < sortedNodes.length; offset += ecosystemGroupSize) {
-    const clusterNodes = sortedNodes.slice(offset, offset + ecosystemGroupSize)
-    const cluster = buildEcosystemCluster(clusterNodes, clusters.length)
+  for (let offset = 0; offset < sortedNodes.length; offset += size) {
+    const clusterNodes = sortedNodes.slice(offset, offset + size)
+    const parentCluster = parentLookup?.get(clusterNodes[0]?.id)
+    const cluster = {
+      ...buildEcosystemCluster(clusterNodes, clusters.length),
+      id: 'ecosystem-' + size + '-' + clusters.length,
+      size,
+      parentId: parentCluster?.id ?? null
+    }
     clusters.push(cluster)
     for (let index = 0; index < clusterNodes.length; index += 1) {
       clusterByNodeId.set(clusterNodes[index].id, cluster)
     }
   }
 
+  return { clusters, clusterByNodeId }
+}
+
+const buildEcosystemGraph = (nodes) => {
+  if (nodes.length === 0) {
+    return { clusters: [], clustersBySize: new Map() }
+  }
+
+  const sortedNodes = [...nodes].sort(compareNodesForEcosystem)
+  const clustersBySize = new Map()
+  let parentLookup = null
+
+  for (let index = 0; index < ecosystemGroupSizes.length; index += 1) {
+    const size = ecosystemGroupSizes[index]
+    const level = buildEcosystemLevel(sortedNodes, size, parentLookup)
+    clustersBySize.set(size, level.clusters)
+    parentLookup = level.clusterByNodeId
+  }
+
+  return {
+    clusters: clustersBySize.get(ecosystemGroupSize) ?? [],
+    clustersBySize
+  }
+}
+
+const isClusterInViewport = (cluster, viewport) =>
+  cluster.x >= viewport.minX &&
+  cluster.x <= viewport.maxX &&
+  cluster.y >= viewport.minY &&
+  cluster.y <= viewport.maxY
+
+const filterEcosystemClustersByViewport = (clusters, viewport) => {
+  const visible = clusters.filter(cluster => isClusterInViewport(cluster, viewport))
+  return visible.length > 0 ? visible : [...clusters]
+}
+
+const ecosystemFocusPoint = () => {
+  const now = performance.now()
+  if (now - state.lastZoomFocus.at <= 1800) {
+    return { x: state.lastZoomFocus.x, y: state.lastZoomFocus.y }
+  }
+  return viewportCenterWorldPoint()
+}
+
+const nearestEcosystemParentIds = (clusters, focusPoint, limit) =>
+  clusters
+    .map(cluster => ({
+      cluster,
+      distance: Math.hypot(cluster.x - focusPoint.x, cluster.y - focusPoint.y)
+    }))
+    .sort((left, right) => left.distance - right.distance)
+    .slice(0, limit)
+    .map(item => item.cluster.id)
+
+const ecosystemPlanForScale = scale => {
+  if (scale <= ecosystemMicroScaleThreshold) {
+    return { baseSize: 1000, childSize: null }
+  }
+  if (scale <= ecosystemSubgraphScaleThreshold) {
+    return { baseSize: 1000, childSize: 250 }
+  }
+  return { baseSize: 250, childSize: 60 }
+}
+
+const selectHierarchicalEcosystemClusters = viewport => {
+  const plan = ecosystemPlanForScale(state.transform.scale)
+  const baseClusters = state.ecosystemClustersBySize.get(plan.baseSize) ?? state.ecosystemClusters
+  const visibleBaseClusters = filterEcosystemClustersByViewport(baseClusters, viewport)
+
+  if (!plan.childSize) {
+    return visibleBaseClusters
+  }
+
+  const focusPoint = ecosystemFocusPoint()
+  const expandedParentIds = new Set(nearestEcosystemParentIds(
+    visibleBaseClusters,
+    focusPoint,
+    ecosystemFocusedParentLimit
+  ))
+  const childClusters = state.ecosystemClustersBySize.get(plan.childSize) ?? []
+  const visibleChildClusters = childClusters.filter(cluster =>
+    expandedParentIds.has(cluster.parentId) &&
+    isClusterInViewport(cluster, viewport)
+  )
+
+  if (visibleChildClusters.length === 0) {
+    return visibleBaseClusters
+  }
+
+  return [
+    ...visibleBaseClusters.filter(cluster => !expandedParentIds.has(cluster.id)),
+    ...visibleChildClusters
+  ]
+}
+
+const ecosystemEdgesForClusters = clusters => {
+  const clusterByNodeId = new Map()
+  for (let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex += 1) {
+    const cluster = clusters[clusterIndex]
+    for (let nodeIndex = 0; nodeIndex < cluster.nodeIds.length; nodeIndex += 1) {
+      clusterByNodeId.set(cluster.nodeIds[nodeIndex], cluster)
+    }
+  }
+
   const edgeByClusterPair = new Map()
-  for (let index = 0; index < edges.length; index += 1) {
-    const edge = edges[index]
+  for (let index = 0; index < state.visibleEdges.length; index += 1) {
+    const edge = state.visibleEdges[index]
     const sourceCluster = clusterByNodeId.get(edge.source)
     const targetCluster = clusterByNodeId.get(edge.target)
     if (!sourceCluster || !targetCluster || sourceCluster.id === targetCluster.id) {
@@ -788,27 +898,9 @@ const buildEcosystemGraph = (nodes, edges) => {
     })
   }
 
-  const aggregatedEdges = Array.from(edgeByClusterPair.values())
+  return Array.from(edgeByClusterPair.values())
     .sort((left, right) => right.weight - left.weight)
     .slice(0, ecosystemClusterEdgeLimit)
-
-  return { clusters, edges: aggregatedEdges }
-}
-
-const filterEcosystemClustersByViewport = viewport =>
-  state.ecosystemClusters.filter((cluster) =>
-    cluster.x >= viewport.minX &&
-    cluster.x <= viewport.maxX &&
-    cluster.y >= viewport.minY &&
-    cluster.y <= viewport.maxY
-  )
-
-const ecosystemEdgesForClusters = clusters => {
-  const clusterIds = new Set(clusters.map(cluster => cluster.id))
-  return state.ecosystemEdges.filter(edge =>
-    clusterIds.has(edge.sourceCluster.id) &&
-    clusterIds.has(edge.targetCluster.id)
-  )
 }
 
 const edgeBudgetForCurrentFrame = () => {
@@ -2407,11 +2499,8 @@ const computeRenderVisibility = () => {
   }
 
   if (state.transform.scale <= ecosystemClusterScaleThreshold && state.ecosystemClusters.length > 0) {
-    const viewportClusters = filterEcosystemClustersByViewport(viewport)
+    const clusters = selectHierarchicalEcosystemClusters(viewport)
       .sort((left, right) => right.count - left.count)
-    const clusters = viewportClusters.length > 0
-      ? viewportClusters
-      : state.ecosystemClusters
     state.renderClusters = clusters
     state.renderClusterEdges = ecosystemEdgesForClusters(clusters)
     state.renderNodes = []

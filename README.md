@@ -84,11 +84,11 @@ Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/c
 - Graph renderer optimized for large datasets with viewport-driven node culling and edge lookup by visible nodes.
 - Canvas graph rendering uses the same batched node and edge pipeline for every graph size, reducing per-frame draw calls while keeping selected and hovered items highlighted.
 - WebGL acceleration is used when available for dense node and edge drawing, with Canvas 2D preserved as the interaction and fallback layer.
-- Graph zoom-out renders connected ecosystem clusters of up to 1000 notes before expanding into individual notes, keeping vaults visually oriented with a smaller render scope.
+- Graph zoom-out renders hierarchical ecosystem subgraphs: macro clusters of up to 1000 notes expand near the user's focus into smaller graph meshes before individual notes are rendered.
 - Large graph layout API automatically uses compact payload encoding with link-coverage-aware edge selection to reduce initial client load without hiding major relationships.
 - Large-segment layout spacing now grows logarithmically to keep initial visual density consistent between medium and very large vaults (for example, ~1k vs ~50k notes).
 - Graph coordinates are visually compacted across graph sizes so reset starts from a stable macro mass and zoom-in progressively expands toward local detail.
-- Zoomed-out graph LOD clusters dense regions and progressively expands the focused viewport as zoom increases, including very large vaults.
+- Zoomed-out graph LOD renders nested subgraphs and progressively expands only the focused cluster as zoom increases, including very large vaults.
 - Graph reset starts in macro "galaxy" overview mode and progressively reveals nearby nodes as zoom increases, including smaller vaults.
 - Graph filtering runs in a dedicated browser worker to keep the UI thread responsive during heavy datasets.
 - Edge rendering budgets adapt to zoom level to prevent frame spikes on large graph panoramas.
@@ -602,7 +602,7 @@ The graph UI shows:
 - WebGL node and edge acceleration when supported, falling back to Canvas 2D without changing graph behavior
 - compact macro-to-micro density progression so reset keeps the graph mass oriented and zoom-in separates local neighborhoods progressively
 - graph camera treats hub-centered navigation as structural only when the hub is dominant; diffuse stress graphs reset and zoom around the full graph mass
-- graph LOD progression: very low zoom uses connected ecosystem clusters of up to 1000 notes with aggregated real links, then progressively raises the focused node budget as zoom increases so dense local areas keep nearby notes and links visible
+- graph LOD progression: very low zoom uses connected ecosystem clusters of up to 1000 notes, zoom-in expands only focused clusters into 250-note and 60-note subgraphs with aggregated real links, then progressively raises the focused node budget so local areas keep nearby notes and links visible
 
 The server indexes before starting by default. Use `--no-index` to skip that step:
 
