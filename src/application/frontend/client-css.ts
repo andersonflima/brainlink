@@ -77,14 +77,31 @@ select {
   font-size: 18px;
 }
 
-#graph {
-  display: block;
+.graph-stage {
+  position: relative;
   width: 100%;
   height: 100%;
   background:
     radial-gradient(circle at 18% 20%, rgba(53, 208, 162, 0.12), transparent 28rem),
     linear-gradient(135deg, #0d0f12 0%, #12161c 55%, #0a0d10 100%);
+  overflow: hidden;
+}
+
+#graph,
+#graphGl {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#graph {
   cursor: grab;
+}
+
+#graphGl {
+  pointer-events: none;
 }
 
 #graph:active {

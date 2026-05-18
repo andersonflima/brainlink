@@ -43,7 +43,10 @@ export const createClientHtml = (): string => `<!doctype html>
             </div>
           </div>
         </header>
-        <canvas id="graph" aria-label="Brainlink knowledge graph"></canvas>
+        <div class="graph-stage">
+          <canvas id="graphGl" aria-hidden="true"></canvas>
+          <canvas id="graph" aria-label="Brainlink knowledge graph"></canvas>
+        </div>
       </section>
     </main>
     <footer class="app-footer" aria-label="Copyright notice">
