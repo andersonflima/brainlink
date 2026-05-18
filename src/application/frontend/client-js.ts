@@ -64,7 +64,8 @@ const state = {
   filterWorker: null,
   filterReady: false,
   lastHoverHitAt: 0,
-  lastManualZoomAt: 0
+  lastManualZoomAt: 0,
+  lastZoomFocus: { x: 0, y: 0, at: 0 }
 }
 
 const byId = id => document.getElementById(id)
@@ -653,17 +654,11 @@ const selectLayeredNodesForScale = (sourceNodes, targetCount) => {
   return merged.length > 0 ? merged : sourceNodes
 }
 
-const cursorWorldPoint = () => {
-  if (!state.cursor.inCanvas) {
-    return null
-  }
-
-  const rect = canvas.getBoundingClientRect()
-  const screenX = state.cursor.x - rect.left
-  const screenY = state.cursor.y - rect.top
+const viewportCenterWorldPoint = () => {
+  const viewport = worldViewportBounds()
   return {
-    x: (screenX - state.transform.x) / state.transform.scale,
-    y: (screenY - state.transform.y) / state.transform.scale
+    x: (viewport.minX + viewport.maxX) / 2,
+    y: (viewport.minY + viewport.maxY) / 2
   }
 }
 
@@ -694,8 +689,12 @@ const selectAccessBridgeNodes = (sourceNodes, limit) => {
     return []
   }
 
-  const cursor = cursorWorldPoint()
-  const anchor = cursor ?? state.primaryHub ?? state.macroCenter ?? { x: 0, y: 0 }
+  const now = performance.now()
+  const recentZoomFocus =
+    now - state.lastZoomFocus.at <= 1200
+      ? { x: state.lastZoomFocus.x, y: state.lastZoomFocus.y }
+      : null
+  const anchor = recentZoomFocus ?? viewportCenterWorldPoint()
   return [...sourceNodes]
     .sort((left, right) => {
       const leftDistance = Math.hypot(left.x - anchor.x, left.y - anchor.y)
@@ -1239,9 +1238,17 @@ const focusPrimaryHub = () => {
   markRenderDirty()
 }
 
+const layoutDensityScaleForNodeCount = (nodeCount) => {
+  if (nodeCount > 50000) return 0.56
+  if (nodeCount > 20000) return 0.64
+  if (nodeCount > 6000) return 0.76
+  return 1
+}
+
 const createLayout = graph => {
   const nodeRows = Array.isArray(graph.nodes) ? graph.nodes : []
   const edgeRows = Array.isArray(graph.edges) ? graph.edges : []
+  const densityScale = layoutDensityScaleForNodeCount(nodeRows.length)
   const nodes = nodeRows.map(node => {
     if (Array.isArray(node)) {
       const [id, title, x, y, group, segment] = node
@@ -1252,8 +1259,8 @@ const createLayout = graph => {
         tags: [],
         group: typeof group === 'string' ? group : 'root',
         segment: typeof segment === 'string' ? segment : 'root',
-        x: Number.isFinite(x) ? x : 0,
-        y: Number.isFinite(y) ? y : 0,
+        x: Number.isFinite(x) ? x * densityScale : 0,
+        y: Number.isFinite(y) ? y * densityScale : 0,
         vx: 0,
         vy: 0
       }
@@ -1263,8 +1270,8 @@ const createLayout = graph => {
       ...node,
       path: typeof node.path === 'string' ? node.path : '',
       tags: Array.isArray(node.tags) ? node.tags : [],
-      x: Number.isFinite(node.x) ? node.x : 0,
-      y: Number.isFinite(node.y) ? node.y : 0,
+      x: Number.isFinite(node.x) ? node.x * densityScale : 0,
+      y: Number.isFinite(node.y) ? node.y * densityScale : 0,
       vx: Number.isFinite(node.vx) ? node.vx : 0,
       vy: Number.isFinite(node.vy) ? node.vy : 0
     }
@@ -2106,6 +2113,11 @@ const zoomAtPoint = (screenX, screenY, factor, source = 'generic') => {
   }
   const worldX = (screenX - state.transform.x) / state.transform.scale
   const worldY = (screenY - state.transform.y) / state.transform.scale
+  state.lastZoomFocus = {
+    x: worldX,
+    y: worldY,
+    at: performance.now()
+  }
   state.transform.scale = clampScale(nextScale)
   state.transform.x = clampTransformCoordinate(screenX - worldX * nextScale)
   state.transform.y = clampTransformCoordinate(screenY - worldY * nextScale)
