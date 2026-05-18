@@ -17,5 +17,7 @@ describe('graph client rendering policy', () => {
     expect(clientScript).toContain('if (nodeCount > 50000) return 5.4')
     expect(clientScript).toContain("const webGlRenderer = createWebGlRenderer(glCanvas)")
     expect(clientScript).toContain('const drawAcceleratedGraph = (width, height, drawEdges) =>')
+    expect(clientScript).toContain('const isDominantHub = (hub, nodeCount = state.visibleNodes.length) =>')
+    expect(clientScript).not.toContain('if (scale < 0.006) return Math.max(factor, 1.48)')
   })
 })
