@@ -580,10 +580,10 @@ const nodeBudgetForScale = (scale) => {
 }
 
 const massiveLowZoomNodeBudgetForScale = (scale) => {
-  if (scale < 0.004) return 560
-  if (scale < 0.01) return 660
-  if (scale < 0.02) return 760
-  if (scale < 0.035) return 860
+  if (scale < 0.004) return 780
+  if (scale < 0.01) return 860
+  if (scale < 0.02) return 900
+  if (scale < 0.035) return 900
   return renderNodeBudget
 }
 
@@ -1127,6 +1127,7 @@ const includeHubPreviewNeighborhood = (nodes, limit) => {
   const maxNodes = Math.max(1, Math.min(renderNodeBudget, limit))
   const merged = [...nodes]
   const ids = new Set(merged.map((node) => node.id))
+  const protectedIds = new Set()
 
   if (!ids.has(hub.id)) {
     if (merged.length < maxNodes) {
@@ -1141,6 +1142,7 @@ const includeHubPreviewNeighborhood = (nodes, limit) => {
       }
     }
   }
+  protectedIds.add(hub.id)
 
   const hubEdges = [...(state.visibleEdgeByNode.get(hub.id) ?? [])]
     .filter((edge) => edge.target && (edge.source === hub.id || edge.target === hub.id))
@@ -1169,8 +1171,31 @@ const includeHubPreviewNeighborhood = (nodes, limit) => {
       continue
     }
 
-    ids.add(otherId)
-    merged.push(otherNode)
+    if (merged.length < maxNodes) {
+      ids.add(otherId)
+      merged.push(otherNode)
+      protectedIds.add(otherId)
+      continue
+    }
+
+    const replaceIndex = (() => {
+      for (let cursor = merged.length - 1; cursor >= 0; cursor -= 1) {
+        const candidateId = merged[cursor]?.id
+        if (candidateId && !protectedIds.has(candidateId)) {
+          return cursor
+        }
+      }
+      return -1
+    })()
+    if (replaceIndex >= 0) {
+      const replacedId = merged[replaceIndex]?.id
+      if (replacedId) {
+        ids.delete(replacedId)
+      }
+      merged[replaceIndex] = otherNode
+      ids.add(otherId)
+      protectedIds.add(otherId)
+    }
   }
 
   return merged
@@ -1291,7 +1316,7 @@ const autoFitScaleRangeByNodeCount = nodeCount => {
   if (nodeCount <= 600) return { min: 0.12, max: 0.72 }
   if (nodeCount <= 2000) return { min: 0.08, max: 0.52 }
   if (nodeCount <= 6000) return { min: 0.06, max: 0.32 }
-  return { min: 0.0008, max: 0.24 }
+  return { min: 0.0012, max: 0.24 }
 }
 
 const fitView = (options = { useFiltered: true, macro: false, preferHubCenter: true }) => {
@@ -1901,7 +1926,7 @@ const computeRenderVisibility = () => {
         )
         const anchoredNodes = includeHubPreviewNeighborhood(
           overviewNodes,
-          Math.min(renderNodeBudget, overviewLimit + 220)
+          Math.min(renderNodeBudget, overviewLimit)
         )
         const enriched = enrichSampleWithNeighbors(anchoredNodes)
         const previewNodes = ensureHubNodesInRenderedSet(enriched.nodes)
@@ -2118,13 +2143,7 @@ const render = now => {
   }
   const minimumEdgeScale =
     state.nodes.length > massiveGraphNodeThreshold
-      ? state.renderNodes.length > 1100
-        ? 0.06
-        : state.renderNodes.length > 700
-          ? 0.022
-          : state.renderNodes.length > 380
-            ? 0.009
-            : 0.0035
+      ? 0
       : state.renderNodes.length > 1300
         ? 0.12
         : state.renderNodes.length > 900
@@ -2314,8 +2333,28 @@ const selectNodeById = id => {
 }
 
 const zoomAtPoint = (screenX, screenY, factor, source = 'generic') => {
+  const resolveZoomFactor = () => {
+    if (state.nodes.length <= massiveGraphNodeThreshold) {
+      return factor
+    }
+
+    const scale = state.transform.scale
+    if (factor > 1) {
+      if (scale < 0.006) return Math.max(factor, 1.48)
+      if (scale < 0.02) return Math.max(factor, 1.34)
+      if (scale < 0.08) return Math.max(factor, 1.22)
+      return factor
+    }
+
+    if (scale < 0.006) return Math.min(factor, 0.68)
+    if (scale < 0.02) return Math.min(factor, 0.78)
+    if (scale < 0.08) return Math.min(factor, 0.86)
+    return factor
+  }
+
   state.lastManualZoomAt = performance.now()
-  const nextScale = clampScale(state.transform.scale * factor)
+  const effectiveFactor = resolveZoomFactor()
+  const nextScale = clampScale(state.transform.scale * effectiveFactor)
   if (nextScale === state.transform.scale) {
     return
   }
@@ -2392,11 +2431,11 @@ const bindEvents = () => {
   })
   elements.zoomIn.addEventListener('click', () => {
     const rect = canvas.getBoundingClientRect()
-    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.14)
+    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 1.14, 'button')
   })
   elements.zoomOut.addEventListener('click', () => {
     const rect = canvas.getBoundingClientRect()
-    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.88)
+    zoomAtPoint(Math.max(rect.width, 320) / 2, Math.max(rect.height, 320) / 2, 0.88, 'button')
   })
   if (elements.fit) {
     elements.fit.addEventListener('click', () => {
