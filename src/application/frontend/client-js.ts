@@ -4,6 +4,7 @@ const largeGraphNodeThreshold = 4000
 const massiveGraphNodeThreshold = 20000
 const largeGraphEdgeRenderLimit = 120000
 const renderNodeBudget = 900
+const zoomedMassiveRenderNodeBudget = 2200
 const renderEdgeBudget = 2400
 const clusterActivationNodeThreshold = 600
 const clusterZoomThreshold = 0.18
@@ -576,6 +577,13 @@ const nodeBudgetForScale = (scale) => {
   if (scale < 0.06) return 360
   if (scale < 0.09) return 520
   if (scale < 0.14) return 720
+  if (state.visibleNodes.length > massiveGraphNodeThreshold) {
+    if (scale < 0.28) return renderNodeBudget
+    if (scale < 0.45) return 1100
+    if (scale < 0.7) return 1400
+    if (scale < 1.05) return 1800
+    return zoomedMassiveRenderNodeBudget
+  }
   return renderNodeBudget
 }
 
@@ -739,16 +747,22 @@ const selectStableSampleNodes = (sourceNodes, limit) => {
       : null
   const anchor = recentZoomFocus ?? viewportCenterWorldPoint()
   const previousIds = new Set(state.renderNodes.map((node) => node.id))
+  const preferAnchorDistance = state.visibleNodes.length > massiveGraphNodeThreshold && state.transform.scale >= 0.28
 
   return [...sourceNodes]
     .sort((left, right) => {
       const leftWasVisible = previousIds.has(left.id) ? 1 : 0
       const rightWasVisible = previousIds.has(right.id) ? 1 : 0
-      if (leftWasVisible !== rightWasVisible) return rightWasVisible - leftWasVisible
-
       const leftDistance = Math.hypot(left.x - anchor.x, left.y - anchor.y)
       const rightDistance = Math.hypot(right.x - anchor.x, right.y - anchor.y)
-      if (leftDistance !== rightDistance) return leftDistance - rightDistance
+
+      if (preferAnchorDistance) {
+        if (leftDistance !== rightDistance) return leftDistance - rightDistance
+        if (leftWasVisible !== rightWasVisible) return rightWasVisible - leftWasVisible
+      } else {
+        if (leftWasVisible !== rightWasVisible) return rightWasVisible - leftWasVisible
+        if (leftDistance !== rightDistance) return leftDistance - rightDistance
+      }
 
       const leftDegree = state.nodeDegrees.get(left.id) ?? 0
       const rightDegree = state.nodeDegrees.get(right.id) ?? 0
@@ -1942,7 +1956,7 @@ const computeRenderVisibility = () => {
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
     const carryMargin = Math.max(240, Math.min(1200, 340 / Math.max(state.transform.scale, 0.0001)))
     const carryViewport = expandViewportBounds(viewport, carryMargin)
-    const carryOverLimit = Math.max(180, Math.min(900, sampleLimit))
+    const carryOverLimit = Math.max(180, Math.min(sampleLimit, Math.floor(sampleLimit * 0.5)))
     const carryOverNodes = (state.renderNodes ?? [])
       .filter((node) => isNodeInViewport(node, carryViewport))
       .slice(0, carryOverLimit)
@@ -1951,18 +1965,19 @@ const computeRenderVisibility = () => {
       carryOverNodes,
       Math.max(sampleLimit * 7, carryOverLimit)
     )
+    const sourceWithCarryIds = new Set(sourceWithCarry.map((node) => node.id))
     const sampledRaw = selectStableSampleNodes(
       sourceWithCarry,
-      Math.min(sampleLimit, renderNodeBudget)
+      sampleLimit
     )
     const continuityBudget = Math.max(24, Math.min(sampleLimit - 8, Math.floor(sampleLimit * 0.42)))
     const previousVisibleNodes = (state.renderNodes ?? [])
-      .filter((node) => sourceWithCarry.some((candidate) => candidate.id === node.id))
+      .filter((node) => sourceWithCarryIds.has(node.id))
     const continuityNodes = selectStableSampleNodes(previousVisibleNodes, continuityBudget)
     const sampled = mergeUniqueNodes(
       continuityNodes,
       sampledRaw,
-      Math.min(sampleLimit, renderNodeBudget)
+      sampleLimit
     )
     let sampledNodes = ensureHubNodesInRenderedSet(sampled)
     if (state.transform.scale < 0.035) {
