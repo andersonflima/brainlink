@@ -579,6 +579,14 @@ const nodeBudgetForScale = (scale) => {
   return renderNodeBudget
 }
 
+const massiveLowZoomNodeBudgetForScale = (scale) => {
+  if (scale < 0.004) return 560
+  if (scale < 0.01) return 660
+  if (scale < 0.02) return 760
+  if (scale < 0.035) return 860
+  return renderNodeBudget
+}
+
 const layerFocusForScale = (scale) => {
   const normalized = Math.max(0, Math.min(1, (scale - 0.06) / 0.94))
   const shellCenter = Math.max(0.08, 0.96 - normalized * 0.86)
@@ -1882,16 +1890,26 @@ const computeRenderVisibility = () => {
   if (state.visibleNodes.length > massiveGraphNodeThreshold) {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
     if (state.transform.scale <= massiveOverviewClusterScaleThreshold) {
+      const overviewLimit = Math.min(renderNodeBudget, massiveLowZoomNodeBudgetForScale(state.transform.scale))
       const overviewClusters = filterOverviewClustersByViewport(viewport)
         .sort((left, right) => right.count - left.count)
-        .slice(0, Math.min(renderNodeBudget, clusterBudgetForScale(state.transform.scale)))
+        .slice(0, overviewLimit)
       if (overviewClusters.length > 0) {
-        state.renderClusters = []
-        state.renderNodes = representativeNodesFromClusters(
+        const overviewNodes = representativeNodesFromClusters(
           overviewClusters,
-          Math.min(renderNodeBudget, clusterBudgetForScale(state.transform.scale))
+          overviewLimit
         )
-        state.renderEdges = []
+        const anchoredNodes = includeHubPreviewNeighborhood(
+          overviewNodes,
+          Math.min(renderNodeBudget, overviewLimit + 220)
+        )
+        const enriched = enrichSampleWithNeighbors(anchoredNodes)
+        const previewNodes = ensureHubNodesInRenderedSet(enriched.nodes)
+        const previewIds = new Set(previewNodes.map((node) => node.id))
+        const previewEdges = collectVisibleEdgesForNodes(previewIds)
+        state.renderClusters = []
+        state.renderNodes = previewNodes
+        state.renderEdges = previewEdges
         return
       }
     }
@@ -2099,13 +2117,21 @@ const render = now => {
     state.offscreenFrameCount = 0
   }
   const minimumEdgeScale =
-    state.renderNodes.length > 1300
-      ? 0.12
-      : state.renderNodes.length > 900
-        ? 0.085
-        : state.renderNodes.length > 500
-          ? 0.05
-          : 0
+    state.nodes.length > massiveGraphNodeThreshold
+      ? state.renderNodes.length > 1100
+        ? 0.06
+        : state.renderNodes.length > 700
+          ? 0.022
+          : state.renderNodes.length > 380
+            ? 0.009
+            : 0.0035
+      : state.renderNodes.length > 1300
+        ? 0.12
+        : state.renderNodes.length > 900
+          ? 0.085
+          : state.renderNodes.length > 500
+            ? 0.05
+            : 0
   const drawEdges =
     state.renderClusters.length === 0 &&
     state.transform.scale >= minimumEdgeScale
