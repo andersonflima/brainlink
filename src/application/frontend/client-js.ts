@@ -21,14 +21,15 @@ const viewportPaddingPx = 280
 const worldCoordinateLimit = 5_000_000
 const transformCoordinateLimit = 20_000_000
 const hoverHitTestIntervalMs = 64
-const overviewClusterMaxCount = 1400
+const ecosystemGroupSize = 1000
+const ecosystemClusterEdgeLimit = 520
+const ecosystemClusterScaleThreshold = 0.08
 const zoomRecoveryGuardMs = 4200
 const zoomCapTargetViewportShare = 0.72
 const meshEdgeScaleThreshold = 0.09
 const meshEdgeMinBudget = 140
 const meshEdgeMaxBudget = 1400
 const layeredCoreScaleThreshold = 0.55
-const massiveOverviewClusterScaleThreshold = 0.035
 const dragNeighborhoodMaxAffected = 180
 const dragSettleRounds = 3
 const wheelZoomExponent = 0.0018
@@ -44,6 +45,7 @@ const state = {
   renderNodes: [],
   renderEdges: [],
   renderClusters: [],
+  renderClusterEdges: [],
   nodeDegrees: new Map(),
   selected: null,
   hovered: null,
@@ -65,7 +67,8 @@ const state = {
   lastViewportKey: '',
   visibleNodeSpatial: { cellSize: 220, minX: 0, minY: 0, maxX: 0, maxY: 0, buckets: new Map() },
   visibleEdgeByNode: new Map(),
-  overviewClusters: [],
+  ecosystemClusters: [],
+  ecosystemEdges: [],
   macroCenter: { x: 0, y: 0 },
   macroRepresentative: null,
   primaryHub: null,
@@ -562,7 +565,11 @@ const recomputeVisibility = () => {
   state.visibleEdges = limitedEdges
   state.visibleNodeSpatial = createSpatialIndex(nodes)
   state.visibleEdgeByNode = createVisibleEdgeLookup(limitedEdges)
-  state.overviewClusters = nodes.length > massiveGraphNodeThreshold ? buildOverviewClusters(nodes) : []
+  const ecosystemGraph = nodes.length > 1
+    ? buildEcosystemGraph(nodes, limitedEdges)
+    : { clusters: [], edges: [] }
+  state.ecosystemClusters = ecosystemGraph.clusters
+  state.ecosystemEdges = ecosystemGraph.edges
   const primaryHub = rankedHubNodes()[0] ?? null
   state.primaryHub = primaryHub
   state.hubNeighborDistance = nearestHubNeighborDistance(primaryHub, nodes)
@@ -679,67 +686,130 @@ const createVisibleEdgeLookup = edges => {
   return lookup
 }
 
-const buildOverviewClusters = nodes => {
-  if (nodes.length === 0) {
-    return []
+const ecosystemKeyForNode = node => {
+  if (typeof node.segment === 'string' && node.segment.trim()) {
+    return node.segment.trim()
   }
-
-  const bounds = graphBounds(nodes)
-  if (!bounds) {
-    return []
+  if (typeof node.group === 'string' && node.group.trim()) {
+    return node.group.trim()
   }
+  const pathParts = String(node.path || '')
+    .split('/')
+    .filter(part => part.trim())
+    .slice(0, 2)
+  return pathParts.length > 0 ? pathParts.join('/') : 'root'
+}
 
-  const longest = Math.max(bounds.width, bounds.height, 1)
-  const cellSize = Math.max(longest / 56, 900)
-  const buckets = new Map()
+const compareNodesForEcosystem = (left, right) => {
+  const keyComparison = ecosystemKeyForNode(left).localeCompare(ecosystemKeyForNode(right))
+  if (keyComparison !== 0) return keyComparison
+  const leftDegree = state.nodeDegrees.get(left.id) ?? 0
+  const rightDegree = state.nodeDegrees.get(right.id) ?? 0
+  if (leftDegree !== rightDegree) return rightDegree - leftDegree
+  return String(left.title || left.id).localeCompare(String(right.title || right.id))
+}
+
+const selectEcosystemRepresentative = nodes => {
+  let representative = nodes[0] ?? null
+  let representativeScore = Number.NEGATIVE_INFINITY
 
   for (let index = 0; index < nodes.length; index += 1) {
     const node = nodes[index]
-    const keyX = Math.floor((node.x - bounds.minX) / cellSize)
-    const keyY = Math.floor((node.y - bounds.minY) / cellSize)
-    const key = keyX + ':' + keyY
-    const degree = state.nodeDegrees.get(node.id) ?? 0
-    const current = buckets.get(key)
-    if (current) {
-      current.count += 1
-      current.sumX += node.x
-      current.sumY += node.y
-      if (degree > current.degree) {
-        current.representative = node
-        current.degree = degree
-      }
+    const score = (state.nodeDegrees.get(node.id) ?? 0) + hubNodeScore(node) * 1000
+    if (score > representativeScore) {
+      representative = node
+      representativeScore = score
+    }
+  }
+
+  return representative
+}
+
+const buildEcosystemCluster = (nodes, index) => {
+  const count = Math.max(nodes.length, 1)
+  const sum = nodes.reduce((accumulator, node) => ({
+    x: accumulator.x + node.x,
+    y: accumulator.y + node.y
+  }), { x: 0, y: 0 })
+  const representative = selectEcosystemRepresentative(nodes)
+
+  return {
+    id: 'ecosystem-' + index,
+    x: sum.x / count,
+    y: sum.y / count,
+    count,
+    representative,
+    label: ecosystemKeyForNode(nodes[0] ?? representative ?? { path: '' })
+  }
+}
+
+const buildEcosystemGraph = (nodes, edges) => {
+  if (nodes.length === 0) {
+    return { clusters: [], edges: [] }
+  }
+
+  const sortedNodes = [...nodes].sort(compareNodesForEcosystem)
+  const clusters = []
+  const clusterByNodeId = new Map()
+
+  for (let offset = 0; offset < sortedNodes.length; offset += ecosystemGroupSize) {
+    const clusterNodes = sortedNodes.slice(offset, offset + ecosystemGroupSize)
+    const cluster = buildEcosystemCluster(clusterNodes, clusters.length)
+    clusters.push(cluster)
+    for (let index = 0; index < clusterNodes.length; index += 1) {
+      clusterByNodeId.set(clusterNodes[index].id, cluster)
+    }
+  }
+
+  const edgeByClusterPair = new Map()
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index]
+    const sourceCluster = clusterByNodeId.get(edge.source)
+    const targetCluster = clusterByNodeId.get(edge.target)
+    if (!sourceCluster || !targetCluster || sourceCluster.id === targetCluster.id) {
       continue
     }
 
-    buckets.set(key, {
+    const orderedIds = sourceCluster.id < targetCluster.id
+      ? [sourceCluster.id, targetCluster.id]
+      : [targetCluster.id, sourceCluster.id]
+    const key = orderedIds.join(':')
+    const current = edgeByClusterPair.get(key)
+    if (current) {
+      current.weight += edgeWeight(edge)
+      continue
+    }
+
+    edgeByClusterPair.set(key, {
       id: key,
-      count: 1,
-      sumX: node.x,
-      sumY: node.y,
-      representative: node,
-      degree
+      sourceCluster,
+      targetCluster,
+      weight: edgeWeight(edge)
     })
   }
 
-  return Array.from(buckets.values())
-    .sort((left, right) => right.count - left.count)
-    .slice(0, overviewClusterMaxCount)
-    .map((cluster) => ({
-      id: cluster.id,
-      x: cluster.sumX / Math.max(cluster.count, 1),
-      y: cluster.sumY / Math.max(cluster.count, 1),
-      count: cluster.count,
-      representative: cluster.representative
-    }))
+  const aggregatedEdges = Array.from(edgeByClusterPair.values())
+    .sort((left, right) => right.weight - left.weight)
+    .slice(0, ecosystemClusterEdgeLimit)
+
+  return { clusters, edges: aggregatedEdges }
 }
 
-const filterOverviewClustersByViewport = viewport =>
-  state.overviewClusters.filter((cluster) =>
+const filterEcosystemClustersByViewport = viewport =>
+  state.ecosystemClusters.filter((cluster) =>
     cluster.x >= viewport.minX &&
     cluster.x <= viewport.maxX &&
     cluster.y >= viewport.minY &&
     cluster.y <= viewport.maxY
   )
+
+const ecosystemEdgesForClusters = clusters => {
+  const clusterIds = new Set(clusters.map(cluster => cluster.id))
+  return state.ecosystemEdges.filter(edge =>
+    clusterIds.has(edge.sourceCluster.id) &&
+    clusterIds.has(edge.targetCluster.id)
+  )
+}
 
 const edgeBudgetForCurrentFrame = () => {
   const zoom = state.transform.scale
@@ -772,14 +842,6 @@ const nodeBudgetForScale = (scale) => {
     if (scale < 1.05) return 1800
     return zoomedMassiveRenderNodeBudget
   }
-  return renderNodeBudget
-}
-
-const massiveLowZoomNodeBudgetForScale = (scale) => {
-  if (scale < 0.004) return 780
-  if (scale < 0.01) return 860
-  if (scale < 0.02) return 900
-  if (scale < 0.035) return 900
   return renderNodeBudget
 }
 
@@ -2316,6 +2378,7 @@ const computeRenderVisibility = () => {
   }
   state.lastViewportKey = viewportKey
   state.renderVisibilityDirty = false
+  state.renderClusterEdges = []
 
   const shouldRenderMacroGalaxy = shouldRenderMacroGalaxyView()
 
@@ -2339,12 +2402,27 @@ const computeRenderVisibility = () => {
       state.renderNodes = []
     }
     state.renderEdges = []
+    state.renderClusterEdges = []
+    return
+  }
+
+  if (state.transform.scale <= ecosystemClusterScaleThreshold && state.ecosystemClusters.length > 0) {
+    const viewportClusters = filterEcosystemClustersByViewport(viewport)
+      .sort((left, right) => right.count - left.count)
+    const clusters = viewportClusters.length > 0
+      ? viewportClusters
+      : state.ecosystemClusters
+    state.renderClusters = clusters
+    state.renderClusterEdges = ecosystemEdgesForClusters(clusters)
+    state.renderNodes = []
+    state.renderEdges = []
     return
   }
 
   if (state.visibleNodes.length <= 2000) {
     state.renderNodes = state.visibleNodes
     state.renderClusters = []
+    state.renderClusterEdges = []
     const ids = new Set(state.renderNodes.map((node) => node.id))
     state.renderEdges = withMeshEdges(state.renderNodes, collectVisibleEdgesForNodes(ids))
     return
@@ -2352,30 +2430,6 @@ const computeRenderVisibility = () => {
 
   if (state.visibleNodes.length > massiveGraphNodeThreshold) {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
-    if (state.transform.scale <= massiveOverviewClusterScaleThreshold) {
-      const overviewLimit = Math.min(renderNodeBudget, massiveLowZoomNodeBudgetForScale(state.transform.scale))
-      const overviewClusters = filterOverviewClustersByViewport(viewport)
-        .sort((left, right) => right.count - left.count)
-        .slice(0, overviewLimit)
-      if (overviewClusters.length > 0) {
-        const overviewNodes = representativeNodesFromClusters(
-          overviewClusters,
-          overviewLimit
-        )
-        const anchoredNodes = includeHubPreviewNeighborhood(
-          overviewNodes,
-          Math.min(renderNodeBudget, overviewLimit)
-        )
-        const enriched = enrichSampleWithNeighbors(anchoredNodes)
-        const previewNodes = ensureHubNodesInRenderedSet(enriched.nodes)
-        const previewIds = new Set(previewNodes.map((node) => node.id))
-        const previewEdges = collectVisibleEdgesForNodes(previewIds)
-        state.renderClusters = []
-        state.renderNodes = previewNodes
-        state.renderEdges = previewEdges
-        return
-      }
-    }
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
     const carryMargin = Math.max(240, Math.min(1200, 340 / Math.max(state.transform.scale, 0.0001)))
@@ -2421,6 +2475,7 @@ const computeRenderVisibility = () => {
     }
 
     state.renderClusters = []
+    state.renderClusterEdges = []
     state.renderNodes = sampledNodes
     state.renderEdges = withMeshEdges(sampledNodes, sampledEdges)
     return
@@ -2430,6 +2485,7 @@ const computeRenderVisibility = () => {
     const sampled = sampleVisibleNodes(Math.min(renderNodeBudget, 900))
     const sampledIds = new Set(sampled.map((node) => node.id))
     state.renderClusters = []
+    state.renderClusterEdges = []
     state.renderNodes = sampled
     state.renderEdges = withMeshEdges(sampled, collectVisibleEdgesForNodes(sampledIds))
     return
@@ -2439,11 +2495,13 @@ const computeRenderVisibility = () => {
   const clusters = clusterViewportNodes(viewportNodes)
   if (clusters.length > 0) {
     state.renderClusters = []
+    state.renderClusterEdges = []
     state.renderNodes = representativeNodesFromClusters(clusters, Math.min(renderNodeBudget, 900))
     state.renderEdges = []
     return
   }
   state.renderClusters = []
+  state.renderClusterEdges = []
   const stride = viewportNodeStride()
   const picked = []
 
@@ -2467,6 +2525,7 @@ const computeRenderVisibility = () => {
     const fallbackIds = new Set(fallbackNodes.map((node) => node.id))
     state.renderNodes = fallbackNodes
     state.renderClusters = []
+    state.renderClusterEdges = []
     state.renderEdges = withMeshEdges(fallbackNodes, collectVisibleEdgesForNodes(fallbackIds))
     return
   }
@@ -2482,6 +2541,7 @@ const computeRenderVisibility = () => {
     const fallbackNodes = sampleVisibleNodes(Math.min(renderNodeBudget, 260))
     const fallbackIds = new Set(fallbackNodes.map((node) => node.id))
     state.renderClusters = []
+    state.renderClusterEdges = []
     state.renderNodes = fallbackNodes
     state.renderEdges = withMeshEdges(fallbackNodes, collectVisibleEdgesForNodes(fallbackIds))
   }
@@ -2598,6 +2658,17 @@ const render = now => {
     ctx.translate(state.transform.x, state.transform.y)
     ctx.scale(state.transform.scale, state.transform.scale)
     const safeScale = Math.max(state.transform.scale, 0.0001)
+    if (state.renderClusterEdges.length > 0) {
+      ctx.beginPath()
+      for (let index = 0; index < state.renderClusterEdges.length; index += 1) {
+        const edge = state.renderClusterEdges[index]
+        ctx.moveTo(edge.sourceCluster.x, edge.sourceCluster.y)
+        ctx.lineTo(edge.targetCluster.x, edge.targetCluster.y)
+      }
+      ctx.lineWidth = 1.2 / safeScale
+      ctx.strokeStyle = 'rgba(153, 165, 181, 0.22)'
+      ctx.stroke()
+    }
     state.renderClusters.forEach(cluster => {
       const isMacro = cluster.id === 'macro-galaxy'
       const radiusPx = isMacro
