@@ -1379,10 +1379,10 @@ const ensureHubNodesInRenderedSet = (nodes) => {
 }
 
 const zoomCapByNodeCount = (nodeCount) => {
-  if (nodeCount > 50000) return 2.6
-  if (nodeCount > 20000) return 2.35
-  if (nodeCount > 6000) return 2.1
-  if (nodeCount > 2000) return 2.2
+  if (nodeCount > 50000) return 5.4
+  if (nodeCount > 20000) return 4.8
+  if (nodeCount > 6000) return 4.2
+  if (nodeCount > 2000) return 4
   return zoomRange.max
 }
 
@@ -1541,10 +1541,15 @@ const focusPrimaryHub = () => {
 }
 
 const layoutDensityScaleForNodeCount = (nodeCount) => {
-  if (nodeCount > 50000) return 0.56
-  if (nodeCount > 20000) return 0.64
-  if (nodeCount > 6000) return 0.76
-  return 1
+  if (nodeCount > 50000) return 0.26
+  if (nodeCount > 20000) return 0.3
+  if (nodeCount > 6000) return 0.36
+  if (nodeCount > 2000) return 0.42
+  if (nodeCount > 600) return 0.5
+  if (nodeCount > 180) return 0.58
+  if (nodeCount > 60) return 0.68
+  if (nodeCount > 20) return 0.78
+  return 0.88
 }
 
 const createLayout = graph => {
