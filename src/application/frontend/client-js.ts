@@ -684,6 +684,38 @@ const mergeUniqueNodes = (leftNodes, rightNodes, limit) => {
   return merged
 }
 
+const selectStableSampleNodes = (sourceNodes, limit) => {
+  if (sourceNodes.length <= limit) {
+    return sourceNodes
+  }
+
+  const now = performance.now()
+  const recentZoomFocus =
+    now - state.lastZoomFocus.at <= 1500
+      ? { x: state.lastZoomFocus.x, y: state.lastZoomFocus.y }
+      : null
+  const anchor = recentZoomFocus ?? viewportCenterWorldPoint()
+  const previousIds = new Set(state.renderNodes.map((node) => node.id))
+
+  return [...sourceNodes]
+    .sort((left, right) => {
+      const leftWasVisible = previousIds.has(left.id) ? 1 : 0
+      const rightWasVisible = previousIds.has(right.id) ? 1 : 0
+      if (leftWasVisible !== rightWasVisible) return rightWasVisible - leftWasVisible
+
+      const leftDistance = Math.hypot(left.x - anchor.x, left.y - anchor.y)
+      const rightDistance = Math.hypot(right.x - anchor.x, right.y - anchor.y)
+      if (leftDistance !== rightDistance) return leftDistance - rightDistance
+
+      const leftDegree = state.nodeDegrees.get(left.id) ?? 0
+      const rightDegree = state.nodeDegrees.get(right.id) ?? 0
+      if (leftDegree !== rightDegree) return rightDegree - leftDegree
+
+      return left.id.localeCompare(right.id)
+    })
+    .slice(0, limit)
+}
+
 const selectAccessBridgeNodes = (sourceNodes, limit) => {
   if (limit <= 0 || sourceNodes.length === 0) {
     return []
@@ -1741,9 +1773,10 @@ const computeRenderVisibility = () => {
       selectAccessBridgeNodes(sourceNodes, bridgeLimit),
       Math.min(renderNodeBudget, sampleLimit + bridgeLimit)
     )
-    const sampled = bridgedNodes.length > sampleLimit
-      ? sampleVisibleNodes(Math.min(sampleLimit, renderNodeBudget), bridgedNodes)
-      : bridgedNodes.slice(0, Math.min(bridgedNodes.length, renderNodeBudget))
+    const sampled = selectStableSampleNodes(
+      bridgedNodes,
+      Math.min(sampleLimit, renderNodeBudget)
+    )
     const sampledIds = new Set(sampled.map((node) => node.id))
     let sampledEdges = state.transform.scale >= 0.035 ? collectVisibleEdgesForNodes(sampledIds) : []
     let sampledNodes = ensureHubNodesInRenderedSet(sampled)
@@ -2134,7 +2167,7 @@ const wheelZoomFactor = event => {
     return 1
   }
 
-  const baseStep = Math.max(0.03, Math.min(0.2, absoluteDelta / 680))
+  const baseStep = Math.max(0.012, Math.min(0.11, absoluteDelta / 980))
   const adjustedStep = baseStep * (isModifierZoom ? 1.24 : 1)
 
   return event.deltaY < 0 ? 1 + adjustedStep : 1 / (1 + adjustedStep)
