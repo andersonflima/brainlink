@@ -17,7 +17,7 @@ const worldCoordinateLimit = 5_000_000
 const transformCoordinateLimit = 20_000_000
 const hoverHitTestIntervalMs = 64
 const overviewClusterMaxCount = 1400
-const zoomRecoveryGuardMs = 1500
+const zoomRecoveryGuardMs = 4200
 const zoomCapTargetViewportShare = 0.72
 const meshEdgeScaleThreshold = 0.09
 const meshEdgeMinBudget = 140
@@ -1934,9 +1934,10 @@ const render = now => {
   tick(delta)
   const hasVisibleNodeOnScreen = state.renderNodes.some((node) => isNodeVisibleOnScreen(node, width, height))
   const manualZoomGuardActive = now - state.lastManualZoomAt < zoomRecoveryGuardMs
-  if (!hasVisibleNodeOnScreen && state.renderNodes.length > 0 && !manualZoomGuardActive) {
+  const allowViewportAutoRecovery = state.nodes.length <= massiveGraphNodeThreshold
+  if (allowViewportAutoRecovery && !hasVisibleNodeOnScreen && state.renderNodes.length > 0 && !manualZoomGuardActive) {
     state.offscreenFrameCount += 1
-    if (state.offscreenFrameCount >= 6 && !state.recoveringViewport) {
+    if (state.offscreenFrameCount >= 22 && !state.recoveringViewport) {
       state.recoveringViewport = true
       fitView({ useFiltered: true })
       state.offscreenFrameCount = 0
@@ -2137,9 +2138,7 @@ const selectNodeById = id => {
 }
 
 const zoomAtPoint = (screenX, screenY, factor, source = 'generic') => {
-  if (source === 'wheel') {
-    state.lastManualZoomAt = performance.now()
-  }
+  state.lastManualZoomAt = performance.now()
   const nextScale = clampScale(state.transform.scale * factor)
   if (nextScale === state.transform.scale) {
     return
