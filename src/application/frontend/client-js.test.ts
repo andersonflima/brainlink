@@ -9,5 +9,7 @@ describe('graph client rendering policy', () => {
     expect(clientScript).toContain('const zoomedMassiveRenderNodeBudget = 2200')
     expect(clientScript).toContain('state.transform.scale >= 0.28')
     expect(clientScript).toContain('sourceWithCarryIds.has(node.id)')
+    expect(clientScript).toContain('const drawEdgeBatch = (edges, options) =>')
+    expect(clientScript).toContain('const drawNodeBatch = (nodes) =>')
   })
 })

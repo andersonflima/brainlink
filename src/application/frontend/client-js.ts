@@ -914,7 +914,58 @@ const drawGraphEdge = (edge) => {
   ctx.stroke()
 }
 
+const drawEdgeBatch = (edges, options) => {
+  if (edges.length === 0) {
+    return
+  }
+
+  ctx.beginPath()
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index]
+    ctx.moveTo(edge.sourceNode.x, edge.sourceNode.y)
+    ctx.lineTo(edge.targetNode.x, edge.targetNode.y)
+  }
+  ctx.strokeStyle = options.strokeStyle
+  ctx.lineWidth = options.lineWidth
+  ctx.stroke()
+}
+
 const drawGraphEdges = () => {
+  if (state.nodes.length > largeGraphNodeThreshold) {
+    const regularEdges = []
+    const inferredEdges = []
+    const selectedEdges = []
+
+    for (let index = 0; index < state.renderEdges.length; index += 1) {
+      const edge = state.renderEdges[index]
+      const isSelected = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
+      if (isSelected) {
+        selectedEdges.push(edge)
+      } else if (edge.inferred) {
+        inferredEdges.push(edge)
+      } else {
+        regularEdges.push(edge)
+      }
+    }
+
+    const scale = state.transform.scale
+    const regularOpacity = edgeOpacityForScale({ inferred: false }, scale)
+    const inferredOpacity = edgeOpacityForScale({ inferred: true }, scale)
+    drawEdgeBatch(regularEdges, {
+      strokeStyle: 'rgba(153, 165, 181, ' + regularOpacity + ')',
+      lineWidth: 1.05
+    })
+    drawEdgeBatch(inferredEdges, {
+      strokeStyle: 'rgba(203, 213, 225, ' + inferredOpacity + ')',
+      lineWidth: 0.84
+    })
+
+    for (let index = 0; index < selectedEdges.length; index += 1) {
+      drawGraphEdge(selectedEdges[index])
+    }
+    return
+  }
+
   const selectedEdges = []
   const regularEdges = []
   for (let index = 0; index < state.renderEdges.length; index += 1) {
@@ -933,6 +984,105 @@ const drawGraphEdges = () => {
   for (let index = 0; index < selectedEdges.length; index += 1) {
     drawGraphEdge(selectedEdges[index])
   }
+}
+
+const shouldDrawNodeLabels = (node, isSelected, isHovered) =>
+  isSelected ||
+  isHovered ||
+  (state.nodes.length > largeGraphNodeThreshold && state.transform.scale >= 0.62 && state.renderNodes.length <= 1200) ||
+  (state.nodes.length <= largeGraphNodeThreshold && (state.transform.scale > 1.18 || state.nodes.length <= 25))
+
+const drawSingleNode = (node, options = { drawLabel: true }) => {
+  const radius = nodeRadius(node)
+  const isSelected = state.selected?.id === node.id
+  const isHovered = state.hovered?.id === node.id
+  ctx.beginPath()
+  ctx.arc(node.x, node.y, radius + (isSelected ? 7 : isHovered ? 4 : 0), 0, Math.PI * 2)
+  ctx.fillStyle = isSelected || isHovered ? graphTheme.nodeHaloActive : graphTheme.nodeHalo
+  ctx.fill()
+  ctx.beginPath()
+  ctx.arc(node.x, node.y, radius, 0, Math.PI * 2)
+  ctx.fillStyle = isSelected ? graphTheme.nodeSelected : isHovered ? graphTheme.nodeHover : graphTheme.node
+  ctx.fill()
+  ctx.lineWidth = isSelected ? 2.6 : 1.5
+  ctx.strokeStyle = isSelected ? graphTheme.nodeStrokeActive : graphTheme.nodeStroke
+  ctx.stroke()
+
+  if (options.drawLabel && shouldDrawNodeLabels(node, isSelected, isHovered)) {
+    ctx.fillStyle = graphTheme.label
+    ctx.font = '12px Inter, system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+    ctx.fillText(node.title.slice(0, 34), node.x, node.y + radius + 8)
+  }
+}
+
+const drawNodeBatch = (nodes) => {
+  if (nodes.length === 0) {
+    return
+  }
+
+  const drawHalos = state.renderNodes.length <= 1200 || state.transform.scale >= 0.45
+  if (drawHalos) {
+    ctx.beginPath()
+    for (let index = 0; index < nodes.length; index += 1) {
+      const node = nodes[index]
+      ctx.moveTo(node.x + nodeRadius(node) + 3, node.y)
+      ctx.arc(node.x, node.y, nodeRadius(node) + 3, 0, Math.PI * 2)
+    }
+    ctx.fillStyle = graphTheme.nodeHalo
+    ctx.fill()
+  }
+
+  ctx.beginPath()
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index]
+    const radius = nodeRadius(node)
+    ctx.moveTo(node.x + radius, node.y)
+    ctx.arc(node.x, node.y, radius, 0, Math.PI * 2)
+  }
+  ctx.fillStyle = graphTheme.node
+  ctx.fill()
+  ctx.lineWidth = 1.25
+  ctx.strokeStyle = graphTheme.nodeStroke
+  ctx.stroke()
+}
+
+const drawGraphNodes = () => {
+  if (state.nodes.length <= largeGraphNodeThreshold) {
+    state.renderNodes.forEach(node => drawSingleNode(node))
+    return
+  }
+
+  const regularNodes = []
+  const priorityNodes = []
+
+  for (let index = 0; index < state.renderNodes.length; index += 1) {
+    const node = state.renderNodes[index]
+    const isPriority =
+      state.selected?.id === node.id ||
+      state.hovered?.id === node.id
+    if (isPriority) {
+      priorityNodes.push(node)
+    } else {
+      regularNodes.push(node)
+    }
+  }
+
+  drawNodeBatch(regularNodes)
+
+  if (state.transform.scale >= 0.62 && state.renderNodes.length <= 1200) {
+    ctx.fillStyle = graphTheme.label
+    ctx.font = '12px Inter, system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+    for (let index = 0; index < regularNodes.length; index += 1) {
+      const node = regularNodes[index]
+      ctx.fillText(node.title.slice(0, 34), node.x, node.y + nodeRadius(node) + 8)
+    }
+  }
+
+  priorityNodes.forEach(node => drawSingleNode(node))
 }
 
 const edgePairKey = (source, target) =>
@@ -2203,35 +2353,7 @@ const render = now => {
       // Keep cluster markers minimal and faster to draw on large graphs.
     })
   } else {
-    state.renderNodes.forEach(node => {
-    const radius = nodeRadius(node)
-    const isSelected = state.selected?.id === node.id
-    const isHovered = state.hovered?.id === node.id
-    ctx.beginPath()
-    ctx.arc(node.x, node.y, radius + (isSelected ? 7 : isHovered ? 4 : 0), 0, Math.PI * 2)
-    ctx.fillStyle = isSelected || isHovered ? graphTheme.nodeHaloActive : graphTheme.nodeHalo
-    ctx.fill()
-    ctx.beginPath()
-    ctx.arc(node.x, node.y, radius, 0, Math.PI * 2)
-    ctx.fillStyle = isSelected ? graphTheme.nodeSelected : isHovered ? graphTheme.nodeHover : graphTheme.node
-    ctx.fill()
-    ctx.lineWidth = isSelected ? 2.6 : 1.5
-    ctx.strokeStyle = isSelected ? graphTheme.nodeStrokeActive : graphTheme.nodeStroke
-    ctx.stroke()
-
-    const shouldDrawLabels =
-      isSelected ||
-      isHovered ||
-      (state.nodes.length > largeGraphNodeThreshold && state.transform.scale >= 0.62 && state.renderNodes.length <= 1200) ||
-      (state.nodes.length <= largeGraphNodeThreshold && (state.transform.scale > 1.18 || state.nodes.length <= 25))
-    if (shouldDrawLabels) {
-      ctx.fillStyle = graphTheme.label
-      ctx.font = '12px Inter, system-ui, sans-serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'top'
-      ctx.fillText(node.title.slice(0, 34), node.x, node.y + radius + 8)
-    }
-    })
+    drawGraphNodes()
   }
 
   ctx.restore()
