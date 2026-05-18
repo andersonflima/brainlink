@@ -1,0 +1,13 @@
+import { describe, expect, it } from 'vitest'
+import { createClientJs } from './client-js.js'
+
+describe('graph client rendering policy', () => {
+  it('keeps massive graph zoom-in rendering progressive and parseable', () => {
+    const clientScript = createClientJs()
+
+    expect(() => new Function(clientScript)).not.toThrow()
+    expect(clientScript).toContain('const zoomedMassiveRenderNodeBudget = 2200')
+    expect(clientScript).toContain('state.transform.scale >= 0.28')
+    expect(clientScript).toContain('sourceWithCarryIds.has(node.id)')
+  })
+})

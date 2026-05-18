@@ -84,7 +84,7 @@ Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/c
 - Graph renderer optimized for large datasets with viewport-driven node culling and edge lookup by visible nodes.
 - Large graph layout API automatically uses compact payload encoding with link-coverage-aware edge selection to reduce initial client load without hiding major relationships.
 - Large-segment layout spacing now grows logarithmically to keep initial visual density consistent between medium and very large vaults (for example, ~1k vs ~50k notes).
-- Zoomed-out graph LOD now clusters dense regions and progressively expands nodes as zoom increases.
+- Zoomed-out graph LOD clusters dense regions and progressively expands the focused viewport as zoom increases, including very large vaults.
 - Graph reset starts in macro "galaxy" overview mode and progressively reveals nearby nodes as zoom increases, including smaller vaults.
 - Graph filtering runs in a dedicated browser worker to keep the UI thread responsive during heavy datasets.
 - Edge rendering budgets adapt to zoom level to prevent frame spikes on large graph panoramas.
@@ -595,7 +595,7 @@ The graph UI shows:
 - double-click on canvas zooms in at cursor position
 - floating graph totals (notes, links, tags) below the Brainlink title
 - large-graph rendering safeguards (edge draw caps, lower redraw rate, zoom-aware interaction)
-- massive-graph LOD progression: very low zoom uses spatial overview sampling plus hub-neighborhood edge previews to preserve whole-vault shape and orientation, then progressively reveals nodes and edges as zoom increases
+- massive-graph LOD progression: very low zoom uses spatial overview sampling plus hub-neighborhood edge previews to preserve whole-vault shape and orientation, then progressively raises the focused node budget as zoom increases so dense local areas keep nearby notes and links visible
 
 The server indexes before starting by default. Use `--no-index` to skip that step:
 
