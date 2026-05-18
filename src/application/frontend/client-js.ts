@@ -1623,7 +1623,13 @@ const worldViewportBounds = () => {
   const rect = canvas.getBoundingClientRect()
   const width = Math.max(rect.width, 320)
   const height = Math.max(rect.height, 320)
-  const padding = viewportPaddingPx
+  const paddingMultiplier =
+    state.nodes.length > massiveGraphNodeThreshold
+      ? (state.transform.scale >= 0.6 ? 2.8 : state.transform.scale >= 0.25 ? 2.35 : 1.9)
+      : state.nodes.length > largeGraphNodeThreshold
+        ? 1.45
+        : 1
+  const padding = viewportPaddingPx * paddingMultiplier
 
   return {
     minX: (-state.transform.x - padding) / state.transform.scale,
@@ -1638,6 +1644,13 @@ const isNodeInViewport = (node, viewport) =>
   node.x <= viewport.maxX &&
   node.y >= viewport.minY &&
   node.y <= viewport.maxY
+
+const expandViewportBounds = (viewport, worldMargin) => ({
+  minX: viewport.minX - worldMargin,
+  maxX: viewport.maxX + worldMargin,
+  minY: viewport.minY - worldMargin,
+  maxY: viewport.maxY + worldMargin
+})
 
 const viewportNodeStride = () => {
   if (state.nodes.length <= largeGraphNodeThreshold) {
@@ -1766,11 +1779,22 @@ const computeRenderVisibility = () => {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
-    const layeredNodes = selectLayeredNodesForScale(sourceNodes, sampleLimit)
+    const carryMargin = Math.max(240, Math.min(1200, 340 / Math.max(state.transform.scale, 0.0001)))
+    const carryViewport = expandViewportBounds(viewport, carryMargin)
+    const carryOverLimit = Math.max(180, Math.min(900, sampleLimit))
+    const carryOverNodes = (state.renderNodes ?? [])
+      .filter((node) => isNodeInViewport(node, carryViewport))
+      .slice(0, carryOverLimit)
+    const sourceWithCarry = mergeUniqueNodes(
+      sourceNodes,
+      carryOverNodes,
+      Math.max(sampleLimit * 7, carryOverLimit)
+    )
+    const layeredNodes = selectLayeredNodesForScale(sourceWithCarry, sampleLimit)
     const bridgeLimit = Math.max(24, Math.min(180, Math.floor(sampleLimit * 0.26)))
     const bridgedNodes = mergeUniqueNodes(
       layeredNodes,
-      selectAccessBridgeNodes(sourceNodes, bridgeLimit),
+      selectAccessBridgeNodes(sourceWithCarry, bridgeLimit),
       Math.min(renderNodeBudget, sampleLimit + bridgeLimit)
     )
     const sampled = selectStableSampleNodes(
