@@ -85,6 +85,7 @@ Legacy `.jsonl.gz` packs are upgraded to `.blpk` automatically on first search/c
 - Canvas graph rendering uses the same batched node and edge pipeline for every graph size, reducing per-frame draw calls while keeping selected and hovered items highlighted.
 - Large graph layout API automatically uses compact payload encoding with link-coverage-aware edge selection to reduce initial client load without hiding major relationships.
 - Large-segment layout spacing now grows logarithmically to keep initial visual density consistent between medium and very large vaults (for example, ~1k vs ~50k notes).
+- Graph coordinates are visually compacted across graph sizes so reset starts from a stable macro mass and zoom-in progressively expands toward local detail.
 - Zoomed-out graph LOD clusters dense regions and progressively expands the focused viewport as zoom increases, including very large vaults.
 - Graph reset starts in macro "galaxy" overview mode and progressively reveals nearby nodes as zoom increases, including smaller vaults.
 - Graph filtering runs in a dedicated browser worker to keep the UI thread responsive during heavy datasets.
@@ -596,6 +597,7 @@ The graph UI shows:
 - double-click on canvas zooms in at cursor position
 - floating graph totals (notes, links, tags) below the Brainlink title
 - graph rendering safeguards (batched canvas drawing across graph sizes, edge draw caps, lower redraw rate, zoom-aware interaction)
+- compact macro-to-micro density progression so reset keeps the graph mass oriented and zoom-in separates local neighborhoods progressively
 - massive-graph LOD progression: very low zoom uses spatial overview sampling plus hub-neighborhood edge previews to preserve whole-vault shape and orientation, then progressively raises the focused node budget as zoom increases so dense local areas keep nearby notes and links visible
 
 The server indexes before starting by default. Use `--no-index` to skip that step:
