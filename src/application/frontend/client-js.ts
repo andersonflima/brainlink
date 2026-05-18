@@ -8,6 +8,8 @@ const renderEdgeBudget = 2400
 const clusterActivationNodeThreshold = 600
 const clusterZoomThreshold = 0.18
 const macroGalaxyZoomThreshold = 0.012
+const macroGalaxyEnterHysteresis = 0.86
+const macroGalaxyExitHysteresis = 1.24
 const massiveAutoFitMacroScale = 0.006
 const defaultMacroScale = 0.006
 const clusterCellPixelSize = 64
@@ -25,6 +27,9 @@ const meshEdgeMaxBudget = 1400
 const layeredCoreScaleThreshold = 0.55
 const dragNeighborhoodMaxAffected = 180
 const dragSettleRounds = 3
+const wheelZoomExponent = 0.0018
+const wheelZoomExponentCap = 0.09
+const wheelZoomModifierBoost = 1.22
 const state = {
   graph: { nodes: [], edges: [] },
   nodes: [],
@@ -65,7 +70,8 @@ const state = {
   filterReady: false,
   lastHoverHitAt: 0,
   lastManualZoomAt: 0,
-  lastZoomFocus: { x: 0, y: 0, at: 0 }
+  lastZoomFocus: { x: 0, y: 0, at: 0 },
+  macroViewActive: false
 }
 
 const byId = id => document.getElementById(id)
@@ -660,6 +666,29 @@ const viewportCenterWorldPoint = () => {
     x: (viewport.minX + viewport.maxX) / 2,
     y: (viewport.minY + viewport.maxY) / 2
   }
+}
+
+const visibilityScaleBucket = (scale) => {
+  const safeScale = Math.max(zoomRange.min, scale)
+  if (safeScale < 0.01) return Math.round(safeScale * 300_000)
+  if (safeScale < 0.05) return Math.round(safeScale * 120_000)
+  if (safeScale < 0.2) return Math.round(safeScale * 40_000)
+  return Math.round(safeScale * 8_000)
+}
+
+const shouldRenderMacroGalaxyView = () => {
+  if (state.visibleNodes.length <= 1) {
+    state.macroViewActive = false
+    return false
+  }
+
+  const enterThreshold = macroGalaxyZoomThreshold * macroGalaxyEnterHysteresis
+  const exitThreshold = macroGalaxyZoomThreshold * macroGalaxyExitHysteresis
+  const shouldRender = state.macroViewActive
+    ? state.transform.scale <= exitThreshold
+    : state.transform.scale <= enterThreshold
+  state.macroViewActive = shouldRender
+  return shouldRender
 }
 
 const mergeUniqueNodes = (leftNodes, rightNodes, limit) => {
@@ -1733,7 +1762,7 @@ const computeRenderVisibility = () => {
     Math.round(viewport.maxX * 10) + ':' +
     Math.round(viewport.minY * 10) + ':' +
     Math.round(viewport.maxY * 10) + ':' +
-    Math.round(state.transform.scale * 1000)
+    visibilityScaleBucket(state.transform.scale)
 
   if (!state.renderVisibilityDirty && viewportKey === state.lastViewportKey) {
     return
@@ -1741,8 +1770,7 @@ const computeRenderVisibility = () => {
   state.lastViewportKey = viewportKey
   state.renderVisibilityDirty = false
 
-  const shouldRenderMacroGalaxy =
-    state.transform.scale <= macroGalaxyZoomThreshold && state.visibleNodes.length > 1
+  const shouldRenderMacroGalaxy = shouldRenderMacroGalaxyView()
 
   if (shouldRenderMacroGalaxy) {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
@@ -2193,16 +2221,18 @@ const zoomAtPoint = (screenX, screenY, factor, source = 'generic') => {
 const wheelZoomFactor = event => {
   const isModifierZoom = event.metaKey || event.ctrlKey
   const deltaModeFactor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 120 : 1
-  const absoluteDelta = Math.min(Math.abs(event.deltaY * deltaModeFactor), 1600)
+  const normalizedDelta = event.deltaY * deltaModeFactor
 
-  if (absoluteDelta <= 0.0001) {
+  if (!Number.isFinite(normalizedDelta) || Math.abs(normalizedDelta) <= 0.0001) {
     return 1
   }
 
-  const baseStep = Math.max(0.012, Math.min(0.11, absoluteDelta / 980))
-  const adjustedStep = baseStep * (isModifierZoom ? 1.24 : 1)
-
-  return event.deltaY < 0 ? 1 + adjustedStep : 1 / (1 + adjustedStep)
+  const sensitivity = wheelZoomExponent * (isModifierZoom ? wheelZoomModifierBoost : 1)
+  const exponent = Math.max(
+    -wheelZoomExponentCap,
+    Math.min(wheelZoomExponentCap, -normalizedDelta * sensitivity)
+  )
+  return Math.exp(exponent)
 }
 
 const handleWheelZoom = event => {
