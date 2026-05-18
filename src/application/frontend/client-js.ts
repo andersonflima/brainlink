@@ -10,6 +10,7 @@ const clusterZoomThreshold = 0.18
 const macroGalaxyZoomThreshold = 0.012
 const macroGalaxyEnterHysteresis = 0.86
 const macroGalaxyExitHysteresis = 1.24
+const galaxyDiscoveryEnabled = false
 const massiveAutoFitMacroScale = 0.006
 const defaultMacroScale = 0.006
 const clusterCellPixelSize = 64
@@ -677,6 +678,10 @@ const visibilityScaleBucket = (scale) => {
 }
 
 const shouldRenderMacroGalaxyView = () => {
+  if (!galaxyDiscoveryEnabled) {
+    state.macroViewActive = false
+    return false
+  }
   if (state.visibleNodes.length <= 1) {
     state.macroViewActive = false
     return false
@@ -1818,15 +1823,8 @@ const computeRenderVisibility = () => {
       carryOverNodes,
       Math.max(sampleLimit * 7, carryOverLimit)
     )
-    const layeredNodes = selectLayeredNodesForScale(sourceWithCarry, sampleLimit)
-    const bridgeLimit = Math.max(24, Math.min(180, Math.floor(sampleLimit * 0.26)))
-    const bridgedNodes = mergeUniqueNodes(
-      layeredNodes,
-      selectAccessBridgeNodes(sourceWithCarry, bridgeLimit),
-      Math.min(renderNodeBudget, sampleLimit + bridgeLimit)
-    )
     const sampledRaw = selectStableSampleNodes(
-      bridgedNodes,
+      sourceWithCarry,
       Math.min(sampleLimit, renderNodeBudget)
     )
     const continuityBudget = Math.max(24, Math.min(sampleLimit - 8, Math.floor(sampleLimit * 0.42)))
