@@ -930,57 +930,42 @@ const drawEdgeBatch = (edges, options) => {
   ctx.stroke()
 }
 
+const regularEdgeBatchOptions = (edge) => ({
+  strokeStyle: edgeStrokeFor(edge, false),
+  lineWidth: edgeWidthFor(edge, false)
+})
+
+const regularEdgeBatchKey = (edge) => {
+  const options = regularEdgeBatchOptions(edge)
+  return options.strokeStyle + '|' + options.lineWidth.toFixed(2)
+}
+
 const drawGraphEdges = () => {
-  if (state.nodes.length > largeGraphNodeThreshold) {
-    const regularEdges = []
-    const inferredEdges = []
-    const selectedEdges = []
-
-    for (let index = 0; index < state.renderEdges.length; index += 1) {
-      const edge = state.renderEdges[index]
-      const isSelected = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
-      if (isSelected) {
-        selectedEdges.push(edge)
-      } else if (edge.inferred) {
-        inferredEdges.push(edge)
-      } else {
-        regularEdges.push(edge)
-      }
-    }
-
-    const scale = state.transform.scale
-    const regularOpacity = edgeOpacityForScale({ inferred: false }, scale)
-    const inferredOpacity = edgeOpacityForScale({ inferred: true }, scale)
-    drawEdgeBatch(regularEdges, {
-      strokeStyle: 'rgba(153, 165, 181, ' + regularOpacity + ')',
-      lineWidth: 1.05
-    })
-    drawEdgeBatch(inferredEdges, {
-      strokeStyle: 'rgba(203, 213, 225, ' + inferredOpacity + ')',
-      lineWidth: 0.84
-    })
-
-    for (let index = 0; index < selectedEdges.length; index += 1) {
-      drawGraphEdge(selectedEdges[index])
-    }
-    return
-  }
-
+  const edgeBatches = new Map()
   const selectedEdges = []
-  const regularEdges = []
+
   for (let index = 0; index < state.renderEdges.length; index += 1) {
     const edge = state.renderEdges[index]
     const isSelected = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
     if (isSelected) {
       selectedEdges.push(edge)
+      continue
+    }
+
+    const key = regularEdgeBatchKey(edge)
+    const batch = edgeBatches.get(key)
+    if (batch) {
+      batch.edges.push(edge)
     } else {
-      regularEdges.push(edge)
+      edgeBatches.set(key, {
+        edges: [edge],
+        options: regularEdgeBatchOptions(edge)
+      })
     }
   }
 
-  for (let index = 0; index < regularEdges.length; index += 1) {
-    drawGraphEdge(regularEdges[index])
-  }
+  edgeBatches.forEach((batch) => drawEdgeBatch(batch.edges, batch.options))
+
   for (let index = 0; index < selectedEdges.length; index += 1) {
     drawGraphEdge(selectedEdges[index])
   }
@@ -1049,11 +1034,6 @@ const drawNodeBatch = (nodes) => {
 }
 
 const drawGraphNodes = () => {
-  if (state.nodes.length <= largeGraphNodeThreshold) {
-    state.renderNodes.forEach(node => drawSingleNode(node))
-    return
-  }
-
   const regularNodes = []
   const priorityNodes = []
 
