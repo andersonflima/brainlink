@@ -1,4 +1,5 @@
 export const createClientJs = (): string => `const canvas = document.getElementById('graph')
+const glCanvas = document.getElementById('graphGl')
 const ctx = canvas.getContext('2d')
 const largeGraphNodeThreshold = 4000
 const massiveGraphNodeThreshold = 20000
@@ -175,6 +176,177 @@ const graphTheme = {
   label: '#edf2f7'
 }
 
+const parseRgb = color => {
+  const normalized = color.trim()
+  if (normalized.startsWith('#')) {
+    const value = normalized.slice(1)
+    const expanded = value.length === 3
+      ? value.split('').map(char => char + char).join('')
+      : value
+    const parsed = Number.parseInt(expanded, 16)
+    return [
+      ((parsed >> 16) & 255) / 255,
+      ((parsed >> 8) & 255) / 255,
+      (parsed & 255) / 255
+    ]
+  }
+
+  const match = normalized.match(/rgba?\\(([^)]+)\\)/)
+  if (!match) return [1, 1, 1]
+  const parts = match[1].split(',').map(part => Number.parseFloat(part.trim()))
+  return [
+    Math.max(0, Math.min(1, (parts[0] ?? 255) / 255)),
+    Math.max(0, Math.min(1, (parts[1] ?? 255) / 255)),
+    Math.max(0, Math.min(1, (parts[2] ?? 255) / 255))
+  ]
+}
+
+const rgba = (color, alpha = 1) => {
+  const [red, green, blue] = parseRgb(color)
+  return [red, green, blue, Math.max(0, Math.min(1, alpha))]
+}
+
+const createShader = (gl, type, source) => {
+  const shader = gl.createShader(type)
+  if (!shader) return null
+  gl.shaderSource(shader, source)
+  gl.compileShader(shader)
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    gl.deleteShader(shader)
+    return null
+  }
+  return shader
+}
+
+const createProgram = (gl, vertexSource, fragmentSource) => {
+  const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexSource)
+  const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentSource)
+  if (!vertexShader || !fragmentShader) return null
+  const program = gl.createProgram()
+  if (!program) return null
+  gl.attachShader(program, vertexShader)
+  gl.attachShader(program, fragmentShader)
+  gl.linkProgram(program)
+  gl.deleteShader(vertexShader)
+  gl.deleteShader(fragmentShader)
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    gl.deleteProgram(program)
+    return null
+  }
+  return program
+}
+
+const createWebGlRenderer = targetCanvas => {
+  if (!targetCanvas) return null
+
+  const gl = targetCanvas.getContext('webgl2', { alpha: true, antialias: true }) ||
+    targetCanvas.getContext('webgl', { alpha: true, antialias: true })
+  if (!gl) return null
+
+  const lineProgram = createProgram(
+    gl,
+    'attribute vec2 a_position; uniform vec2 u_resolution; void main() { vec2 zeroToOne = a_position / u_resolution; vec2 clip = zeroToOne * 2.0 - 1.0; gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0); }',
+    'precision mediump float; uniform vec4 u_color; void main() { gl_FragColor = u_color; }'
+  )
+  const pointProgram = createProgram(
+    gl,
+    'attribute vec2 a_position; attribute float a_size; uniform vec2 u_resolution; void main() { vec2 zeroToOne = a_position / u_resolution; vec2 clip = zeroToOne * 2.0 - 1.0; gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0); gl_PointSize = a_size; }',
+    'precision mediump float; uniform vec4 u_color; void main() { vec2 center = gl_PointCoord - vec2(0.5); float distanceFromCenter = length(center); if (distanceFromCenter > 0.5) discard; float edge = smoothstep(0.5, 0.42, distanceFromCenter); gl_FragColor = vec4(u_color.rgb, u_color.a * edge); }'
+  )
+
+  if (!lineProgram || !pointProgram) return null
+
+  const lineBuffer = gl.createBuffer()
+  const pointPositionBuffer = gl.createBuffer()
+  const pointSizeBuffer = gl.createBuffer()
+  if (!lineBuffer || !pointPositionBuffer || !pointSizeBuffer) return null
+
+  const linePositionLocation = gl.getAttribLocation(lineProgram, 'a_position')
+  const lineResolutionLocation = gl.getUniformLocation(lineProgram, 'u_resolution')
+  const lineColorLocation = gl.getUniformLocation(lineProgram, 'u_color')
+  const pointPositionLocation = gl.getAttribLocation(pointProgram, 'a_position')
+  const pointSizeLocation = gl.getAttribLocation(pointProgram, 'a_size')
+  const pointResolutionLocation = gl.getUniformLocation(pointProgram, 'u_resolution')
+  const pointColorLocation = gl.getUniformLocation(pointProgram, 'u_color')
+
+  gl.enable(gl.BLEND)
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+  const setViewport = (width, height) => {
+    gl.viewport(0, 0, targetCanvas.width, targetCanvas.height)
+    return [targetCanvas.width / Math.max(width, 1), targetCanvas.height / Math.max(height, 1)]
+  }
+
+  const screenPoint = (node, ratioX, ratioY) => [
+    (node.x * state.transform.scale + state.transform.x) * ratioX,
+    (node.y * state.transform.scale + state.transform.y) * ratioY
+  ]
+
+  const clear = (width, height) => {
+    setViewport(width, height)
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+  }
+
+  const drawLines = (edges, color, width, height) => {
+    if (edges.length === 0) return
+    const [ratioX, ratioY] = setViewport(width, height)
+    const positions = new Float32Array(edges.length * 4)
+    for (let index = 0; index < edges.length; index += 1) {
+      const edge = edges[index]
+      const source = screenPoint(edge.sourceNode, ratioX, ratioY)
+      const target = screenPoint(edge.targetNode, ratioX, ratioY)
+      const offset = index * 4
+      positions[offset] = source[0]
+      positions[offset + 1] = source[1]
+      positions[offset + 2] = target[0]
+      positions[offset + 3] = target[1]
+    }
+
+    gl.useProgram(lineProgram)
+    gl.bindBuffer(gl.ARRAY_BUFFER, lineBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STREAM_DRAW)
+    gl.enableVertexAttribArray(linePositionLocation)
+    gl.vertexAttribPointer(linePositionLocation, 2, gl.FLOAT, false, 0, 0)
+    gl.uniform2f(lineResolutionLocation, targetCanvas.width, targetCanvas.height)
+    gl.uniform4fv(lineColorLocation, color)
+    gl.lineWidth(1)
+    gl.drawArrays(gl.LINES, 0, edges.length * 2)
+  }
+
+  const drawPoints = (nodes, color, sizeForNode, width, height) => {
+    if (nodes.length === 0) return
+    const [ratioX, ratioY] = setViewport(width, height)
+    const positions = new Float32Array(nodes.length * 2)
+    const sizes = new Float32Array(nodes.length)
+    for (let index = 0; index < nodes.length; index += 1) {
+      const node = nodes[index]
+      const point = screenPoint(node, ratioX, ratioY)
+      const offset = index * 2
+      positions[offset] = point[0]
+      positions[offset + 1] = point[1]
+      sizes[index] = sizeForNode(node) * ((ratioX + ratioY) / 2)
+    }
+
+    gl.useProgram(pointProgram)
+    gl.bindBuffer(gl.ARRAY_BUFFER, pointPositionBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STREAM_DRAW)
+    gl.enableVertexAttribArray(pointPositionLocation)
+    gl.vertexAttribPointer(pointPositionLocation, 2, gl.FLOAT, false, 0, 0)
+    gl.bindBuffer(gl.ARRAY_BUFFER, pointSizeBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, sizes, gl.STREAM_DRAW)
+    gl.enableVertexAttribArray(pointSizeLocation)
+    gl.vertexAttribPointer(pointSizeLocation, 1, gl.FLOAT, false, 0, 0)
+    gl.uniform2f(pointResolutionLocation, targetCanvas.width, targetCanvas.height)
+    gl.uniform4fv(pointColorLocation, color)
+    gl.drawArrays(gl.POINTS, 0, nodes.length)
+  }
+
+  return { clear, drawLines, drawPoints }
+}
+
+const webGlRenderer = createWebGlRenderer(glCanvas)
+
 const initFilterWorker = () => {
   if (typeof Worker === 'undefined') {
     return
@@ -243,6 +415,10 @@ const resize = () => {
   const ratio = window.devicePixelRatio || 1
   canvas.width = Math.floor(width * ratio)
   canvas.height = Math.floor(height * ratio)
+  if (glCanvas) {
+    glCanvas.width = Math.floor(width * ratio)
+    glCanvas.height = Math.floor(height * ratio)
+  }
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
   markRenderDirty()
 }
@@ -1063,6 +1239,105 @@ const drawGraphNodes = () => {
   }
 
   priorityNodes.forEach(node => drawSingleNode(node))
+}
+
+const partitionGraphForAcceleratedRenderer = () => {
+  const regularNodes = []
+  const priorityNodes = []
+  const regularEdges = []
+  const inferredEdges = []
+  const selectedEdges = []
+
+  for (let index = 0; index < state.renderNodes.length; index += 1) {
+    const node = state.renderNodes[index]
+    const isPriority =
+      state.selected?.id === node.id ||
+      state.hovered?.id === node.id
+    if (isPriority) {
+      priorityNodes.push(node)
+    } else {
+      regularNodes.push(node)
+    }
+  }
+
+  for (let index = 0; index < state.renderEdges.length; index += 1) {
+    const edge = state.renderEdges[index]
+    const isSelected = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id)
+    if (isSelected) {
+      selectedEdges.push(edge)
+    } else if (edge.inferred) {
+      inferredEdges.push(edge)
+    } else {
+      regularEdges.push(edge)
+    }
+  }
+
+  return { regularNodes, priorityNodes, regularEdges, inferredEdges, selectedEdges }
+}
+
+const drawGraphLabels = nodes => {
+  if (!(state.transform.scale >= 0.62 && state.renderNodes.length <= 1200)) {
+    return
+  }
+
+  ctx.fillStyle = graphTheme.label
+  ctx.font = '12px Inter, system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index]
+    ctx.fillText(node.title.slice(0, 34), node.x, node.y + nodeRadius(node) + 8)
+  }
+}
+
+const drawAcceleratedGraph = (width, height, drawEdges) => {
+  if (!webGlRenderer || state.renderClusters.length > 0) {
+    return false
+  }
+
+  const graphParts = partitionGraphForAcceleratedRenderer()
+  const scale = state.transform.scale
+  webGlRenderer.clear(width, height)
+  if (drawEdges) {
+    webGlRenderer.drawLines(
+      graphParts.regularEdges,
+      rgba('rgb(153, 165, 181)', edgeOpacityForScale({ inferred: false }, scale)),
+      width,
+      height
+    )
+    webGlRenderer.drawLines(
+      graphParts.inferredEdges,
+      rgba('rgb(203, 213, 225)', edgeOpacityForScale({ inferred: true }, scale)),
+      width,
+      height
+    )
+  }
+  webGlRenderer.drawPoints(
+    graphParts.regularNodes,
+    rgba(graphTheme.nodeHalo, 0.28),
+    node => Math.max((nodeRadius(node) + 3) * state.transform.scale * 2, 1.5),
+    width,
+    height
+  )
+  webGlRenderer.drawPoints(
+    graphParts.regularNodes,
+    rgba(graphTheme.node, 1),
+    node => Math.max(nodeRadius(node) * state.transform.scale * 2, 1.2),
+    width,
+    height
+  )
+
+  ctx.save()
+  ctx.translate(state.transform.x, state.transform.y)
+  ctx.scale(state.transform.scale, state.transform.scale)
+  if (drawEdges) {
+    graphParts.selectedEdges.forEach(edge => drawGraphEdge(edge))
+  }
+  drawGraphLabels(graphParts.regularNodes)
+  graphParts.priorityNodes.forEach(node => drawSingleNode(node))
+  ctx.restore()
+
+  return true
 }
 
 const edgePairKey = (source, target) =>
@@ -2261,6 +2536,7 @@ const render = now => {
     resetView()
   }
   ctx.clearRect(0, 0, width, height)
+  webGlRenderer?.clear(width, height)
   if (state.nodes.length === 0) {
     ctx.fillStyle = '#99a5b5'
     ctx.font = '14px Inter, system-ui, sans-serif'
@@ -2269,9 +2545,6 @@ const render = now => {
     requestAnimationFrame(render)
     return
   }
-  ctx.save()
-  ctx.translate(state.transform.x, state.transform.y)
-  ctx.scale(state.transform.scale, state.transform.scale)
 
   computeRenderVisibility()
   tick(delta)
@@ -2304,11 +2577,12 @@ const render = now => {
   const drawEdges =
     state.renderClusters.length === 0 &&
     state.transform.scale >= minimumEdgeScale
-  if (drawEdges) {
-    drawGraphEdges()
-  }
-
-  if (state.renderClusters.length > 0) {
+  if (drawAcceleratedGraph(width, height, drawEdges)) {
+    // WebGL handles the dense node/edge layer; the 2D canvas remains the interaction overlay.
+  } else if (state.renderClusters.length > 0) {
+    ctx.save()
+    ctx.translate(state.transform.x, state.transform.y)
+    ctx.scale(state.transform.scale, state.transform.scale)
     const safeScale = Math.max(state.transform.scale, 0.0001)
     state.renderClusters.forEach(cluster => {
       const isMacro = cluster.id === 'macro-galaxy'
@@ -2337,11 +2611,17 @@ const render = now => {
       }
       // Keep cluster markers minimal and faster to draw on large graphs.
     })
+    ctx.restore()
   } else {
+    ctx.save()
+    ctx.translate(state.transform.x, state.transform.y)
+    ctx.scale(state.transform.scale, state.transform.scale)
+    if (drawEdges) {
+      drawGraphEdges()
+    }
     drawGraphNodes()
+    ctx.restore()
   }
-
-  ctx.restore()
   if (state.renderNodes.length === 0 && state.renderClusters.length === 0) {
     ctx.fillStyle = '#99a5b5'
     ctx.font = '12px Inter, system-ui, sans-serif'
