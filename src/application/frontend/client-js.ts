@@ -1110,6 +1110,64 @@ const enrichSampleWithNeighbors = (nodes) => {
   }
 }
 
+const includeHubPreviewNeighborhood = (nodes, limit) => {
+  const hub = state.primaryHub
+  if (!hub) {
+    return nodes
+  }
+
+  const maxNodes = Math.max(1, Math.min(renderNodeBudget, limit))
+  const merged = [...nodes]
+  const ids = new Set(merged.map((node) => node.id))
+
+  if (!ids.has(hub.id)) {
+    if (merged.length < maxNodes) {
+      merged.push(hub)
+      ids.add(hub.id)
+    } else {
+      const replaceIndex = merged.findIndex((node) => node.id !== hub.id)
+      if (replaceIndex >= 0) {
+        ids.delete(merged[replaceIndex].id)
+        merged[replaceIndex] = hub
+        ids.add(hub.id)
+      }
+    }
+  }
+
+  const hubEdges = [...(state.visibleEdgeByNode.get(hub.id) ?? [])]
+    .filter((edge) => edge.target && (edge.source === hub.id || edge.target === hub.id))
+    .sort((left, right) => {
+      const byWeight = edgeWeight(right) - edgeWeight(left)
+      if (byWeight !== 0) return byWeight
+
+      const leftOtherId = left.source === hub.id ? left.target : left.source
+      const rightOtherId = right.source === hub.id ? right.target : right.source
+      const leftDegree = state.nodeDegrees.get(leftOtherId ?? '') ?? 0
+      const rightDegree = state.nodeDegrees.get(rightOtherId ?? '') ?? 0
+      if (leftDegree !== rightDegree) return rightDegree - leftDegree
+
+      return edgeIdentityKey(left).localeCompare(edgeIdentityKey(right))
+    })
+
+  for (let index = 0; index < hubEdges.length && merged.length < maxNodes; index += 1) {
+    const edge = hubEdges[index]
+    const otherId = edge.source === hub.id ? edge.target : edge.source
+    if (!otherId || ids.has(otherId)) {
+      continue
+    }
+
+    const otherNode = state.nodeById.get(otherId)
+    if (!otherNode) {
+      continue
+    }
+
+    ids.add(otherId)
+    merged.push(otherNode)
+  }
+
+  return merged
+}
+
 const ensureHubNodesInRenderedSet = (nodes) => {
   if (nodes.length === 0) {
     return nodes
@@ -1863,9 +1921,15 @@ const computeRenderVisibility = () => {
       sampledRaw,
       Math.min(sampleLimit, renderNodeBudget)
     )
-    const sampledIds = new Set(sampled.map((node) => node.id))
-    let sampledEdges = state.transform.scale >= 0.035 ? collectVisibleEdgesForNodes(sampledIds) : []
     let sampledNodes = ensureHubNodesInRenderedSet(sampled)
+    if (state.transform.scale < 0.035) {
+      sampledNodes = includeHubPreviewNeighborhood(
+        sampledNodes,
+        Math.min(renderNodeBudget, sampleLimit + 160)
+      )
+    }
+    const sampledIds = new Set(sampledNodes.map((node) => node.id))
+    let sampledEdges = collectVisibleEdgesForNodes(sampledIds)
 
     if (state.transform.scale >= 0.035 && sampledEdges.length === 0) {
       const enriched = enrichSampleWithNeighbors(sampledNodes)
