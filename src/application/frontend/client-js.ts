@@ -26,6 +26,7 @@ const meshEdgeScaleThreshold = 0.09
 const meshEdgeMinBudget = 140
 const meshEdgeMaxBudget = 1400
 const layeredCoreScaleThreshold = 0.55
+const massiveOverviewClusterScaleThreshold = 0.035
 const dragNeighborhoodMaxAffected = 180
 const dragSettleRounds = 3
 const wheelZoomExponent = 0.0018
@@ -1810,6 +1811,17 @@ const computeRenderVisibility = () => {
 
   if (state.visibleNodes.length > massiveGraphNodeThreshold) {
     const viewportNodes = viewportNodesFromSpatialIndex(viewport)
+    if (state.transform.scale <= massiveOverviewClusterScaleThreshold) {
+      const overviewClusters = filterOverviewClustersByViewport(viewport)
+        .sort((left, right) => right.count - left.count)
+        .slice(0, Math.min(renderNodeBudget, clusterBudgetForScale(state.transform.scale)))
+      if (overviewClusters.length > 0) {
+        state.renderClusters = overviewClusters
+        state.renderNodes = overviewClusters.map((cluster) => cluster.representative)
+        state.renderEdges = []
+        return
+      }
+    }
     const sourceNodes = viewportNodes.length > 0 ? viewportNodes : state.visibleNodes
     const sampleLimit = nodeBudgetForScale(state.transform.scale)
     const carryMargin = Math.max(240, Math.min(1200, 340 / Math.max(state.transform.scale, 0.0001)))
